@@ -166,6 +166,7 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);border-bottom:0}
 .calc .v{font-family:var(--f-mono);font-size:13px}
 .rows{display:flex;flex-direction:column;gap:6px}
 .rg{display:grid;grid-template-columns:minmax(0,1fr) 58px 96px minmax(120px,200px) 30px;gap:6px;align-items:center}
+.rg.sc{grid-template-columns:150px 120px minmax(0,1fr) 30px}
 .rg.hd{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .rg .x{all:unset;cursor:pointer;text-align:center;color:var(--muted);font-size:16px}
 .rg .x:focus-visible{outline:2px solid var(--accent)}
@@ -222,6 +223,9 @@ pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:
   .week{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:560px){
+  .rg.sc{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 30px}
+  .rg.sc>:first-child{grid-column:auto}
+  .rg.sc span{display:none}
   .modal .mb{grid-template-columns:minmax(0,1fr)}
   .calc{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .head h1{font-size:25px}
@@ -255,13 +259,13 @@ pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:
 <script>
 (function(){
 "use strict";
-const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze"];
+const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze","pagamenti"];
 const S={}; COLS.forEach(c=>S[c]=[]);
 const loaded={};
 let mode="loading", sb=null, tab="oggi", weekStart=null, fattMese=null, ver=0;
-const UI={tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
+const UI={scLato:"tutti",scPer:"30",scStr:"",tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
 const NAV=[["Operatività",[["oggi","Oggi"],["piano","Pianificazione"],["agenda","Agenda dipendenti"],["clienti","Clienti e sedi"],["personale","Personale"],["preventivi","Preventivi"],["qualita","Qualità"]]],
-           ["Contabilità",[["vendite","Fatture di vendita"],["acquisti","Fatture d'acquisto"],["fornitori","Fornitori"],["primanota","Prima nota"],["partite","Partite aperte"],["mastrini","Mastrini e IVA"]]],
+           ["Contabilità",[["vendite","Fatture di vendita"],["acquisti","Fatture d'acquisto"],["fornitori","Fornitori"],["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["pagamenti","Tipi di pagamento"],["mastrini","Mastrini e IVA"]]],
            ["Sistema",[["impostazioni","Impostazioni e app dipendenti"]]]];
 const GIORNI=["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
 const GIORNI_L=["lunedì","martedì","mercoledì","giovedì","venerdì","sabato","domenica"];
@@ -270,6 +274,23 @@ const AREE=["Ingressi, scale e androni","Uffici e postazioni","Bagni e servizi",
 const TIPI=["Uffici","Condominio","Negozio","Studio medico","Altro"];
 const PROD={"Uffici":200,"Condominio":260,"Negozio":180,"Studio medico":150,"Altro":200};
 const VISITE_MESE=52/12;
+// strumenti di pagamento: codici MP della fattura elettronica (la rimessa diretta si trasmette di solito come MP05)
+const STRUMENTI=[["RD","Rimessa diretta"],["MP05","Bonifico"],["MP12","Ricevuta bancaria (RiBa)"],["MP01","Contanti"],["MP02","Assegno"],["MP03","Assegno circolare"],["MP08","Carta di pagamento / POS"],["MP19","SEPA Direct Debit (SDD)"],["MP20","SDD CORE"],["MP21","SDD B2B"],["MP09","RID"],["MP10","RID utenze"],["MP11","RID veloce"],["MP13","MAV"],["MP07","Bollettino bancario"],["MP18","Bollettino di c/c postale"],["MP16","Domiciliazione bancaria"],["MP17","Domiciliazione postale"],["MP23","PagoPA"],["MP06","Vaglia cambiario"],["MP04","Contanti presso Tesoreria"],["MP14","Quietanza erario"],["MP15","Giroconto su conti di contabilità speciale"],["MP22","Trattenuta su somme già riscosse"]];
+const PAG_DEFAULT=[
+ {id:"RDV",descrizione:"Rimessa diretta a vista",strumento:"RD",rate:"0",base:"DF"},
+ {id:"RD30",descrizione:"Rimessa diretta 30 gg data fattura",strumento:"RD",rate:"30",base:"DF"},
+ {id:"BB30DF",descrizione:"Bonifico 30 gg data fattura",strumento:"MP05",rate:"30",base:"DF"},
+ {id:"BB30FM",descrizione:"Bonifico 30 gg fine mese",strumento:"MP05",rate:"30",base:"FM"},
+ {id:"BB60FM",descrizione:"Bonifico 60 gg fine mese",strumento:"MP05",rate:"60",base:"FM"},
+ {id:"BB306090",descrizione:"Bonifico 30/60/90 gg fine mese",strumento:"MP05",rate:"30,60,90",base:"FM"},
+ {id:"RB30FM",descrizione:"RiBa 30 gg fine mese",strumento:"MP12",rate:"30",base:"FM",mesiEsclusi:[8],slittamento:10},
+ {id:"RB6090",descrizione:"RiBa 60/90 gg fine mese",strumento:"MP12",rate:"60,90",base:"FM",mesiEsclusi:[8],slittamento:10},
+ {id:"RB306090",descrizione:"RiBa 30/60/90 gg fine mese, IVA alla prima rata",strumento:"MP12",rate:"30,60,90",base:"FM",ivaPrimaRata:true,mesiEsclusi:[8],slittamento:10},
+ {id:"SDD30",descrizione:"Addebito SEPA (SDD) fine mese + 10",strumento:"MP19",rate:"30",base:"FM",giornoFisso:10},
+ {id:"CO",descrizione:"Contanti alla consegna",strumento:"MP01",rate:"0",base:"DF",conto:"cassa"},
+ {id:"AS",descrizione:"Assegno a vista",strumento:"MP02",rate:"0",base:"DF"},
+ {id:"POS",descrizione:"Carta / POS",strumento:"MP08",rate:"0",base:"DF"},
+ {id:"PAGOPA",descrizione:"PagoPA 30 gg (pubblica amministrazione)",strumento:"MP23",rate:"30",base:"DF"}];
 const TIPI_ASSENZA=["Ferie","Malattia","Permesso","Infortunio","Altro"];
 const TIPI_IVA=[["norm","Con IVA all'aliquota indicata"],["split","Scissione dei pagamenti (IVA versata dalla PA)"],["rc","Inversione contabile (IVA a carico del cliente)"],["ex","Esente, non imponibile o fuori campo"],["excl","Esclusa art. 15 (rimborsi, bolli)"]];
 const CODICI_BASE=[
@@ -299,8 +320,44 @@ const codOptsHtml=v=>codici().map(c=>`<option value="${esc(c.id)}" ${c.id===v?"s
 function legacyCod(reg,iva){ if(reg==="reverse")return"RC"; if(reg==="esente")return"N4"; const a=String(iva??22); if(reg==="split")return a==="10"?"10S":"22S"; if(a==="0")return"N4"; return codici().some(c=>c.id===a)?a:"22" }
 const cliCod=c=>c?(c.codIva||legacyCod(c.regime,22)):"22";
 function tplRows(c,dataStr){const mk=(dataStr||TODAY()).slice(0,7);return (c&&c.righeAbituali||[]).map(r=>({descr:String(r.descr||"").replace(/\{mese\}/gi,monthLabel(mk)),qta:+r.qta||1,prezzo:+r.prezzo||0,cod:r.cod||cliCod(c)}))}
+const pagOf=id=>id?S.pagamenti.find(p=>p.id===id)||null:null;
+const pagOpts=()=>S.pagamenti.slice().sort((a,b)=>String(a.descrizione).localeCompare(b.descrizione)).map(p=>[p.id,p.descrizione]);
+const strName=c=>(STRUMENTI.find(s=>s[0]===c)||[c,c||"—"])[1];
+const feCode=c=>c==="RD"?"MP05":(c||"");
+// tipo di pagamento di un cliente o fornitore (con ripiego sui vecchi "giorni di pagamento")
+function pagSogg(x){ if(!x)return null; return pagOf(x.pagamento)||(x.ggPagamento?{descrizione:x.ggPagamento+" gg data fattura",strumento:"MP05",rate:String(x.ggPagamento),base:"DF"}:null) }
+const dayIn=(y,m,dd)=>new Date(y,m,Math.min(dd,new Date(y,m+1,0).getDate()));
+// scadenze di un documento in base al tipo di pagamento
+function calcScadenze(pag,dataDoc,importo,iva){
+  pag=pag||{rate:"0",base:"DF"};
+  const giorni=String(pag.rate??"0").split(/[^0-9]+/).filter(x=>x!=="").map(Number); if(!giorni.length)giorni.push(0);
+  const n=giorni.length, tot=r2(importo); let q;
+  if(pag.ivaPrimaRata&&n>1&&iva>0&&iva<tot){const im=r2(tot-iva), b=r2(im/n); q=giorni.map((_,i)=>i===n-1?r2(im-b*(n-1)):b); q[0]=r2(q[0]+iva)}
+  else {const b=r2(tot/n); q=giorni.map((_,i)=>i===n-1?r2(tot-b*(n-1)):b)}
+  const d0=parse(dataDoc||TODAY()), escl=(pag.mesiEsclusi||[]).map(Number), sl=+pag.slittamento||10, gf=+pag.giornoFisso||0;
+  return giorni.map((g,i)=>{
+    let d;
+    if(pag.base==="FM") d=g%30===0?new Date(d0.getFullYear(),d0.getMonth()+g/30+1,0):(x=>new Date(x.getFullYear(),x.getMonth()+1,0))(addDays(d0,g));
+    else d=addDays(d0,g);
+    if(gf){ if(pag.base==="FM"||d.getDate()>gf) d=dayIn(d.getFullYear(),d.getMonth()+1,gf); else d=dayIn(d.getFullYear(),d.getMonth(),gf) }
+    for(let k=0;k<12&&escl.includes(d.getMonth()+1);k++) d=dayIn(d.getFullYear(),d.getMonth()+1,sl);
+    return {data:iso(d),importo:q[i]};
+  });
+}
+// rate di un documento con quanto è già stato incassato/pagato (gli incassi coprono le rate in ordine)
+function rateDoc(kind,doc){
+  if(!doc||doc.tipo==="nc")return [];
+  const t=kind==="v"?vTot(doc):aTot(doc);
+  let sc=Array.isArray(doc.scadenze)&&doc.scadenze.length?doc.scadenze.map(x=>({data:x.data,importo:+x.importo||0})):[{data:doc.scadenza||doc.data,importo:t.dovuto}];
+  const s=r2(sc.reduce((a,x)=>a+x.importo,0)); if(Math.abs(s-t.dovuto)>0.005)sc[sc.length-1].importo=r2(sc[sc.length-1].importo+t.dovuto-s);
+  let pagato=r2(t.dovuto-(kind==="v"?residuoV(doc):residuoA(doc)));
+  return sc.map((x,i)=>{const p=r2(Math.min(x.importo,Math.max(0,pagato))); pagato=r2(pagato-p); return {n:i+1,data:x.data,importo:x.importo,pagato:p,res:r2(x.importo-p)}});
+}
+const prossimaRata=(kind,doc)=>{const rs=rateDoc(kind,doc);return rs.find(r=>r.res>0.005)||rs[rs.length-1]||null};
+function scadCell(kind,doc){ const rs=rateDoc(kind,doc); if(!rs.length)return""; const nx=rs.find(r=>r.res>0.005);
+  return `${dShort((nx||rs[rs.length-1]).data)}${rs.length>1?` <span class="muted">${nx?nx.n:rs.length}/${rs.length}</span>`:""}` }
 const tipiAss=()=>[...TIPI_ASSENZA,...lst("assenze")];
-const ADD_LABEL={codiceIva:"codice IVA","lista:assenze":"tipo di assenza",clienti:"cliente",fornitori:"fornitore",sedi:"sede",operatori:"operatore",conti:"conto","lista:tipi":"tipo di immobile","lista:categorie":"categoria","lista:causali":"causale"};
+const ADD_LABEL={pagamenti:"tipo di pagamento",codiceIva:"codice IVA","lista:assenze":"tipo di assenza",clienti:"cliente",fornitori:"fornitore",sedi:"sede",operatori:"operatore",conti:"conto","lista:tipi":"tipo di immobile","lista:categorie":"categoria","lista:causali":"causale"};
 
 /* ---------- utilità ---------- */
 const $=s=>document.querySelector(s);
@@ -508,14 +565,14 @@ function statoV(f){
   if(f.tipo==="nc"){const na=nonAbbinato("n:"+f.id);return na>0.005?["NC da compensare","acc"]:["NC compensata","ok"]}
   const res=residuoV(f), dov=vTot(f).dovuto;
   if(res<=0.005)return["Incassata","ok"];
-  if(f.scadenza&&f.scadenza<TODAY())return[res<dov-0.005?"Scaduta, parziale":"Scaduta","bad"];
+  if(rateDoc("v",f).some(r=>r.res>0.005&&r.data<TODAY()))return[res<dov-0.005?"Scaduta, parziale":"Scaduta","bad"];
   if(res<dov-0.005)return["Incasso parziale","warn"];
   return["Da incassare",""];
 }
 function statoA(a){
   const res=residuoA(a), dov=aTot(a).dovuto;
   if(res<=0.005)return["Pagata","ok"];
-  if(a.scadenza&&a.scadenza<TODAY())return[res<dov-0.005?"Scaduta, parziale":"Scaduta","bad"];
+  if(rateDoc("a",a).some(r=>r.res>0.005&&r.data<TODAY()))return[res<dov-0.005?"Scaduta, parziale":"Scaduta","bad"];
   if(res<dov-0.005)return["Pagata in parte","warn"];
   return["Da pagare",""];
 }
@@ -528,8 +585,8 @@ function movSogg(m){ if(m.soggetto)return m.soggetto; const a=(m.alloc||[])[0]; 
 function openDocs(sogg,excl){
   if(!sogg)return [];
   const[t,id]=sogg.split(":");
-  if(t==="c")return S.fatture.filter(f=>f.clienteId===id&&f.tipo!=="nc").map(f=>({key:"v:"+f.id,label:vLabel(f),data:f.data,scad:f.scadenza,res:residuoV(f,excl)})).filter(x=>x.res>0.005).sort((a,b)=>(a.scad||a.data||"").localeCompare(b.scad||b.data||""));
-  return S.acquisti.filter(a=>a.fornitoreId===id).map(a=>({key:"a:"+a.id,label:aLabel(a),data:a.data,scad:a.scadenza,res:residuoA(a,excl)})).filter(x=>x.res>0.005).sort((a,b)=>(a.scad||a.data||"").localeCompare(b.scad||b.data||""));
+  if(t==="c")return S.fatture.filter(f=>f.clienteId===id&&f.tipo!=="nc").map(f=>({key:"v:"+f.id,label:vLabel(f),data:f.data,scad:(prossimaRata("v",f)||{}).data,rate:rateDoc("v",f),res:residuoV(f,excl)})).filter(x=>x.res>0.005).sort((a,b)=>(a.scad||a.data||"").localeCompare(b.scad||b.data||""));
+  return S.acquisti.filter(a=>a.fornitoreId===id).map(a=>({key:"a:"+a.id,label:aLabel(a),data:a.data,scad:(prossimaRata("a",a)||{}).data,rate:rateDoc("a",a),res:residuoA(a,excl)})).filter(x=>x.res>0.005).sort((a,b)=>(a.scad||a.data||"").localeCompare(b.scad||b.data||""));
 }
 function mastrino(sogg){
   const[t,id]=sogg.split(":"); const rows=[];
@@ -573,8 +630,8 @@ function alerts(){
   const scad=S.fatture.filter(f=>f.tipo!=="nc"&&statoV(f)[1]==="bad");
   if(scad.length)a.push(["bad",`${scad.length} fattur${scad.length>1?"e di vendita scadute":"a di vendita scaduta"}: ${eur(scad.reduce((x,f)=>x+residuoV(f),0))} da incassare.`,"partite"]);
   const lim7=iso(addDays(today(),7));
-  const pag=S.acquisti.filter(x=>residuoA(x)>0.005&&x.scadenza&&x.scadenza<=lim7);
-  if(pag.length)a.push([pag.some(x=>x.scadenza<TODAY())?"bad":"warn",`${pag.length} fattur${pag.length>1?"e fornitori":"a fornitore"} scadute o in scadenza entro 7 giorni: ${eur(pag.reduce((s,x)=>s+residuoA(x),0))}.`,"partite"]);
+  const pag=S.acquisti.filter(x=>rateDoc("a",x).some(r=>r.res>0.005&&r.data<=lim7));
+  if(pag.length)a.push([pag.some(x=>rateDoc("a",x).some(r=>r.res>0.005&&r.data<TODAY()))?"bad":"warn",`${pag.length} fattur${pag.length>1?"e fornitori":"a fornitore"} scadute o in scadenza entro 7 giorni: ${eur(pag.reduce((s,x)=>s+residuoA(x),0))}.`,"partite"]);
   const na=S.movimenti.filter(m=>m.tipo==="entrata"&&movSogg(m).startsWith("c:")&&nonAbbinato("m:"+m.id)>0.005);
   if(na.length)a.push(["warn",`${na.length} incass${na.length>1?"i":"o"} da abbinare alle fatture.`,"partite"]);
   S.sedi.filter(s=>s.attiva!==false).forEach(s=>{const m=marginePct(s); if(m!=null&&m<10)a.push(["warn",`${s.nome}: margine stimato ${Math.round(m)}%. Rivedi canone o ore.`,"clienti"])});
@@ -593,7 +650,7 @@ function render(){
   const m=$("#main");
   const empty=!S.clienti.length&&!S.sedi.length&&!S.operatori.length&&!S.fornitori.length;
   if(empty&&["oggi","piano","clienti"].includes(tab)){m.innerHTML=emptyView();return}
-  const V={impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
+  const V={scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
   m.innerHTML=V[tab](al);
 }
 function hasExamples(){return COLS.some(c=>S[c].some(x=>x.esempio))}
@@ -657,7 +714,7 @@ function vClienti(){
   const gg=s=>(s.giorni||[]).slice().sort().map(g=>GIORNI[g-1]).join(" ");
   const orfani=S.sedi.filter(s=>!byId("clienti",s.clienteId));
   const regL=k=>(REGIMI.find(r=>r[0]===k)||REGIMI[0])[1];
-  const block=(c,sedi)=>`<div class="client"><div class="ch">${c?`<b data-edit="clienti:${c.id}">${esc(c.nome)}</b><span class="small muted">${esc([c.referente,c.tel,c.piva?"P.IVA/CF "+c.piva:""].filter(Boolean).join(" · "))} · ${esc(codOf(cliCod(c)).d)}${(c.righeAbituali||[]).length?" · "+c.righeAbituali.length+" righe abituali":""}${c.ritenuta?" · ritenuta 4%":""} · saldo <span class="num">${eur2(saldoSogg("c:"+c.id))}</span></span>`:`<b>Senza cliente</b>`}</div>
+  const block=(c,sedi)=>`<div class="client"><div class="ch">${c?`<b data-edit="clienti:${c.id}">${esc(c.nome)}</b><span class="small muted">${esc([c.referente,c.tel,c.piva?"P.IVA/CF "+c.piva:""].filter(Boolean).join(" · "))} · ${esc(codOf(cliCod(c)).d)} · ${esc((pagSogg(c)||{}).descrizione||"pagamento da impostare")}${(c.righeAbituali||[]).length?" · "+c.righeAbituali.length+" righe abituali":""}${c.ritenuta?" · ritenuta 4%":""} · saldo <span class="num">${eur2(saldoSogg("c:"+c.id))}</span></span>`:`<b>Senza cliente</b>`}</div>
    ${sedi.length?`<div class="tablewrap"><table><thead><tr><th>Sede</th><th>Tipo</th><th class="r">m²</th><th>Giorni</th><th>Orario</th><th>Operatori</th><th class="r">Canone</th><th class="r">Margine</th></tr></thead><tbody>${sedi.map(s=>{const m=marginePct(s);return `<tr class="click" data-edit="sedi:${s.id}"><td><b>${esc(s.nome)}</b>${s.attiva===false?' <span class="pill">Sospesa</span>':""}${s.esempio?' <span class="pill">esempio</span>':""}<div class="small muted">${esc(s.indirizzo||"")}</div></td><td>${esc(s.tipo||"")}</td><td class="r num">${s.mq?Number(s.mq).toLocaleString("it-IT"):""}</td><td class="mono small">${gg(s)}</td><td class="mono small">${esc(s.ora||"")} · ${n1(s.durata)} h</td><td>${esc(opNames(s.operatori))||'<span class="pill bad">Nessuno</span>'}</td><td class="r num">${eur(s.canone)}</td><td class="r">${m==null?"—":`<span class="pill ${m<10?"bad":m<20?"warn":"ok"}">${Math.round(m)}%</span>`}</td></tr>`}).join("")}</tbody></table></div>`:`<p class="small muted">Nessuna sede. <button class="btn small" data-newsede="${c?c.id:""}">Aggiungi sede</button></p>`}</div>`;
   return head("Clienti e sedi",`${S.clienti.length} clienti · ${S.sedi.length} sedi`,`<button class="btn" data-new="clienti">Nuovo cliente</button><button class="btn primary" data-new="sedi">Nuova sede</button>`)+
    (S.clienti.length||orfani.length?`<section class="panel">${S.clienti.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>block(c,S.sedi.filter(s=>s.clienteId===c.id))).join("")}${orfani.length?block(null,orfani):""}</section>`:`<div class="empty"><h2>Nessun cliente</h2><p>Aggiungi il primo cliente con il suo codice IVA e le righe abituali, poi le sedi con giorni, orari e canone.</p><button class="btn primary" data-new="clienti">Aggiungi cliente</button></div>`)+
@@ -671,6 +728,46 @@ function vPersonale(){
     return `<tr class="click" data-edit="operatori:${o.id}"><td><b>${esc(o.nome)}</b>${o.attivo===false?' <span class="pill">Non attivo</span>':""}</td><td>${esc(o.mansione||"")}</td><td class="mono small">${esc(o.tel||"")}</td><td class="r num">${eur2(o.costoOrario)}</td><td style="min-width:170px"><div style="display:flex;gap:8px;align-items:center"><div class="bar" style="flex:1"><i class="${pct>100?"bad":pct>90?"warn":""}" style="width:${Math.min(100,pct)}%"></i></div><span class="num small">${n1(h)}/${c||"—"} h</span></div></td><td class="r num">${n1(oreTimbrate(o.id,iso(monday(today())),iso(addDays(monday(today()),6))))} h</td><td class="small">${esc(sedi.map(s=>s.nome).join(", "))||'<span class="muted">—</span>'}</td><td class="r"><button class="btn small" data-agop="${o.id}">Agenda</button></td></tr>`}).join("")}</tbody></table></div></section>
   <p class="note">Il costo orario è il costo aziendale lordo (paga, contributi, TFR, ratei): serve per calcolare margini e preventivi. "Timbrate" sono le ore registrate dai dipendenti con l'app, dall'inizio alla fine di ogni turno.</p>${vTimbrature()}`:
   `<div class="empty"><h2>Nessun operatore</h2><p>Aggiungi il personale con costo orario e ore di contratto: il registro segnalerà chi è sovraccarico o assegnato a due sedi insieme.</p><button class="btn primary" data-new="operatori">Aggiungi operatore</button></div>`);
+}
+async function seedPagamenti(forza){
+  if(!forza&&(S.pagamenti.length||S.liste.some(x=>x.id==="pagamentiInit")))return;
+  const rows=PAG_DEFAULT.filter(p=>!S.pagamenti.some(x=>x.id===p.id)).map(p=>{const d=Object.assign({},p);delete d.id;return {col:"pagamenti",id:p.id,data:d}});
+  rows.push({col:"liste",id:"pagamentiInit",data:{valori:[]}});
+  const {error}=await sb.from("docs").upsert(rows); if(error){toast(errMsg(error));return}
+  rows.forEach(r=>{if(!S[r.col].some(x=>x.id===r.id))S[r.col].push(Object.assign({id:r.id},r.data))}); ver++; render();
+  if(forza)toast(`Caricati ${rows.length-1} tipi di pagamento`);
+}
+function vPagamenti(){
+  const uso=id=>S.clienti.filter(x=>x.pagamento===id).length+S.fornitori.filter(x=>x.pagamento===id).length;
+  const regole=p=>[p.giornoFisso?"giorno "+p.giornoFisso+" del mese dopo":"",(p.mesiEsclusi||[]).length?"no "+p.mesiEsclusi.map(m=>MESI[m-1].slice(0,3)).join(", ")+" → giorno "+(p.slittamento||10):"",p.ivaPrimaRata?"IVA alla 1ª rata":""].filter(Boolean).join(" · ")||"—";
+  return head("Tipi di pagamento e incasso",`${S.pagamenti.length} tipi · si scelgono in clienti, fornitori e fatture`,`<button class="btn" data-act="seedPag">Aggiungi i tipi più comuni</button><button class="btn primary" data-new="pagamenti">Nuovo tipo</button>`)+
+  (S.pagamenti.length?`<section class="panel"><div class="tablewrap"><table><thead><tr><th>Descrizione</th><th>Strumento</th><th>Cod. FE</th><th>Scadenze</th><th>Regole</th><th>Conto</th><th>Fattura di oggi da 1.220 €</th><th class="r">In uso</th></tr></thead><tbody>${S.pagamenti.slice().sort((a,b)=>String(a.descrizione).localeCompare(b.descrizione)).map(p=>{const sc=calcScadenze(p,TODAY(),1220,220);
+    return `<tr class="click" data-edit="pagamenti:${p.id}"><td><b>${esc(p.descrizione)}</b></td><td>${esc(strName(p.strumento))}</td><td class="mono small">${esc(feCode(p.strumento))}</td><td class="mono small">${esc(p.rate||"0")} gg ${p.base==="FM"?"f.m.":"d.f."}</td><td class="small">${esc(regole(p))}</td><td class="small">${p.conto?esc(contoNome(p.conto)):"—"}</td><td class="small mono">${sc.map(r=>dShort(r.data).slice(0,5)+" "+eur(r.importo)).join(" · ")}</td><td class="r num">${uso(p.id)}</td></tr>`}).join("")}</tbody></table></div></section>`
+  :`<div class="empty"><h2>Nessun tipo di pagamento</h2><p>Carica i tipi più usati (rimessa diretta, bonifico, RiBa, SDD, contanti, assegno, POS, PagoPA) e modificali come preferisci.</p><button class="btn primary" data-act="seedPag">Carica i tipi più comuni</button></div>`)+
+  `<p class="note">d.f. = dalla data fattura; f.m. = fine mese. "30 gg f.m." su una fattura del 15 ottobre scade il 30 novembre. Il giorno fisso sposta la scadenza a quel giorno del mese successivo (es. fine mese + 10). Nei mesi esclusi la scadenza slitta al giorno indicato del mese dopo. Cod. FE è il codice della modalità di pagamento nella fattura elettronica.</p>`;
+}
+function vScadenzario(){
+  const lato=UI.scLato, per=UI.scPer, str=UI.scStr, td=TODAY(), items=[];
+  S.fatture.filter(f=>f.tipo!=="nc").forEach(f=>{const p=pagOf(f.pagamento)||pagSogg(byId("clienti",f.clienteId))||{}; const rs=rateDoc("v",f); rs.forEach(r=>{if(r.res>0.005)items.push({lato:"c",doc:f,sogg:soggNome("c:"+f.clienteId)||f.clienteNome,label:vLabel(f),r,n:rs.length,str:p.strumento||""})})});
+  S.acquisti.forEach(a=>{const p=pagOf(a.pagamento)||pagSogg(byId("fornitori",a.fornitoreId))||{}; const rs=rateDoc("a",a); rs.forEach(r=>{if(r.res>0.005)items.push({lato:"f",doc:a,sogg:soggNome("f:"+a.fornitoreId),label:aLabel(a),r,n:rs.length,str:p.strumento||""})})});
+  const sum=(l,fl)=>l.filter(fl).reduce((a,x)=>a+x.r.res,0), in30=iso(addDays(today(),30));
+  const lim={scad:td,"7":iso(addDays(today(),7)),"30":in30,"90":iso(addDays(today(),90)),tutte:"9999-12-31"}[per]||in30;
+  const list=items.filter(x=>lato==="tutti"||x.lato===lato).filter(x=>per==="scad"?x.r.data<td:x.r.data<=lim).filter(x=>!str||x.str===str).sort((a,b)=>a.r.data.localeCompare(b.r.data)||a.lato.localeCompare(b.lato));
+  const perStr={}; list.forEach(x=>{const k=(x.lato==="c"?"Incassi · ":"Pagamenti · ")+strName(x.str||"");perStr[k]=(perStr[k]||0)+x.r.res});
+  const usati=[...new Set(items.map(x=>x.str).filter(Boolean))];
+  const inc=sum(list,x=>x.lato==="c"), pag=sum(list,x=>x.lato==="f");
+  return head("Scadenzario",`Rate aperte di clienti e fornitori, in ordine di scadenza`,`<div class="seg" role="group" aria-label="Lato">${[["tutti","Tutte"],["c","Incassi"],["f","Pagamenti"]].map(([k,l])=>`<button data-sclato="${k}" aria-pressed="${lato===k}">${l}</button>`).join("")}</div>
+    <select id="scPer" class="btn" aria-label="Periodo">${[["scad","Già scadute"],["7","Entro 7 giorni"],["30","Entro 30 giorni"],["90","Entro 90 giorni"],["tutte","Tutte"]].map(([k,l])=>`<option value="${k}" ${per===k?"selected":""}>${l}</option>`).join("")}</select>
+    <select id="scStr" class="btn" aria-label="Strumento"><option value="">Tutti gli strumenti</option>${usati.map(c=>`<option value="${c}" ${str===c?"selected":""}>${esc(strName(c))}</option>`).join("")}</select>`)+
+  `<div class="kpis"><div class="kpi"><span class="label">Incassi scaduti</span><span class="v ${sum(items,x=>x.lato==="c"&&x.r.data<td)?"neg":""}">${eur(sum(items,x=>x.lato==="c"&&x.r.data<td))}</span><span class="n">da sollecitare</span></div>
+   <div class="kpi"><span class="label">Incassi entro 30 gg</span><span class="v">${eur(sum(items,x=>x.lato==="c"&&x.r.data>=td&&x.r.data<=in30))}</span><span class="n">attesi</span></div>
+   <div class="kpi"><span class="label">Pagamenti scaduti</span><span class="v ${sum(items,x=>x.lato==="f"&&x.r.data<td)?"neg":""}">${eur(sum(items,x=>x.lato==="f"&&x.r.data<td))}</span><span class="n">da saldare</span></div>
+   <div class="kpi"><span class="label">Pagamenti entro 30 gg</span><span class="v">${eur(sum(items,x=>x.lato==="f"&&x.r.data>=td&&x.r.data<=in30))}</span><span class="n">da preparare</span></div></div>
+  <section class="panel"><div class="ph"><h2>${list.length} rate</h2><span class="small muted">${Object.entries(perStr).map(([k,v])=>esc(k)+" "+eur2(v)).join(" · ")}</span></div>
+  ${list.length?`<div class="tablewrap"><table><thead><tr><th>Scadenza</th><th></th><th>Cliente / fornitore</th><th>Documento</th><th>Rata</th><th>Strumento</th><th class="r">Importo rata</th><th class="r">Da ${lato==="f"?"pagare":lato==="c"?"incassare":"saldare"}</th><th></th></tr></thead><tbody>${list.map(x=>{const g=daysBetween(td,x.r.data);
+    return `<tr class="click" data-edit="${x.lato==="c"?"fatture":"acquisti"}:${x.doc.id}"><td class="mono small">${dShort(x.r.data)}</td><td class="small ${g<0?"neg":""}">${g<0?"scaduta da "+(-g)+" gg":g===0?"oggi":"tra "+g+" gg"}</td><td>${x.lato==="c"?'<span class="pill ok">Incasso</span>':'<span class="pill warn">Pagamento</span>'} ${esc(x.sogg)}</td><td class="mono small">${esc(x.label)}</td><td class="small">${x.n>1?x.r.n+"/"+x.n:"unica"}</td><td class="small">${esc(strName(x.str))}</td><td class="r num">${eur2(x.r.importo)}</td><td class="r num"><b>${eur2(x.r.res)}</b></td><td class="r"><button class="btn small" data-${x.lato==="c"?"incassa":"paga"}="${x.doc.id}" data-imp="${x.r.res}" data-rata="${x.r.n}/${x.n}">${x.lato==="c"?"Incassa":"Paga"}</button></td></tr>`}).join("")}</tbody>
+  <tfoot><tr><td colspan="6">Incassi ${eur2(inc)} · pagamenti ${eur2(pag)}</td><td class="r">Saldo</td><td class="r num ${inc-pag<0?"neg":"pos"}">${eur2(inc-pag)}</td><td></td></tr></tfoot></table></div>`:`<p class="muted">Nessuna rata aperta con questi filtri.</p>`}
+  <p class="note">Le rate nascono dal tipo di pagamento della fattura. Gli incassi e i pagamenti registrati chiudono le rate dalla più vecchia. "Incassa" e "Paga" propongono l'importo della rata e il conto predefinito del tipo di pagamento.</p></section>`;
 }
 function vTimbrature(){
   const d=UI.tbData||TODAY();
@@ -765,7 +862,7 @@ function vVendite(){
    `<input type="month" id="fattMese" value="${fattMese}" class="btn" aria-label="Mese dei canoni"><button class="btn" data-act="genFatt">Prepara canoni di ${monthLabel(fattMese)}</button><button class="btn" data-new="vendite" data-nc="1">Nota di credito</button><button class="btn primary" data-new="vendite">Nuova fattura</button>`)+
   `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select>
    <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da incassare"],["scadute","Scadute"],["nc","Note di credito"]].map(([k,l])=>`<button data-vstato="${k}" aria-pressed="${UI.vStato===k}">${l}</button>`).join("")}</div></div><span class="small muted">${list.length} documenti</span></div>
-  ${list.length?`<div class="tablewrap"><table><thead><tr><th>Numero</th><th>Data</th><th>Cliente</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(f=>{const t=vTot(f),c=byId("clienti",f.clienteId),r=residuoV(f),s=f.tipo==="nc"?-1:1;return `<tr class="click" data-edit="fatture:${f.id}"><td class="mono">${esc(vLabel(f))}</td><td class="mono small">${dShort(f.data)}</td><td>${esc(c?c.nome:f.clienteNome||"")}${t.tags.length?`<div class="small muted">${esc(t.tags.join(" · "))}</div>`:""}${t.rit?'<div class="small muted">Ritenuta 4%</div>':""}</td><td class="r num">${eur2(s*t.imp)}</td><td class="r num">${eur2(s*t.iva)}</td><td class="r num"><b>${eur2(s*t.tot)}</b></td><td class="r num">${f.tipo==="nc"?"":eur2(r)}</td><td class="mono small">${dShort(f.scadenza)}</td><td>${pill(statoV(f))}</td><td class="r">${f.tipo!=="nc"&&r>0.005?`<button class="btn small" data-incassa="${f.id}">Incassa</button>`:""}</td></tr>`}).join("")}</tbody>
+  ${list.length?`<div class="tablewrap"><table><thead><tr><th>Numero</th><th>Data</th><th>Cliente</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(f=>{const t=vTot(f),c=byId("clienti",f.clienteId),r=residuoV(f),s=f.tipo==="nc"?-1:1;return `<tr class="click" data-edit="fatture:${f.id}"><td class="mono">${esc(vLabel(f))}</td><td class="mono small">${dShort(f.data)}</td><td>${esc(c?c.nome:f.clienteNome||"")}${t.tags.length?`<div class="small muted">${esc(t.tags.join(" · "))}</div>`:""}${t.rit?'<div class="small muted">Ritenuta 4%</div>':""}</td><td class="r num">${eur2(s*t.imp)}</td><td class="r num">${eur2(s*t.iva)}</td><td class="r num"><b>${eur2(s*t.tot)}</b></td><td class="r num">${f.tipo==="nc"?"":eur2(r)}</td><td class="mono small">${scadCell("v",f)}</td><td>${pill(statoV(f))}</td><td class="r">${f.tipo!=="nc"&&r>0.005?`<button class="btn small" data-incassa="${f.id}">Incassa</button>`:""}</td></tr>`}).join("")}</tbody>
   <tfoot><tr><td colspan="3">Totale</td><td class="r num">${eur2(sum("imp"))}</td><td class="r num">${eur2(sum("iva"))}</td><td class="r num">${eur2(sum("tot"))}</td><td class="r num">${eur2(res)}</td><td colspan="3"></td></tr></tfoot></table></div>`:`<p class="muted">Nessun documento con questi filtri. "Prepara canoni" crea una fattura per cliente con le sue righe abituali (oppure, se non ne ha, i canoni delle sedi attive) e gli straordinari svolti nel mese.</p>`}</section>
   <p class="note">Ogni riga ha il suo codice IVA, anche diversi nello stesso documento. Questi documenti servono alla gestione interna: crediti, incassi e partite aperte. In Italia la fattura va trasmessa in formato elettronico allo SdI: dal dettaglio puoi copiare i dati nel tuo programma di fatturazione elettronica. Pulizia di edifici verso clienti con partita IVA: <b>inversione contabile</b> (art. 17, c. 6, lett. a-ter, DPR 633/72). Condomini: fattura con IVA e ritenuta del 4% trattenuta dal condominio (art. 25-ter, DPR 600/73), calcolata qui sull'imponibile.</p>`;
 }
@@ -781,13 +878,13 @@ function vAcquisti(){
   return head("Fatture d'acquisto",`${eur(S.acquisti.reduce((a,x)=>a+residuoA(x),0))} ancora da pagare ai fornitori`,`<button class="btn" data-new="fornitori">Nuovo fornitore</button><button class="btn primary" data-new="acquisti">Registra fattura</button>`)+
   `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select>
    <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da pagare"],["scadute","Scadute"]].map(([k,l])=>`<button data-astato="${k}" aria-pressed="${UI.aStato===k}">${l}</button>`).join("")}</div></div><span class="small muted">${list.length} documenti</span></div>
-  ${list.length?`<div class="tablewrap"><table><thead><tr><th>Prot.</th><th>Fornitore</th><th>Numero e data</th><th>Categoria</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(a=>{const t=aTot(a),fo=byId("fornitori",a.fornitoreId),r=residuoA(a);return `<tr class="click" data-edit="acquisti:${a.id}"><td class="mono small">${esc(a.protocollo||"")}</td><td>${esc(fo?fo.nome:"(eliminato)")}</td><td class="mono small">${esc(a.numero)}<div class="muted">${dShort(a.data)}</div></td><td class="small">${esc(a.categoria||"")}</td><td class="r num">${eur2(t.imp)}</td><td class="r num">${eur2(t.iva)}</td><td class="r num"><b>${eur2(t.tot)}</b>${t.rit?`<div class="small muted">rit. ${eur2(t.rit)}</div>`:""}</td><td class="r num">${eur2(r)}</td><td class="mono small">${dShort(a.scadenza)}</td><td>${pill(statoA(a))}</td><td class="r">${r>0.005?`<button class="btn small" data-paga="${a.id}">Paga</button>`:""}</td></tr>`}).join("")}</tbody>
+  ${list.length?`<div class="tablewrap"><table><thead><tr><th>Prot.</th><th>Fornitore</th><th>Numero e data</th><th>Categoria</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(a=>{const t=aTot(a),fo=byId("fornitori",a.fornitoreId),r=residuoA(a);return `<tr class="click" data-edit="acquisti:${a.id}"><td class="mono small">${esc(a.protocollo||"")}</td><td>${esc(fo?fo.nome:"(eliminato)")}</td><td class="mono small">${esc(a.numero)}<div class="muted">${dShort(a.data)}</div></td><td class="small">${esc(a.categoria||"")}</td><td class="r num">${eur2(t.imp)}</td><td class="r num">${eur2(t.iva)}</td><td class="r num"><b>${eur2(t.tot)}</b>${t.rit?`<div class="small muted">rit. ${eur2(t.rit)}</div>`:""}</td><td class="r num">${eur2(r)}</td><td class="mono small">${scadCell("a",a)}</td><td>${pill(statoA(a))}</td><td class="r">${r>0.005?`<button class="btn small" data-paga="${a.id}">Paga</button>`:""}</td></tr>`}).join("")}</tbody>
   <tfoot><tr><td colspan="4">Totale</td><td class="r num">${eur2(sum("imp"))}</td><td class="r num">${eur2(sum("iva"))}</td><td class="r num">${eur2(sum("tot"))}</td><td class="r num">${eur2(list.reduce((a,x)=>a+residuoA(x),0))}</td><td colspan="3"></td></tr></tfoot></table></div>`:`<p class="muted">Nessuna fattura d'acquisto registrata con questi filtri.</p>`}</section>
   ${Object.keys(byCat).length?`<section class="panel"><h2>Costi per categoria, ${y}</h2><table><tbody>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td style="width:35%">${esc(k)}</td><td><div class="bar"><i style="width:${v/maxC*100}%"></i></div></td><td class="r num">${eur2(v)}</td></tr>`).join("")}</tbody></table><p class="note">Imponibile delle fatture registrate. Il costo del personale non passa da qui: registralo in prima nota come stipendi e F24.</p></section>`:""}`;
 }
 function vFornitori(){
   return head("Fornitori",`${S.fornitori.length} fornitori`,`<button class="btn primary" data-new="fornitori">Nuovo fornitore</button>`)+
-  (S.fornitori.length?`<section class="panel"><div class="tablewrap"><table><thead><tr><th>Fornitore</th><th>Categoria</th><th>P.IVA</th><th>Contatti</th><th class="r">Fatture</th><th class="r">Acquistato</th><th class="r">Saldo a debito</th><th></th></tr></thead><tbody>${S.fornitori.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(f=>{const docs=S.acquisti.filter(a=>a.fornitoreId===f.id);const sal=saldoSogg("f:"+f.id);return `<tr class="click" data-edit="fornitori:${f.id}"><td><b>${esc(f.nome)}</b>${f.esempio?' <span class="pill">esempio</span>':""}</td><td class="small">${esc(f.categoria||"")}</td><td class="mono small">${esc(f.piva||"")}</td><td class="small">${esc([f.tel,f.email].filter(Boolean).join(" · "))}${f.iban?`<div class="mono muted">${esc(f.iban)}</div>`:""}</td><td class="r num">${docs.length}</td><td class="r num">${eur2(docs.reduce((a,x)=>a+aTot(x).imp,0))}</td><td class="r num ${sal>0.005?"neg":""}">${eur2(sal)}</td><td class="r"><button class="btn small" data-mastrino="f:${f.id}">Mastrino</button></td></tr>`}).join("")}</tbody></table></div></section>`:
+  (S.fornitori.length?`<section class="panel"><div class="tablewrap"><table><thead><tr><th>Fornitore</th><th>Categoria</th><th>Pagamento</th><th>P.IVA</th><th>Contatti</th><th class="r">Fatture</th><th class="r">Acquistato</th><th class="r">Saldo a debito</th><th></th></tr></thead><tbody>${S.fornitori.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(f=>{const docs=S.acquisti.filter(a=>a.fornitoreId===f.id);const sal=saldoSogg("f:"+f.id);return `<tr class="click" data-edit="fornitori:${f.id}"><td><b>${esc(f.nome)}</b>${f.esempio?' <span class="pill">esempio</span>':""}</td><td class="small">${esc(f.categoria||"")}</td><td class="small">${esc((pagSogg(f)||{}).descrizione||"—")}</td><td class="mono small">${esc(f.piva||"")}</td><td class="small">${esc([f.tel,f.email].filter(Boolean).join(" · "))}${f.iban?`<div class="mono muted">${esc(f.iban)}</div>`:""}</td><td class="r num">${docs.length}</td><td class="r num">${eur2(docs.reduce((a,x)=>a+aTot(x).imp,0))}</td><td class="r num ${sal>0.005?"neg":""}">${eur2(sal)}</td><td class="r"><button class="btn small" data-mastrino="f:${f.id}">Mastrino</button></td></tr>`}).join("")}</tbody></table></div></section>`:
   `<div class="empty"><h2>Nessun fornitore</h2><p>Registra i fornitori di prodotti, attrezzature, noleggi e servizi: poi potrai registrare le loro fatture e i pagamenti, anche parziali.</p><button class="btn primary" data-new="fornitori">Aggiungi fornitore</button></div>`);
 }
 function vPrimaNota(){
@@ -829,14 +926,14 @@ function partiteDi(sogg){
       if(x.ivaSplit)rows.push({data:f.data,descr:"IVA versata direttamente dalla PA (scissione pagamenti)",v:x.ivaSplit,fix:1});
       const al=allocRows("v:"+f.id); rows.push(...al);
       if(f.stato==="pagata"&&!al.length)rows.push({data:f.data,descr:"Incasso segnato senza prima nota",v:x.dovuto,fix:1});
-      out.push({key:"v:"+f.id,label:"Fattura "+f.numero,data:f.data,scad:f.scadenza,tot:x.tot,rows,res:residuoV(f),ref:"fatture:"+f.id,tags:x.tags});
+      out.push({key:"v:"+f.id,label:"Fattura "+f.numero,data:f.data,scad:(prossimaRata("v",f)||{}).data,rate:rateDoc("v",f),pag:pagOf(f.pagamento),tot:x.tot,rows,res:residuoV(f),ref:"fatture:"+f.id,tags:x.tags});
     });
   }else{
     S.acquisti.filter(a=>a.fornitoreId===id).forEach(a=>{const x=aTot(a); const rows=[];
       if(x.rit)rows.push({data:a.data,descr:"Ritenuta d'acconto trattenuta (da versare con F24)",v:x.rit,fix:1});
       const al=allocRows("a:"+a.id); rows.push(...al);
       if(a.stato==="pagata"&&!al.length)rows.push({data:a.data,descr:"Pagamento segnato senza prima nota",v:x.dovuto,fix:1});
-      out.push({key:"a:"+a.id,label:"Fattura "+a.numero+(a.protocollo?" · prot. "+a.protocollo:""),data:a.data,scad:a.scadenza,tot:x.tot,rows,res:residuoA(a),ref:"acquisti:"+a.id});
+      out.push({key:"a:"+a.id,label:"Fattura "+a.numero+(a.protocollo?" · prot. "+a.protocollo:""),data:a.data,scad:(prossimaRata("a",a)||{}).data,rate:rateDoc("a",a),pag:pagOf(a.pagamento),tot:x.tot,rows,res:residuoA(a),ref:"acquisti:"+a.id});
     });
   }
   out.forEach(p=>p.rows.sort((a,b)=>(b.fix||0)-(a.fix||0)||(a.data||"").localeCompare(b.data||"")));
@@ -850,7 +947,7 @@ function nonAbbinatiDi(sogg){
 function vPartite(){
   const lato=UI.paLato, isC=lato==="c", tutte=!!UI.paTutte;
   const anag=(isC?S.clienti:S.fornitori).slice().sort((a,b)=>a.nome.localeCompare(b.nome));
-  const sogg=anag.map(x=>{const k=lato+":"+x.id;const docs=openDocs(k);const b=[0,0,0,0,0];docs.forEach(d=>b[aging(d.scad)]+=d.res);
+  const sogg=anag.map(x=>{const k=lato+":"+x.id;const docs=openDocs(k);const b=[0,0,0,0,0];docs.forEach(d=>(d.rate&&d.rate.length?d.rate.filter(r=>r.res>0.005):[{data:d.scad,res:d.res}]).forEach(r=>b[aging(r.data)]+=r.res));
     const na=nonAbbinatiDi(k), nc=isC?S.fatture.filter(f=>f.tipo==="nc"&&f.clienteId===x.id).reduce((a,f)=>a+Math.max(0,nonAbbinato("n:"+f.id)),0):0;
     return {x,k,docs,b,tot:docs.reduce((a,d)=>a+d.res,0),sosp:na.reduce((a,c)=>a+c.v,0)+nc,hasDocs:isC?S.fatture.some(f=>f.clienteId===x.id):S.acquisti.some(a=>a.fornitoreId===x.id)}})
     .filter(s=>tutte?s.hasDocs||s.sosp>0.005:(s.docs.length||s.sosp>0.005));
@@ -867,7 +964,7 @@ function vPartite(){
     const body=parts.map(p=>{
       const a=aging(p.scad); let run=p.tot;
       sDoc+=p.nc?0:p.tot; sPay+=p.nc?p.tot:0; 
-      const head=`<tr class="ph-row click" data-edit="${p.ref}"><td class="mono small">${dShort(p.data)}</td><td><b>${esc(p.label)}</b>${p.nc?' <span class="pill acc">Credito del cliente</span>':""}${(p.tags||[]).map(t=>` <span class="pill">${esc(t)}</span>`).join("")}<div class="small muted">${p.scad?"scadenza "+dShort(p.scad):""}${p.scad&&p.res>0.005?` · <span class="${a>=2?"neg":""}">${AGE[a].toLowerCase()}</span>`:""}</div></td>${p.nc?cols("",eur2(p.tot)):cols(eur2(p.tot),"")}<td class="r num"><b>${eur2(p.tot)}</b></td><td class="r">${p.res>0.005&&!p.nc?`<button class="btn small primary" data-${isC?"incassa":"paga"}="${p.key.slice(2)}">${isC?"Registra incasso":"Registra pagamento"}</button>`:p.res>0.005&&p.nc?`<button class="btn small" data-abbina="${p.key}">Compensa</button>`:""}</td></tr>`;
+      const head=`<tr class="ph-row click" data-edit="${p.ref}"><td class="mono small">${dShort(p.data)}</td><td><b>${esc(p.label)}</b>${p.nc?' <span class="pill acc">Credito del cliente</span>':""}${(p.tags||[]).map(t=>` <span class="pill">${esc(t)}</span>`).join("")}<div class="small muted">${p.pag?esc(p.pag.descrizione)+" · ":""}${(p.rate||[]).length>1?p.rate.map(r=>`<span class="${r.res<=0.005?"pos":r.data<TODAY()?"neg":""}">${dShort(r.data).slice(0,5)} ${eur2(r.importo)}${r.res<=0.005?" ✓":""}</span>`).join(" · "):p.scad?"scadenza "+dShort(p.scad):""}${p.scad&&p.res>0.005?` · <span class="${a>=2?"neg":""}">${AGE[a].toLowerCase()}</span>`:""}</div></td>${p.nc?cols("",eur2(p.tot)):cols(eur2(p.tot),"")}<td class="r num"><b>${eur2(p.tot)}</b></td><td class="r">${p.res>0.005&&!p.nc?`<button class="btn small primary" data-${isC?"incassa":"paga"}="${p.key.slice(2)}">${isC?"Registra incasso":"Registra pagamento"}</button>`:p.res>0.005&&p.nc?`<button class="btn small" data-abbina="${p.key}">Compensa</button>`:""}</td></tr>`;
       const rows=p.rows.map(r=>{run=r2(run-r.v); if(!p.nc)sPay+=r.v; else sDoc+=r.v;
         return `<tr class="sub ${r.ref?"click":""}" ${r.ref?`data-edit="${r.ref}"`:""}><td class="mono small">${dShort(r.data)}</td><td class="small">${esc(r.descr)}${r.parz?` <span class="muted">(quota di un movimento da ${eur2(r.parz)})</span>`:""}</td>${p.nc?cols(eur2(r.v),""):cols("",eur2(r.v))}<td class="r num">${eur2(run)}</td><td></td></tr>`}).join("");
       sRes+=p.nc?-p.res:p.res;
@@ -936,16 +1033,17 @@ const contoOpts=()=>conti().map(c=>[c.id,c.nome]);
 const soggOpts=()=>[...cliOpts().map(([k,l])=>["c:"+k,l,"Clienti"]),...forOpts().map(([k,l])=>["f:"+k,l,"Fornitori"])];
 const plus=d=>()=>iso(addDays(today(),d));
 const FORMS={
-  clienti:{t:"Cliente",f:[{k:"nome",l:"Ragione sociale o condominio",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"referente",l:"Referente (amministratore, facility)"},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"indirizzo",l:"Sede legale",full:1},{k:"sdi",l:"Codice destinatario SdI"},{k:"ggPagamento",l:"Giorni di pagamento",type:"number",def:30},{k:"codIva",l:"Codice IVA predefinito",type:"select",opts:codOpts,noEmpty:1,full:1,add:"codiceIva",hint:"Proposto sulle nuove righe. Pulizia di edifici per clienti con partita IVA: inversione contabile. Condomini e privati: 22%."},{k:"ritenuta",l:"Ritenuta d'acconto 4%",type:"bool",yes:"Sì: è un condominio",no:"No",def:false},{k:"righeAbituali",l:"Righe abituali in fattura",type:"righe",full:1,hint:"Ogni riga con il suo codice IVA. Usate per le fatture mensili e richiamabili in ogni fattura. Scrivi {mese} per inserire il mese fatturato."},{k:"note",l:"Note",type:"textarea",full:1}]},
+  clienti:{t:"Cliente",f:[{k:"nome",l:"Ragione sociale o condominio",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"referente",l:"Referente (amministratore, facility)"},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"indirizzo",l:"Sede legale",full:1},{k:"sdi",l:"Codice destinatario SdI"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"codIva",l:"Codice IVA predefinito",type:"select",opts:codOpts,noEmpty:1,full:1,add:"codiceIva",hint:"Proposto sulle nuove righe. Pulizia di edifici per clienti con partita IVA: inversione contabile. Condomini e privati: 22%."},{k:"ritenuta",l:"Ritenuta d'acconto 4%",type:"bool",yes:"Sì: è un condominio",no:"No",def:false},{k:"righeAbituali",l:"Righe abituali in fattura",type:"righe",full:1,hint:"Ogni riga con il suo codice IVA. Usate per le fatture mensili e richiamabili in ogni fattura. Scrivi {mese} per inserire il mese fatturato."},{k:"note",l:"Note",type:"textarea",full:1}]},
   sedi:{t:"Sede e contratto",f:[{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,req:1,add:"clienti"},{k:"nome",l:"Nome sede",req:1,hint:"Es. Condominio Via Padova 12"},{k:"indirizzo",l:"Indirizzo",full:1},{k:"tipo",l:"Tipo",type:"select",opts:()=>tipiList().map(x=>[x,x]),add:"lista:tipi"},{k:"mq",l:"Superficie (m²)",type:"number"},{k:"giorni",l:"Giorni di servizio",type:"days",full:1},{k:"ora",l:"Ora di inizio",type:"time",def:"18:00"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25",def:2},{k:"operatori",l:"Squadra assegnata",type:"ops",full:1,add:"operatori"},{k:"canone",l:"Canone mensile (€, IVA esclusa)",type:"number"},{k:"attiva",l:"Stato",type:"bool",yes:"Attiva",no:"Sospesa"},{k:"accesso",l:"Accesso (chiavi, codici, allarme)",type:"textarea",full:1},{k:"attivita",l:"Mansionario: un'attività per riga",type:"textarea",full:1}]},
   operatori:{t:"Operatore",f:[{k:"nome",l:"Nome e cognome",req:1,full:1},{k:"emailApp",l:"Email per l'app dipendenti",type:"email",full:1,hint:"Il dipendente crea il suo account nell'app con questa email e vede solo i suoi turni."},{k:"mansione",l:"Mansione",hint:"Es. addetto, caposquadra"},{k:"tel",l:"Telefono"},{k:"costoOrario",l:"Costo orario aziendale (€)",type:"number",step:"0.01",def:19},{k:"oreSettimanali",l:"Ore di contratto a settimana",type:"number",def:30},{k:"attivo",l:"Stato",type:"bool",yes:"Attivo",no:"Non attivo"},{k:"note",l:"Note (formazione, idoneità, DPI)",type:"textarea",full:1}]},
   straordinari:{t:"Intervento straordinario",f:[{k:"sedeId",l:"Sede",type:"select",opts:sedeOpts,req:1,add:"sedi"},{k:"descrizione",l:"Descrizione",hint:"Es. lavaggio vetri, pulizia post-cantiere"},{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"ora",l:"Ora",type:"time",def:"09:00"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25",def:3},{k:"importo",l:"Importo da fatturare (€)",type:"number"},{k:"operatori",l:"Squadra",type:"ops",full:1,add:"operatori"}]},
   ispezioni:{t:"Ispezione qualità",f:[{k:"sedeId",l:"Sede",type:"select",opts:sedeOpts,req:1,add:"sedi"},{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"ispettore",l:"Ispezione eseguita da",full:1},{k:"voti",l:"Valutazione per area (1 = scarso, 5 = ottimo)",type:"votes",full:1},{k:"note",l:"Problemi riscontrati e azioni",type:"textarea",full:1}]},
   preventivi:{t:"Preventivo",calc:1,f:[{k:"cliente",l:"Cliente o condominio",req:1},{k:"descrizione",l:"Immobile",hint:"Es. uffici 2° piano, scale A e B"},{k:"tipo",l:"Tipo di immobile",type:"select",opts:()=>tipiList().map(x=>[x,x]),add:"lista:tipi"},{k:"mq",l:"Superficie (m²)",type:"number",req:1},{k:"giorni",l:"Passaggi a settimana",type:"number",def:3},{k:"produttivita",l:"Resa oraria (m²/h)",type:"number",def:200},{k:"costoOrario",l:"Costo orario (€)",type:"number",step:"0.01",def:()=>avgCosto()},{k:"materiali",l:"Materiali (% sul lavoro)",type:"number",def:6},{k:"generali",l:"Spese generali (%)",type:"number",def:10},{k:"margine",l:"Margine sul prezzo (%)",type:"number",def:15},{k:"stato",l:"Stato",type:"select",noEmpty:1,opts:()=>["Bozza","Inviato","Accettato","Rifiutato"].map(x=>[x,x])},{k:"data",l:"Data",type:"date",def:plus(0)}]},
-  fatture:{t:"Documento di vendita",righe:"v",f:[{k:"tipo",l:"Documento",type:"select",noEmpty:1,opts:()=>[["fattura","Fattura"],["nc","Nota di credito"]]},{k:"numero",l:"Numero",hint:"Lascia vuoto per la numerazione automatica"},{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,req:1,full:1,add:"clienti"},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"scadenza",l:"Scadenza pagamento",type:"date",def:plus(30)},{k:"ritenuta",l:"Ritenuta 4% (condominio)",type:"bool",yes:"Applicata dal cliente",no:"No",def:false},{k:"righe",l:"Righe del documento",type:"righe",full:1,tpl:1},{k:"rifDoc",l:"Riferimento",hint:"Per le note di credito: fattura stornata",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
-  fornitori:{t:"Fornitore",f:[{k:"nome",l:"Ragione sociale",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"categoria",l:"Categoria",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"iban",l:"IBAN",full:1},{k:"ggPagamento",l:"Giorni di pagamento",type:"number",def:30},{k:"note",l:"Note",type:"textarea",full:1}]},
-  acquisti:{t:"Fattura d'acquisto",righe:"a",f:[{k:"fornitoreId",l:"Fornitore",type:"select",opts:forOpts,req:1,full:1,add:"fornitori"},{k:"numero",l:"Numero del fornitore",req:1},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"dataReg",l:"Data di registrazione",type:"date",def:plus(0)},{k:"protocollo",l:"Protocollo interno",hint:"Vuoto = automatico"},{k:"categoria",l:"Categoria di costo",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"scadenza",l:"Scadenza",type:"date",def:plus(30)},{k:"ritenutaPct",l:"Ritenuta d'acconto da operare (%)",type:"number",def:0,hint:"20 per i professionisti, altrimenti 0"},{k:"righe",l:"Righe del documento",type:"righe",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
+  fatture:{t:"Documento di vendita",righe:"v",f:[{k:"tipo",l:"Documento",type:"select",noEmpty:1,opts:()=>[["fattura","Fattura"],["nc","Nota di credito"]]},{k:"numero",l:"Numero",hint:"Lascia vuoto per la numerazione automatica"},{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,req:1,full:1,add:"clienti"},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"pagamento",l:"Tipo di incasso",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenuta",l:"Ritenuta 4% (condominio)",type:"bool",yes:"Applicata dal cliente",no:"No",def:false},{k:"righe",l:"Righe del documento",type:"righe",full:1,tpl:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"rifDoc",l:"Riferimento",hint:"Per le note di credito: fattura stornata",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
+  fornitori:{t:"Fornitore",f:[{k:"nome",l:"Ragione sociale",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"categoria",l:"Categoria",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"iban",l:"IBAN",full:1},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"note",l:"Note",type:"textarea",full:1}]},
+  acquisti:{t:"Fattura d'acquisto",righe:"a",f:[{k:"fornitoreId",l:"Fornitore",type:"select",opts:forOpts,req:1,full:1,add:"fornitori"},{k:"numero",l:"Numero del fornitore",req:1},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"dataReg",l:"Data di registrazione",type:"date",def:plus(0)},{k:"protocollo",l:"Protocollo interno",hint:"Vuoto = automatico"},{k:"categoria",l:"Categoria di costo",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenutaPct",l:"Ritenuta d'acconto da operare (%)",type:"number",def:0,hint:"20 per i professionisti, altrimenti 0"},{k:"righe",l:"Righe del documento",type:"righe",full:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
   movimenti:{t:"Movimento di prima nota",alloc:1,f:[{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"tipo",l:"Tipo",type:"select",noEmpty:1,opts:()=>[["entrata","Entrata"],["uscita","Uscita"],["giroconto","Giroconto tra conti"]]},{k:"conto",l:"Conto",type:"select",noEmpty:1,opts:contoOpts,def:"banca",add:"conti"},{k:"contoDest",l:"Conto di destinazione",type:"select",noEmpty:1,opts:contoOpts,def:"cassa",add:"conti"},{k:"causale",l:"Causale",type:"select",noEmpty:1,opts:()=>causaliList("entrata").map(x=>[x,x]),add:"lista:causali"},{k:"importo",l:"Importo (€)",type:"number",step:"0.01",req:1},{k:"soggetto",l:"Cliente o fornitore",type:"select",opts:soggOpts,full:1,add:["clienti","fornitori"]},{k:"descrizione",l:"Descrizione",full:1,hint:"Es. bonifico, assegno, contanti"}]},
+  pagamenti:{t:"Tipo di pagamento",calcPag:1,f:[{k:"descrizione",l:"Descrizione",req:1,full:1,hint:"Es. RiBa 30/60 gg fine mese"},{k:"strumento",l:"Strumento",type:"select",noEmpty:1,full:1,opts:()=>STRUMENTI.map(([c,n])=>[c,n+(c==="RD"?" (in fattura elettronica di solito MP05)":" · "+c)])},{k:"rate",l:"Giorni delle scadenze",def:"30",hint:"0 = a vista · 30 · più rate: 30,60,90"},{k:"base",l:"Calcolate da",type:"select",noEmpty:1,opts:()=>[["DF","Data fattura"],["FM","Fine mese"]]},{k:"giornoFisso",l:"Giorno fisso (facoltativo)",type:"number",hint:"Es. 10: la scadenza va al giorno 10 del mese successivo"},{k:"ivaPrimaRata",l:"IVA con più rate",type:"bool",yes:"Tutta l'IVA nella prima rata",no:"IVA divisa tra le rate",def:false},{k:"mesiEsclusi",l:"Mesi esclusi",type:"months",full:1,hint:"Le scadenze in questi mesi slittano al mese successivo (tipico agosto per le RiBa)"},{k:"slittamento",l:"Giorno di slittamento",type:"number",def:10,hint:"Giorno del mese successivo in cui cade la scadenza spostata"},{k:"conto",l:"Conto predefinito di incasso o pagamento",type:"select",opts:contoOpts,add:"conti"},{k:"note",l:"Note",type:"textarea",full:1}]},
   timbrature:{t:"Timbratura",f:[{k:"ora",l:"Ora",type:"time",req:1},{k:"nota",l:"Nota",type:"textarea",full:1}]},
   variazioni:{t:"Turno",f:[{k:"data",l:"Giorno",type:"date",req:1},{k:"ora",l:"Ora di inizio",type:"time"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25"},{k:"operatori",l:"Squadra per questo turno",type:"ops",full:1,add:"operatori"},{k:"nota",l:"Nota per questo turno",type:"textarea",full:1,hint:"Es. sostituisce Marco in permesso"}]},
   assenze:{t:"Assenza",f:[{k:"operatoreId",l:"Dipendente",type:"select",opts:opOpts,req:1,full:1,add:"operatori"},{k:"tipo",l:"Tipo",type:"select",noEmpty:1,opts:()=>tipiAss().map(x=>[x,x]),add:"lista:assenze"},{k:"dal",l:"Dal",type:"date",def:plus(0),req:1},{k:"al",l:"Al (compreso)",type:"date",def:plus(0)},{k:"dalle",l:"Dalle ore",type:"time",hint:"Solo per permessi a ore"},{k:"alle",l:"Alle ore",type:"time"},{k:"note",l:"Note",type:"textarea",full:1}]},
@@ -964,12 +1062,31 @@ function selectHtml(id,o,v,f){
 function addBtns(f){
   return [].concat(f.add).map(a=>`<button type="button" class="btn small addbtn" data-addnew="${a}" data-for="${f.k}" title="Aggiungi ${esc(ADD_LABEL[a])}" aria-label="Aggiungi ${esc(ADD_LABEL[a])}">+ ${Array.isArray(f.add)?cap(ADD_LABEL[a]):"Nuovo"}</button>`).join("");
 }
+const scadRow=r=>`<div class="rg sc"><input type="date" aria-label="Data di scadenza" value="${esc(r.data||"")}"><input type="number" step="0.01" aria-label="Importo della rata" value="${esc(r.importo??"")}"><span class="small muted"></span><button type="button" class="x" data-rmscad="1" aria-label="Rimuovi rata">✕</button></div>`;
+function docTotForm(){ const righe=readField({k:"righe",type:"righe"});
+  if(current.c==="fatture"){const tp=$("#f_tipo").value;return vTot({righe,tipo:tp,ritenuta:tp!=="nc"&&$("#f_ritenuta").value==="1"})}
+  return aTot({righe,ritenutaPct:readField({k:"ritenutaPct",type:"number"})}) }
+function soggForm(){return current.c==="fatture"?byId("clienti",$("#f_clienteId").value):byId("fornitori",$("#f_fornitoreId").value)}
+function recalcScad(force){
+  const box=$("#f_scadenze"); if(!box||!current)return;
+  if(current.scadManual&&!force)return updScadInfo();
+  const t=docTotForm(), pag=pagOf($("#f_pagamento").value)||pagSogg(soggForm());
+  const sc=t.dovuto>0?calcScadenze(pag,$("#f_data").value||TODAY(),t.dovuto,current.c==="fatture"?t.ivaDeb:t.iva):[];
+  box.innerHTML=sc.map(scadRow).join(""); if(force)current.scadManual=false; updScadInfo();
+}
+function updScadInfo(){ const el=$("#scadInfo"); if(!el)return; const t=docTotForm(), s=r2(readField({k:"scadenze",type:"scad"}).reduce((a,x)=>a+x.importo,0)), p=pagOf($("#f_pagamento").value)||pagSogg(soggForm());
+  el.innerHTML=`${p?esc(strName(p.strumento))+" · ":""}totale rate ${eur2(s)} su ${eur2(t.dovuto)} da ${current.c==="fatture"?"incassare":"pagare"}${Math.abs(s-t.dovuto)>0.005?` · <span class="err">differenza ${eur2(t.dovuto-s)}</span>`:""}${current.scadManual?" · modificate a mano":""}` }
+function updPagPrev(){ const el=$("#pagPrev"); if(!el)return; const p={}; FORMS.pagamenti.f.forEach(f=>p[f.k]=readField(f));
+  const sc=calcScadenze(p,TODAY(),1220,220);
+  el.innerHTML=`<span class="label">Esempio: fattura di oggi da 1.220 € (di cui IVA 220 €)</span><span class="v">${sc.map(r=>`${dShort(r.data)} · ${eur2(r.importo)}`).join("<br>")}</span>` }
 function rigaHtml(r){return `<div class="rg"><input aria-label="Descrizione" placeholder="Descrizione" value="${esc(r.descr||"")}"><input aria-label="Quantità" type="number" step="any" value="${esc(r.qta??1)}"><input aria-label="Prezzo unitario" type="number" step="0.01" placeholder="Prezzo" value="${esc(r.prezzo??"")}"><select aria-label="Codice IVA">${codOptsHtml(r.cod||legacyCod(null,r.iva))}</select><button type="button" class="x" data-rmrow="1" aria-label="Rimuovi riga">✕</button></div>`}
 function fieldHtml(f,v){
   const id="f_"+f.k; const lab=`<label for="${id}">${esc(f.l)}${f.req?" *":""}</label>`; const hint=f.hint?`<span class="hint">${esc(f.hint)}</span>`:"";
   let inp="";
   if(f.type==="select") inp=f.add?`<div class="withadd">${selectHtml(id,f.opts(),v,f)}${addBtns(f)}</div>`:selectHtml(id,f.opts(),v,f);
   else if(f.type==="textarea") inp=`<textarea id="${id}">${esc(Array.isArray(v)?v.join("\n"):v)}</textarea>`;
+  else if(f.type==="months") inp=`<div class="chips" id="${id}">${MESI.map((m,i)=>`<label><input type="checkbox" value="${i+1}" ${(v||[]).map(Number).includes(i+1)?"checked":""}>${m.slice(0,3)}</label>`).join("")}</div>`;
+  else if(f.type==="scad") return `<div class="fld full" id="w_${f.k}"><span class="lb">${esc(f.l)}</span><div class="rows" id="${id}">${(v||[]).map(scadRow).join("")}</div><div class="actions"><button type="button" class="btn small" data-addscad="1">+ Rata</button><button type="button" class="btn small" data-ricalc="1">Ricalcola dal tipo di pagamento</button></div><span class="hint" id="scadInfo"></span></div>`;
   else if(f.type==="days") inp=`<div class="chips" id="${id}">${GIORNI.map((g,i)=>`<label><input type="checkbox" value="${i+1}" ${(v||[]).includes(i+1)?"checked":""}>${g}</label>`).join("")}</div>`;
   else if(f.type==="ops"){const o=opOpts(); inp=`<div class="chips" id="${id}">${o.map(([a,b])=>`<label><input type="checkbox" value="${esc(a)}" ${(v||[]).includes(a)?"checked":""}>${esc(b)}</label>`).join("")}${f.add?addBtns(f):""}</div>${o.length?"":`<span class="hint">Nessun operatore ancora: aggiungilo da qui.</span>`}`}
   else if(f.type==="bool") inp=`<select id="${id}"><option value="1" ${v!==false?"selected":""}>${f.yes}</option><option value="0" ${v===false?"selected":""}>${f.no}</option></select>`;
@@ -980,6 +1097,8 @@ function fieldHtml(f,v){
 }
 function readField(f){
   const el=document.getElementById("f_"+f.k); if(!el)return f.type==="ops"?[]:f.type==="righe"?[]:"";
+  if(f.type==="months")return [...el.querySelectorAll("input:checked")].map(x=>+x.value);
+  if(f.type==="scad")return [...el.querySelectorAll(".rg")].map(r=>{const i=r.querySelectorAll("input");return {data:i[0].value,importo:r2(parseFloat(String(i[1].value).replace(",","."))||0)}}).filter(x=>x.data);
   if(f.type==="days")return [...el.querySelectorAll("input:checked")].map(x=>+x.value);
   if(f.type==="ops")return [...el.querySelectorAll("input:checked")].map(x=>x.value);
   if(f.type==="votes"){const o={};el.querySelectorAll("select").forEach(s=>{if(s.value)o[s.dataset.area]=+s.value});return o}
@@ -1006,15 +1125,18 @@ function openForm(c,rec,prefill,returnTo){
   if(c==="clienti"&&!data.codIva)data.codIva=cliCod(rec);
   if(c==="clienti"&&rec&&rec.righeAbituali)data.righeAbituali=righeOf({righe:rec.righeAbituali,regime:rec.regime});
   const defCod=c==="fatture"?cliCod(byId("clienti",data.clienteId)):c==="clienti"?data.codIva:"22";
+  if((c==="fatture"||c==="acquisti")&&rec&&!(rec.scadenze&&rec.scadenze.length)&&rec.scadenza&&rec.tipo!=="nc")data.scadenze=[{data:rec.scadenza,importo:(c==="fatture"?vTot(rec):aTot(rec)).dovuto}];
   current={c,rec,defCod,occ:prefill&&prefill._occ,allocInit:(rec&&rec.alloc)||(prefill&&prefill.alloc)||[],returnTo:returnTo||null,lista:prefill&&prefill.lista};
+  current.scadManual=!!(data.scadenze&&data.scadenze.length);
   const extra=c==="fatture"&&rec?fattExtra(rec):"";
   const tOcc=c==="variazioni"&&current.occ?byId("sedi",current.occ.sedeId):null;
   const title=tOcc?`Turno: ${esc(tOcc.nome)} · ${esc(dLong(parse(current.occ.orig)))}`:c==="lista"?`Nuova voce: ${esc(ADD_LABEL["lista:"+String(current.lista).split("_")[0]]||"elenco")}`:`${rec?"Modifica":"Nuovo"}: ${esc(F.t.toLowerCase())}`;
   modalShell(title+(stack.length?` <span class="small muted" style="font-family:var(--f-body);font-weight:400">· poi torni a ${esc(FORMS[stack[stack.length-1].cur.c].t.toLowerCase())}</span>`:""),
-   `<form id="frm" novalidate><div class="mb">${tOcc?`<p class="note full">Turno ricorrente: ${esc(GIORNI_L[isoDow(parse(current.occ.orig))-1])} ${dShort(current.occ.orig)}, ${esc(tOcc.ora||"")}, ${n1(tOcc.durata)} h, ${esc(opNames(tOcc.operatori)||"nessuno")}. Le modifiche valgono solo per questo giorno.</p>`:""}${F.f.map(f=>fieldHtml(f,data[f.k])).join("")}${F.calc?'<div class="calc" id="calcBox"></div>':""}${F.alloc||c==="fatture"?'<div class="alloc" id="allocBox" hidden></div>':""}${c==="variazioni"||c==="straordinari"?'<div class="alloc" id="freeBox" hidden></div>':""}${extra}<div class="err full" id="ferr"></div></div>
+   `<form id="frm" novalidate><div class="mb">${tOcc?`<p class="note full">Turno ricorrente: ${esc(GIORNI_L[isoDow(parse(current.occ.orig))-1])} ${dShort(current.occ.orig)}, ${esc(tOcc.ora||"")}, ${n1(tOcc.durata)} h, ${esc(opNames(tOcc.operatori)||"nessuno")}. Le modifiche valgono solo per questo giorno.</p>`:""}${F.f.map(f=>fieldHtml(f,data[f.k])).join("")}${F.calc?'<div class="calc" id="calcBox"></div>':""}${F.calcPag?'<div class="calc" id="pagPrev" style="grid-template-columns:1fr"></div>':""}${F.alloc||c==="fatture"?'<div class="alloc" id="allocBox" hidden></div>':""}${c==="variazioni"||c==="straordinari"?'<div class="alloc" id="freeBox" hidden></div>':""}${extra}<div class="err full" id="ferr"></div></div>
    <div class="mf"><div class="actions">${rec?`<button type="button" class="btn danger" data-del="1">${c==="variazioni"?"Ripristina turno originale":"Elimina"}</button>`:""}${c==="fatture"&&rec?`<button type="button" class="btn" data-copytxt="1">Copia dati</button>`:""}${c==="fatture"&&rec&&rec.tipo!=="nc"&&residuoV(rec)>0.005?`<button type="button" class="btn" data-incassa="${rec.id}">Registra incasso</button>`:""}${c==="acquisti"&&rec&&residuoA(rec)>0.005?`<button type="button" class="btn" data-paga="${rec.id}">Registra pagamento</button>`:""}</div><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="submit" class="btn primary">Salva</button></div></div></form>`);
   if(c==="movimenti"){ setCausali(data.causale); }
   if(F.calc)updCalc();
+  if(F.calcPag)updPagPrev();
   formDynamics();
   const first=$("#frm input:not([type=checkbox]), #frm select"); if(first)first.focus();
 }
@@ -1033,10 +1155,10 @@ function formDynamics(){
     renderAlloc();
   }
   if(c==="fatture"){
-    const nc=$("#f_tipo").value==="nc"; $("#w_rifDoc").hidden=!nc; $("#w_ritenuta").hidden=nc; $("#w_scadenza").hidden=nc;
-    updTot(); renderAlloc();
+    const nc=$("#f_tipo").value==="nc"; $("#w_rifDoc").hidden=!nc; $("#w_ritenuta").hidden=nc; $("#w_pagamento").hidden=nc; $("#w_scadenze").hidden=nc;
+    updTot(); renderAlloc(); if(!nc)recalcScad(false);
   }
-  if(c==="acquisti")updTot();
+  if(c==="acquisti"){updTot();recalcScad(false)}
   if(c==="variazioni"||c==="straordinari")renderFree();
 }
 function updTot(){
@@ -1195,18 +1317,32 @@ async function submitForm(){
       for(const a of al){const r=$(`.al[data-doc="${a.doc}"]`); if(r&&a.importo>+r.dataset.res+0.005){$("#ferr").textContent="Un importo abbinato supera il residuo della fattura.";return}} }
     out.alloc=ctx?al:[];
   }
+  if(c==="pagamenti"){
+    const g=String(out.rate||"").split(/[^0-9]+/).filter(x=>x!=="").map(Number);
+    if(!g.length||g.some(x=>x>720)){$("#ferr").textContent="Indica i giorni delle scadenze, ad esempio 0, 30 oppure 30,60,90.";return}
+    out.rate=g.join(","); if(!out.giornoFisso)delete out.giornoFisso; if(out.giornoFisso>31){$("#ferr").textContent="Il giorno fisso va da 1 a 31.";return}
+    if(S.pagamenti.some(x=>String(x.descrizione).toLowerCase()===out.descrizione.toLowerCase()&&(!rec||x.id!==rec.id))){$("#ferr").textContent="Esiste già un tipo di pagamento con questa descrizione.";return}
+  }
+  if((c==="fatture"&&out.tipo!=="nc")||c==="acquisti"){
+    const t=c==="fatture"?vTot(out):aTot(out);
+    if(!out.scadenze||!out.scadenze.length){const pg=pagOf(out.pagamento)||pagSogg(soggForm()); out.scadenze=calcScadenze(pg,out.data,t.dovuto,c==="fatture"?t.ivaDeb:t.iva)}
+    const s=r2(out.scadenze.reduce((a,x)=>a+x.importo,0));
+    if(t.dovuto>0&&Math.abs(s-t.dovuto)>0.01){$("#ferr").textContent=`Le rate sommano ${eur2(s)} ma il netto da ${c==="fatture"?"incassare":"pagare"} è ${eur2(t.dovuto)}: correggi gli importi o premi "Ricalcola dal tipo di pagamento".`;return}
+    out.scadenze.sort((a,b)=>a.data.localeCompare(b.data)); out.scadenza=out.scadenze[0]?out.scadenze[0].data:out.data;
+  }
+  if(c==="fatture"&&out.tipo==="nc"){delete out.scadenze;delete out.pagamento}
   const obj=Object.assign({},rec||{},out); if(rec&&rec.esempio)obj.esempio=true;
   const rt=current.returnTo;
   const id=await save(c,obj); if(!id)return;
   closeModal();
-  if(rt){ applyNew(rt,(rt.k==="soggetto"?(c==="clienti"?"c:":"f:"):"")+id); toast(`"${obj.nome}" aggiunto e selezionato`); return }
+  if(rt){ applyNew(rt,(rt.k==="soggetto"?(c==="clienti"?"c:":"f:"):"")+id); toast(`"${obj.nome||obj.descrizione}" aggiunto e selezionato`); return }
   toast(c==="fatture"&&!rec?`Salvata ${obj.tipo==="nc"?"nota di credito":"fattura"} ${obj.numero}`:"Salvato");
 }
 function fattText(f){
   const c=byId("clienti",f.clienteId), t=vTot(f);
   const nota=[...new Set(t.riep.map(x=>x.c.norma).filter(Boolean))].map(s=>"\n"+s).join("");
   const riep=t.riep.map(x=>`${x.c.t==="norm"?"Aliquota "+x.c.al+"%":x.c.t==="split"?"Aliquota "+x.c.al+"% scissione pagamenti":x.c.d+(x.c.nat?" ("+x.c.nat+")":"")}: imponibile ${eur2(x.imp)}, imposta ${eur2(x.iva)}`).join("\n");
-  return `${f.tipo==="nc"?"Nota di credito":"Fattura"} ${f.numero} del ${dShort(f.data)}\nCliente: ${c?c.nome:f.clienteNome}${c&&c.piva?"\nP.IVA/CF: "+c.piva:""}${c&&c.sdi?"\nCodice destinatario: "+c.sdi:""}${f.rifDoc?"\nRif.: "+f.rifDoc:""}\n\n${righeOf(f).map(r=>{const k=codOf(r.cod);return `${r.descr} · ${n1(r.qta)} × ${eur2(r.prezzo)} · ${k.t==="norm"||k.t==="split"?"IVA "+k.al+"%":(k.nat||k.d)}`}).join("\n")}\n\nRiepilogo IVA\n${riep}\n\nImponibile ${eur2(t.imp)}\nIVA ${eur2(t.iva)}\nTotale ${eur2(t.tot)}${t.rit?`\nRitenuta 4% art. 25-ter DPR 600/73 ${eur2(t.rit)}`:""}${t.ivaSplit?`\nIVA versata dal committente (scissione) ${eur2(t.ivaSplit)}`:""}${t.rit||t.ivaSplit?`\nNetto a pagare ${eur2(t.dovuto)}`:""}${f.scadenza?"\nScadenza "+dShort(f.scadenza):""}${nota}`;
+  return `${f.tipo==="nc"?"Nota di credito":"Fattura"} ${f.numero} del ${dShort(f.data)}\nCliente: ${c?c.nome:f.clienteNome}${c&&c.piva?"\nP.IVA/CF: "+c.piva:""}${c&&c.sdi?"\nCodice destinatario: "+c.sdi:""}${f.rifDoc?"\nRif.: "+f.rifDoc:""}\n\n${righeOf(f).map(r=>{const k=codOf(r.cod);return `${r.descr} · ${n1(r.qta)} × ${eur2(r.prezzo)} · ${k.t==="norm"||k.t==="split"?"IVA "+k.al+"%":(k.nat||k.d)}`}).join("\n")}\n\nRiepilogo IVA\n${riep}\n\nImponibile ${eur2(t.imp)}\nIVA ${eur2(t.iva)}\nTotale ${eur2(t.tot)}${t.rit?`\nRitenuta 4% art. 25-ter DPR 600/73 ${eur2(t.rit)}`:""}${t.ivaSplit?`\nIVA versata dal committente (scissione) ${eur2(t.ivaSplit)}`:""}${t.rit||t.ivaSplit?`\nNetto a pagare ${eur2(t.dovuto)}`:""}${(()=>{const p=pagOf(f.pagamento), rs=rateDoc("v",f); return (p?"\nPagamento: "+p.descrizione+" ("+feCode(p.strumento)+")":"")+(rs.length?"\nScadenze: "+rs.map(r=>dShort(r.data)+" "+eur2(r.importo)).join(", "):"")})()}${nota}`;
 }
 
 /* ---------- fatture dei canoni ---------- */
@@ -1224,7 +1360,9 @@ async function genFatture(){
     if(!righe.length)continue;
     if(existing.has(c.id)){skipped++;continue}
     const numero=vendNum("fattura",data);
-    const ok=await save("fatture",{tipo:"fattura",numero,clienteId:c.id,clienteNome:c.nome,data,mese:mk,righe,ritenuta:!!c.ritenuta,scadenza:iso(addDays(parse(data),+c.ggPagamento||30)),auto:true,alloc:[]});
+    const nd={tipo:"fattura",numero,clienteId:c.id,clienteNome:c.nome,data,mese:mk,righe,ritenuta:!!c.ritenuta,auto:true,alloc:[]};
+    const pg=pagSogg(c), tt=vTot(nd); nd.pagamento=pg&&pg.id||""; nd.scadenze=calcScadenze(pg,data,tt.dovuto,tt.ivaDeb); nd.scadenza=nd.scadenze[0].data;
+    const ok=await save("fatture",nd);
     if(!ok)break; created++;
   }
   toast(created?`Preparate ${created} fatture${skipped?`, ${skipped} clienti già fatturati`:""}.`:skipped?"Tutti i clienti sono già fatturati per questo mese.":"Nessun importo da fatturare: controlla canoni e straordinari svolti.");
@@ -1247,7 +1385,7 @@ async function loadExamples(){
   [["cl1","Condominio Via Padova 112","Studio Bianchi Amministrazioni","22",true,30,[{descr:"Pulizia scale A-B e androni, {mese}",qta:1,prezzo:1250,cod:"22"},{descr:"Pulizia box e cortile, {mese}",qta:1,prezzo:180,cod:"22"}]],
     ["cl2","Ottica Brera S.r.l.","Sig.ra Galli","RC",false,30,[]],
     ["cl3","Studio Legale Marini","Avv. Marini","RC",false,60,[{descr:"Pulizia uffici piano 3 e archivio, {mese}",qta:1,prezzo:2110,cod:"RC"},{descr:"Fornitura materiale igienico (carta, sapone)",qta:1,prezzo:85,cod:"22"},{descr:"Rimborso spese anticipate in nome e per conto",qta:1,prezzo:0,cod:"N1"}]]]
-   .forEach(([id,nome,referente,codIva,ritenuta,ggPagamento,righeAbituali])=>w.push(["clienti",{id,nome,referente,codIva,ritenuta,ggPagamento,righeAbituali,piva:"",esempio:true}]));
+   .forEach(([id,nome,referente,codIva,ritenuta,ggPagamento,righeAbituali])=>w.push(["clienti",{id,nome,referente,codIva,ritenuta,pagamento:id==="cl2"?"RB30FM":ggPagamento===60?"BB60FM":"BB30DF",righeAbituali,piva:"",esempio:true}]));
   [["se1","cl1","Via Padova 112, scale A-B","Via Padova 112, Milano","Condominio",900,[1,3,5],"07:00",2.5,["op2","op3"],1250],
    ["se2","cl1","Via Padova 112, box e cortile","Via Padova 112, Milano","Condominio",600,[2],"07:30",1.5,["op2"],180],
    ["se3","cl2","Negozio Brera","Corso Garibaldi 40, Milano","Negozio",220,[1,2,3,4,5,6],"08:00",1,["op3"],640],
@@ -1270,7 +1408,7 @@ async function loadExamples(){
   w.push(["fatture",{id:"nc1",tipo:"nc",numero:"NC1/"+py,clienteId:"cl3",clienteNome:"Studio Legale Marini",data:D(-6),mese:pk,righe:[{descr:"Storno: archivio non pulito il 3 per chiusura locali",qta:1,prezzo:40,cod:"RC"}],rifDoc:"Fattura 3/"+py,alloc:[{doc:"v:fa3",importo:40}],esempio:true}]);
   // fornitori e acquisti
   [["fo1","Detergenti Lombardia S.r.l.","Prodotti di pulizia"],["fo2","Noleggio Macchine Pulizia Nord","Noleggi"],["fo3","Studio Conti Commercialisti","Servizi professionali"]]
-   .forEach(([id,nome,categoria])=>w.push(["fornitori",{id,nome,categoria,ggPagamento:30,esempio:true}]));
+   .forEach(([id,nome,categoria])=>w.push(["fornitori",{id,nome,categoria,pagamento:{fo1:"RB6090",fo2:"BB30FM",fo3:"RDV"}[id],esempio:true}]));
   w.push(["acquisti",{id:"ac1",fornitoreId:"fo1",numero:"FT 845",data:D(-20),dataReg:D(-18),protocollo:"1/"+y,categoria:"Prodotti di pulizia",righe:[{descr:"Detergenti multiuso, sacchi, carta",qta:1,prezzo:412.5,iva:22}],ritenutaPct:0,scadenza:D(10),esempio:true}]);
   w.push(["acquisti",{id:"ac2",fornitoreId:"fo2",numero:"234/A",data:D(-35),dataReg:D(-33),protocollo:"2/"+y,categoria:"Noleggi",righe:[{descr:"Noleggio lavasciuga, 1 mese",qta:1,prezzo:180,iva:22}],ritenutaPct:0,scadenza:D(-5),esempio:true}]);
   w.push(["acquisti",{id:"ac3",fornitoreId:"fo3",numero:"12",data:D(-15),dataReg:D(-15),protocollo:"3/"+y,categoria:"Servizi professionali",righe:[{descr:"Consulenza contabile trimestrale",qta:1,prezzo:600,iva:22}],ritenutaPct:20,scadenza:D(15),esempio:true}]);
@@ -1298,7 +1436,7 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth]");
+  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
@@ -1334,8 +1472,13 @@ document.addEventListener("click",async e=>{
   if(d.act==="loadEx"){el.disabled=true;loadExamples();return}
   if(d.act==="rmEx"){removeExamples(el);return}
   if(d.act==="genFatt"){el.disabled=true;await genFatture();el.disabled=false;return}
-  if(d.incassa){e.stopPropagation();const f=byId("fatture",d.incassa);if(!f)return;const r=residuoV(f);openMovimento({tipo:"entrata",causale:"Incasso cliente",conto:"banca",importo:r,soggetto:"c:"+f.clienteId,alloc:[{doc:"v:"+f.id,importo:r}],descrizione:"Incasso "+vLabel(f)});return}
-  if(d.paga){e.stopPropagation();const a=byId("acquisti",d.paga);if(!a)return;const r=residuoA(a);openMovimento({tipo:"uscita",causale:"Pagamento fornitore",conto:"banca",importo:r,soggetto:"f:"+a.fornitoreId,alloc:[{doc:"a:"+a.id,importo:r}],descrizione:"Pagamento "+aLabel(a)});return}
+  if(d.addscad){const t=docTotForm(), s=readField({k:"scadenze",type:"scad"}).reduce((a,x)=>a+x.importo,0), last=readField({k:"scadenze",type:"scad"}).pop(); $("#f_scadenze").insertAdjacentHTML("beforeend",scadRow({data:last?iso(addDays(parse(last.data),30)):($("#f_data").value||TODAY()),importo:r2(Math.max(0,t.dovuto-s))})); current.scadManual=true; updScadInfo(); return}
+  if(d.rmscad){el.closest(".rg").remove(); current.scadManual=true; updScadInfo(); return}
+  if(d.ricalc){recalcScad(true); toast("Scadenze ricalcolate"); return}
+  if(d.sclato){UI.scLato=d.sclato;render();return}
+  if(d.act==="seedPag"){await seedPagamenti(true);return}
+  if(d.incassa){e.stopPropagation();const f=byId("fatture",d.incassa);if(!f)return;const r=d.imp?+d.imp:residuoV(f), pg=pagOf(f.pagamento)||pagSogg(byId("clienti",f.clienteId))||{};openMovimento({tipo:"entrata",causale:"Incasso cliente",conto:pg.conto||"banca",importo:r,soggetto:"c:"+f.clienteId,alloc:[{doc:"v:"+f.id,importo:r}],descrizione:(pg.strumento?strName(pg.strumento)+" · ":"")+"Incasso "+vLabel(f)+(d.rata?" · rata "+d.rata:"")});return}
+  if(d.paga){e.stopPropagation();const a=byId("acquisti",d.paga);if(!a)return;const r=d.imp?+d.imp:residuoA(a), pg=pagOf(a.pagamento)||pagSogg(byId("fornitori",a.fornitoreId))||{};openMovimento({tipo:"uscita",causale:"Pagamento fornitore",conto:pg.conto||"banca",importo:r,soggetto:"f:"+a.fornitoreId,alloc:[{doc:"a:"+a.id,importo:r}],descrizione:(pg.strumento?strName(pg.strumento)+" · ":"")+"Pagamento "+aLabel(a)+(d.rata?" · rata "+d.rata:"")});return}
   if(d.abbina){const[t,id]=d.abbina.split(":");const r=byId(t==="m"?"movimenti":"fatture",id);if(r)openForm(t==="m"?"movimenti":"fatture",r);return}
   if(d.mastrino){e.stopPropagation();UI.maSel=d.mastrino;tab="mastrini";render();window.scrollTo(0,0);return}
   if(d.vstato!==undefined){UI.vStato=d.vstato;render();return}
@@ -1350,6 +1493,7 @@ document.addEventListener("click",async e=>{
   if(d.copytxt&&current&&current.rec){const t=fattText(current.rec);try{await navigator.clipboard.writeText(t);toast("Dati copiati")}catch{modalShell("Dati della fattura",`<div class="mb"><pre class="copy full">${esc(t)}</pre></div>`);current=null;toast("Seleziona il testo e copialo")}return}
   if(d.del!==undefined&&current&&current.rec){
     const{c,rec}=current;
+    if(c==="pagamenti"){const n=S.clienti.filter(x=>x.pagamento===rec.id).length+S.fornitori.filter(x=>x.pagamento===rec.id).length; if(n){$("#ferr").textContent=`È assegnato a ${n} tra clienti e fornitori: cambia prima il loro tipo di pagamento.`;return}}
     if(!el.dataset.sure){el.dataset.sure="1";
       const linked=c==="fatture"?allocated("v:"+rec.id):c==="acquisti"?allocated("a:"+rec.id):0;
       el.textContent=c==="variazioni"?"Conferma: torna al turno originale":linked?"Conferma: gli abbinamenti resteranno da riassegnare":"Conferma eliminazione";return}
@@ -1361,7 +1505,9 @@ document.addEventListener("submit",e=>{if(e.target.id==="frm"){e.preventDefault(
 document.addEventListener("input",e=>{
   if(!current||!e.target.closest("#frm"))return;
   if(current.c==="preventivi")updCalc();
-  if(e.target.closest("#f_righe")||e.target.id==="f_ritenutaPct")updTot();
+  if(e.target.closest("#f_scadenze")){current.scadManual=true;updScadInfo();return}
+  if(current.c==="pagamenti")updPagPrev();
+  if(e.target.closest("#f_righe")||e.target.id==="f_ritenutaPct"){updTot();recalcScad(false)}
   if(e.target.closest("#allocBox"))updAllocSum();
   if(e.target.id==="f_importo"){const on=[...document.querySelectorAll("#allocBox .al[data-doc]")].filter(r=>r.querySelector("[type=checkbox]").checked);
     if(on.length===1){const v=readField({k:"importo",type:"number"}); on[0].querySelector("[type=number]").value=v>0?r2(Math.min(v,+on[0].dataset.res)):""}
@@ -1378,18 +1524,22 @@ document.addEventListener("change",async e=>{
   if(id==="ivaPer"){UI.ivaPer=e.target.value;render();return}
   if(id==="agOp"){UI.agOp=e.target.value;render();return}
   if(id==="tbData"){UI.tbData=e.target.value;render();return}
+  if(id==="scPer"){UI.scPer=e.target.value;render();return}
+  if(id==="scStr"){UI.scStr=e.target.value;render();return}
   if(id==="gpsOn"){const v=e.target.checked; const {error}=await sb.from("impostazioni").update({gps_attivo:v}).eq("id",1); if(error){toast(errMsg(error));e.target.checked=!v;return} gpsOn=v; for(const k of Object.keys(AG))delete AG[k]; schedulePublish(300); toast(v?"Posizione richiesta alla timbratura":"Posizione non più richiesta"); return}
   if(id==="impFile"){leggiImport(e.target.files[0]);return}
   if(id==="paSel"){UI.paSel=e.target.value;render();return}
   if(id==="paTutte"){UI.paTutte=e.target.checked;render();return}
   if(!current||!e.target.closest("#frm"))return;
+  if((current.c==="fatture"||current.c==="acquisti")&&(id==="f_pagamento"||id==="f_data"||id==="f_ritenutaPct")){recalcScad(false);return}
+  if(current.c==="pagamenti"){updPagPrev()}
   if((current.c==="variazioni"||current.c==="straordinari")&&(["f_data","f_ora","f_durata"].includes(id)||e.target.closest("#f_operatori"))){renderFree();return}
   if(e.target.closest("#allocBox")){const r=e.target.closest(".al"); if(r&&e.target.type==="checkbox"){const n=r.querySelector("[type=number]"); if(e.target.checked&&!n.value)n.value=r2(Math.min(+r.dataset.res,Math.max(0,(allocContext()||{max:0}).max-readAlloc().reduce((a,x)=>a+x.importo,0)))); if(!e.target.checked)n.value=""} updAllocSum();return}
   if(current.c==="preventivi"&&id==="f_tipo"){$("#f_produttivita").value=PROD[e.target.value]||200;updCalc();return}
   if(current.c==="movimenti"&&id==="f_tipo"){setCausali();current.allocInit=[];formDynamics();return}
   if(current.c==="movimenti"&&id==="f_soggetto"){current.allocInit=[];renderAlloc(false);return}
-  if(current.c==="fatture"&&id==="f_clienteId"){const c=byId("clienti",e.target.value); if(c){applyTpl(c,false);$("#f_ritenuta").value=c.ritenuta?"1":"0";$("#f_scadenza").value=iso(addDays(parse($("#f_data").value||TODAY()),+c.ggPagamento||30))} current.allocInit=[];formDynamics();return}
-  if(current.c==="acquisti"&&id==="f_fornitoreId"){const f=byId("fornitori",e.target.value); if(f){if(f.categoria)$("#f_categoria").value=f.categoria; $("#f_scadenza").value=iso(addDays(parse($("#f_data").value||TODAY()),+f.ggPagamento||30))} return}
+  if(current.c==="fatture"&&id==="f_clienteId"){const c=byId("clienti",e.target.value); if(c){applyTpl(c,false);$("#f_ritenuta").value=c.ritenuta?"1":"0";$("#f_pagamento").value=c.pagamento||""} current.allocInit=[];formDynamics();return}
+  if(current.c==="acquisti"&&id==="f_fornitoreId"){const f=byId("fornitori",e.target.value); if(f){if(f.categoria)$("#f_categoria").value=f.categoria; $("#f_pagamento").value=f.pagamento||""} recalcScad(false); return}
   if(current.c==="fatture"&&(id==="f_tipo"||id==="f_ritenuta")){formDynamics();return}
   if(current.c==="clienti"&&id==="f_codIva"){current.defCod=e.target.value; document.querySelectorAll("#f_righeAbituali .rg:not(.hd)").forEach(r=>{if(!r.querySelector("input").value)r.querySelector("select").value=e.target.value});return}
   if(e.target.closest(".rows"))updTot();
@@ -1526,7 +1676,7 @@ async function enter(session){
   if(!tit){ mode="notowner"; return render() }
   try{ await loadAll(); await loadTimb(); const {data:imp}=await sb.from("impostazioni").select("gps_attivo").eq("id",1).maybeSingle(); gpsOn=!!(imp&&imp.gps_attivo) }
   catch(e){ mode="login"; authMsg="Caricamento non riuscito: "+traduci(e.message); return render() }
-  mode="db"; ver++; render(); subscribe(); schedulePublish(800);
+  mode="db"; ver++; render(); subscribe(); schedulePublish(800); seedPagamenti(false);
   setInterval(()=>{ver++;render();schedulePublish()},15*60*1000);
 }
 async function boot(){

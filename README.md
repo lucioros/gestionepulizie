@@ -45,6 +45,8 @@ GitHub → repository → **Settings → Pages** → *Build and deployment*: **D
 
 ## Come funziona
 
+- **Tipi di pagamento e incasso** (Contabilità → Tipi di pagamento): rimessa diretta, bonifico, RiBa, SDD, contanti, assegno, POS, PagoPA e tutti gli strumenti della fattura elettronica (MP01–MP23). Ogni tipo definisce i giorni delle rate, il calcolo da data fattura o fine mese, il giorno fisso, i mesi esclusi, l'IVA alla prima rata e il conto predefinito. Clienti e fornitori hanno il loro tipo; le fatture lo propongono e calcolano le rate, modificabili a mano. Lo **Scadenzario** elenca tutte le rate aperte.
+
 - **Permessi**: il titolare (l'email in `impostazioni`) legge e scrive tutto. Ogni dipendente legge solo la propria agenda e le proprie timbrature, e può solo aggiungere timbrature proprie. Lo impone il database stesso (Row Level Security), non l'app.
 - **Agenda dei dipendenti**: il gestionale pubblica per ogni dipendente con email i turni da ieri ai prossimi 14 giorni. Lo rifà ogni volta che cambi turni, sedi o assenze e ogni 15 minuti finché resta aperto. Se nessuno apre il gestionale per più di due settimane, l'agenda dei dipendenti si esaurisce.
 - **Timbrature**: l'ora è quella del server, non del telefono. Si possono timbrare solo i turni della propria agenda, e solo il giorno stesso. La fine richiede prima l'inizio. Le correzioni del titolare restano segnate come "corretta".
