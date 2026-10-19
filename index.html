@@ -203,6 +203,10 @@ table.agrid .tday{background:color-mix(in srgb,var(--signal) 14%,transparent)}
 .authbox .fld input{border:1px solid var(--line);border-radius:6px;padding:9px 10px;background:var(--bg);width:100%}
 .authbox form{display:flex;flex-direction:column;gap:12px}
 .ok-msg{color:var(--ok);font-size:13px}
+.wz input[type=number]{border:1px solid var(--line);border-radius:6px;padding:5px 7px;background:var(--bg);width:110px;text-align:right;font-family:var(--f-mono)}
+.wz input[type=number]:disabled{opacity:.4}
+.wz input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+.wz select,.wz input[type=date],.wz #wz_descr{border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:var(--bg);width:100%}
 .err{color:var(--bad);font-size:12px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:6px;font-weight:500;z-index:60;max-width:calc(100% - 32px)}
 pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:6px;font-family:var(--f-mono);font-size:12px;margin:0;overflow-wrap:anywhere}
@@ -351,7 +355,13 @@ function rateDoc(kind,doc){
   let sc=Array.isArray(doc.scadenze)&&doc.scadenze.length?doc.scadenze.map(x=>({data:x.data,importo:+x.importo||0})):[{data:doc.scadenza||doc.data,importo:t.dovuto}];
   const s=r2(sc.reduce((a,x)=>a+x.importo,0)); if(Math.abs(s-t.dovuto)>0.005)sc[sc.length-1].importo=r2(sc[sc.length-1].importo+t.dovuto-s);
   let pagato=r2(t.dovuto-(kind==="v"?residuoV(doc):residuoA(doc)));
-  return sc.map((x,i)=>{const p=r2(Math.min(x.importo,Math.max(0,pagato))); pagato=r2(pagato-p); return {n:i+1,data:x.data,importo:x.importo,pagato:p,res:r2(x.importo-p)}});
+  // prima le somme abbinate a una rata precisa, poi il resto dalla rata più vecchia
+  const tgt={}; (allocMap().byDoc[(kind==="v"?"v:":"a:")+doc.id]||[]).forEach(x=>{if(x.rata)tgt[x.rata]=(tgt[x.rata]||0)+x.v});
+  const out=sc.map((x,i)=>({n:i+1,data:x.data,importo:x.importo,pagato:0}));
+  out.forEach(r=>{const t=r2(Math.min(r.importo,tgt[r.n]||0,Math.max(0,pagato))); r.pagato=t; pagato=r2(pagato-t)});
+  out.forEach(r=>{const q=r2(Math.min(r.importo-r.pagato,Math.max(0,pagato))); r.pagato=r2(r.pagato+q); pagato=r2(pagato-q)});
+  out.forEach(r=>r.res=r2(r.importo-r.pagato));
+  return out;
 }
 const prossimaRata=(kind,doc)=>{const rs=rateDoc(kind,doc);return rs.find(r=>r.res>0.005)||rs[rs.length-1]||null};
 function scadCell(kind,doc){ const rs=rateDoc(kind,doc); if(!rs.length)return""; const nx=rs.find(r=>r.res>0.005);
@@ -549,7 +559,7 @@ let _alloc=null,_allocVer=-1;
 function allocMap(){
   if(_allocVer===ver&&_alloc)return _alloc;
   const byDoc={},bySrc={};
-  const add=(src,list)=>(list||[]).forEach(x=>{const v=+x.importo||0; if(!v||!x.doc)return; (byDoc[x.doc]=byDoc[x.doc]||[]).push({src,v}); bySrc[src]=(bySrc[src]||0)+v});
+  const add=(src,list)=>(list||[]).forEach(x=>{const v=+x.importo||0; if(!v||!x.doc)return; (byDoc[x.doc]=byDoc[x.doc]||[]).push({src,v,rata:+x.rata||0}); bySrc[src]=(bySrc[src]||0)+v});
   S.movimenti.forEach(m=>add("m:"+m.id,m.alloc));
   S.fatture.filter(f=>f.tipo==="nc").forEach(f=>add("n:"+f.id,f.alloc));
   _alloc={byDoc,bySrc};_allocVer=ver;return _alloc;
@@ -729,6 +739,82 @@ function vPersonale(){
   <p class="note">Il costo orario è il costo aziendale lordo (paga, contributi, TFR, ratei): serve per calcolare margini e preventivi. "Timbrate" sono le ore registrate dai dipendenti con l'app, dall'inizio alla fine di ogni turno.</p>${vTimbrature()}`:
   `<div class="empty"><h2>Nessun operatore</h2><p>Aggiungi il personale con costo orario e ore di contratto: il registro segnalerà chi è sovraccarico o assegnato a due sedi insieme.</p><button class="btn primary" data-new="operatori">Aggiungi operatore</button></div>`);
 }
+/* ---------- incasso / pagamento guidato per rate ---------- */
+function openWizard(lato,soggId,docKey,rata,imp){
+  current={c:"wiz",lato,sogg:soggId||"",sel:{},conto:null,contoUser:false,descrEdit:false,data:TODAY()};
+  if(docKey){ const rows=wizRows(), mine=rows.filter(x=>x.dk===docKey);
+    if(rata){const n=parseInt(rata); const r=mine.find(x=>x.r.n===n); if(r)current.sel[r.key]=imp?r2(Math.min(+imp,r.r.res)):r.r.res}
+    else { const due=mine.filter(x=>x.r.data<=TODAY()); (due.length?due:mine.slice(0,1)).forEach(x=>current.sel[x.key]=x.r.res) } }
+  renderWizard();
+}
+function wizRows(){
+  const W=current; if(!W||!W.sogg)return [];
+  const k=W.lato==="c"?"v":"a", sg=byId(W.lato==="c"?"clienti":"fornitori",W.sogg);
+  const docs=W.lato==="c"?S.fatture.filter(f=>f.clienteId===W.sogg&&f.tipo!=="nc"):S.acquisti.filter(a=>a.fornitoreId===W.sogg);
+  return docs.flatMap(d=>{const rs=rateDoc(k,d), pg=pagOf(d.pagamento)||pagSogg(sg)||{};
+    return rs.filter(r=>r.res>0.005).map(r=>({key:k+":"+d.id+"#"+r.n,dk:k+":"+d.id,doc:d,label:k==="v"?vLabel(d):aLabel(d),r,n:rs.length,pg}))})
+    .sort((a,b)=>a.r.data.localeCompare(b.r.data)||a.label.localeCompare(b.label));
+}
+function wizSelect(mode){
+  const W=current, rows=wizRows(); W.sel={};
+  rows.forEach(x=>{ if(mode==="tutte"||(mode==="scadute"&&x.r.data<=TODAY()))W.sel[x.key]=x.r.res });
+  renderWizard();
+}
+function wizSummary(){
+  const W=current, rows=wizRows().filter(x=>W.sel[x.key]!==undefined);
+  const tot=r2(rows.reduce((a,x)=>a+(+W.sel[x.key]||0),0));
+  const pg=(rows[0]||{}).pg||{};
+  if(!W.contoUser)W.conto=pg.conto&&conti().some(c=>c.id===pg.conto)?pg.conto:(W.conto||"banca");
+  const strs=[...new Set(rows.map(x=>x.pg.strumento).filter(Boolean))].map(strName);
+  const descr=(strs.length?strs.join(", ")+" · ":"")+(W.lato==="c"?"Incasso ":"Pagamento ")+rows.map(x=>x.label+(x.n>1?" r."+x.r.n+"/"+x.n:"")+(+W.sel[x.key]<x.r.res-0.005?" (acconto)":"")).join(", ");
+  return {rows,tot,descr};
+}
+function renderWizard(){
+  const W=current, isC=W.lato==="c", rows=wizRows(), sm=wizSummary(), td=TODAY();
+  const anag=(isC?S.clienti:S.fornitori).slice().sort((a,b)=>a.nome.localeCompare(b.nome));
+  const aperto=id=>openDocs((isC?"c:":"f:")+id).reduce((a,d)=>a+d.res,0);
+  const acconti=W.sogg?S.movimenti.filter(m=>m.tipo===(isC?"entrata":"uscita")&&movSogg(m)===W.lato+":"+W.sogg).reduce((a,m)=>a+Math.max(0,nonAbbinato("m:"+m.id)),0):0;
+  const descr=W.descrEdit&&$("#wz_descr")?$("#wz_descr").value:sm.descr;
+  modalShell(isC?"Incasso da cliente":"Pagamento a fornitore",`<div class="mb wz">
+    <div class="fld"><label for="wz_sogg">${isC?"Cliente":"Fornitore"}</label><select id="wz_sogg"><option value="">Scegli…</option>${anag.map(x=>{const a=aperto(x.id);return `<option value="${x.id}" ${x.id===W.sogg?"selected":""}>${esc(x.nome)}${a>0.005?" · "+eur2(a)+" aperti":""}</option>`}).join("")}</select></div>
+    <div class="fld"><label for="wz_data">Data ${isC?"dell'incasso":"del pagamento"}</label><input type="date" id="wz_data" value="${W.data}"></div>
+    <div class="fld full"><span class="lb">${isC?"Incassato su":"Pagato da"}</span><div class="seg" role="group" aria-label="Conto">${conti().map(c=>`<button type="button" data-wzconto="${c.id}" aria-pressed="${W.conto===c.id}">${esc(c.nome)}</button>`).join("")}</div></div>
+    <div class="full">${!W.sogg?`<p class="muted">Scegli ${isC?"il cliente":"il fornitore"} per vedere le fatture da saldare.</p>`:!rows.length?`<p class="muted">Nessuna fattura da ${isC?"incassare":"pagare"} per questo ${isC?"cliente":"fornitore"}.</p>`:
+      `<div class="ph" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px"><span class="lb" style="font-weight:600;font-size:12px">${rows.length} rate da ${isC?"incassare":"pagare"}</span><div class="actions"><button type="button" class="btn small" data-wzall="scadute">Scadute</button><button type="button" class="btn small" data-wzall="tutte">Tutte</button><button type="button" class="btn small" data-wzall="nessuna">Nessuna</button></div></div>
+      <div class="tablewrap"><table><thead><tr><th></th><th>Fattura</th><th>Rata</th><th>Scadenza</th><th>Strumento</th><th class="r">Da saldare</th><th class="r">Importo</th></tr></thead><tbody>${rows.map(x=>{const on=W.sel[x.key]!==undefined, late=x.r.data<td;
+        return `<tr class="${on?"sel":""}"><td><input type="checkbox" data-wzk="${x.key}" ${on?"checked":""} aria-label="Seleziona ${esc(x.label)} rata ${x.r.n}"></td><td class="mono small">${esc(x.label)}<div class="muted">del ${dShort(x.doc.data)}</div></td><td class="small">${x.n>1?x.r.n+"/"+x.n:"unica"}</td><td class="mono small ${late?"neg":""}">${dShort(x.r.data)}${late?'<div class="small">scaduta</div>':""}</td><td class="small">${esc(strName(x.pg.strumento||""))}</td><td class="r num">${eur2(x.r.res)}${x.r.pagato>0.005?`<div class="small muted">di ${eur2(x.r.importo)}</div>`:""}</td><td class="r"><input type="number" step="0.01" min="0" data-wzi="${x.key}" value="${on?W.sel[x.key]:""}" ${on?"":"disabled"} aria-label="Importo"></td></tr>`}).join("")}</tbody></table></div>`}
+      ${acconti>0.005?`<p class="note">Ci sono ${eur2(acconti)} già ${isC?"incassati":"pagati"} e non abbinati a fatture: li trovi in Partite aperte con il pulsante "Abbina".</p>`:""}</div>
+    <div class="fld full"><label for="wz_descr">Descrizione in prima nota</label><input id="wz_descr" value="${esc(descr)}"></div>
+    <div class="err full" id="ferr"></div></div>
+    <div class="mf"><span class="num" id="wz_tot" style="align-self:center">Totale <b>${eur2(sm.tot)}</b></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-wzsave="1" ${sm.rows.length?"":"disabled"}>${isC?"Registra incasso":"Registra pagamento"} di ${eur2(sm.tot)} · ${esc(contoNome(W.conto))}</button></div></div>`);
+}
+function wizRefreshTot(){
+  const sm=wizSummary(), W=current; $("#wz_tot").innerHTML=`Totale <b>${eur2(sm.tot)}</b>`;
+  const b=$('[data-wzsave]'); if(b){b.textContent=`${W.lato==="c"?"Registra incasso":"Registra pagamento"} di ${eur2(sm.tot)} · ${contoNome(W.conto)}`; b.disabled=!sm.rows.length}
+  if(!W.descrEdit&&$("#wz_descr"))$("#wz_descr").value=sm.descr;
+}
+async function saveWizard(){
+  const W=current, sm=wizSummary(), err=t=>{$("#ferr").textContent=t};
+  if(!sm.rows.length)return err("Seleziona almeno una rata.");
+  if(!W.data)return err("Indica la data.");
+  for(const x of sm.rows){const v=+W.sel[x.key]; if(!(v>0))return err(`Importo mancante per ${x.label} rata ${x.r.n}.`); if(v>x.r.res+0.005)return err(`${x.label} rata ${x.r.n}: l'importo supera quanto resta da saldare (${eur2(x.r.res)}).`)}
+  const m={data:W.data,tipo:W.lato==="c"?"entrata":"uscita",conto:W.conto||"banca",causale:W.lato==="c"?"Incasso cliente":"Pagamento fornitore",importo:sm.tot,soggetto:W.lato+":"+W.sogg,
+    descrizione:($("#wz_descr").value||sm.descr).trim(),alloc:sm.rows.map(x=>({doc:x.dk,importo:r2(+W.sel[x.key]),rata:x.r.n}))};
+  const b=$('[data-wzsave]'); if(b)b.disabled=true;
+  const id=await save("movimenti",m); if(!id){if(b)b.disabled=false;return}
+  closeAll(); toast(`${W.lato==="c"?"Incasso":"Pagamento"} di ${eur2(sm.tot)} registrato su ${contoNome(m.conto)}: ${sm.rows.length} rat${sm.rows.length>1?"e":"a"}`);
+}
+document.addEventListener("change",e=>{
+  if(!current||current.c!=="wiz")return; const t=e.target, W=current;
+  if(t.id==="wz_sogg"){W.sogg=t.value;W.sel={};W.contoUser=false;W.descrEdit=false;renderWizard();return}
+  if(t.id==="wz_data"){W.data=t.value;return}
+  if(t.dataset.wzk){const x=wizRows().find(r=>r.key===t.dataset.wzk); if(t.checked&&x)W.sel[x.key]=x.r.res; else delete W.sel[t.dataset.wzk]; const de=W.descrEdit, dv=$("#wz_descr").value; renderWizard(); if(de)$("#wz_descr").value=dv;}
+});
+document.addEventListener("input",e=>{
+  if(!current||current.c!=="wiz")return; const t=e.target;
+  if(t.dataset.wzi){current.sel[t.dataset.wzi]=r2(parseFloat(String(t.value).replace(",","."))||0);wizRefreshTot();return}
+  if(t.id==="wz_descr")current.descrEdit=true;
+});
 async function seedPagamenti(forza){
   if(!forza&&(S.pagamenti.length||S.liste.some(x=>x.id==="pagamentiInit")))return;
   const rows=PAG_DEFAULT.filter(p=>!S.pagamenti.some(x=>x.id===p.id)).map(p=>{const d=Object.assign({},p);delete d.id;return {col:"pagamenti",id:p.id,data:d}});
@@ -902,7 +988,7 @@ function vPrimaNota(){
     const na=(m.tipo!=="giroconto"&&movSogg(m))?nonAbbinato("m:"+m.id):0;
     return `<tr class="click" data-edit="movimenti:${m.id}"><td class="mono small">${dShort(m.data)}</td><td class="small">${m.tipo==="giroconto"?esc(contoNome(m.conto))+" → "+esc(contoNome(m.contoDest)):esc(contoNome(m.conto))}</td><td>${esc(m.causale||"")}<div class="small muted">${esc([soggNome(movSogg(m)),m.descrizione,docs].filter(Boolean).join(" · "))}</div>${na>0.005&&(m.causale==="Incasso cliente"||m.causale==="Pagamento fornitore")?` <span class="pill warn">${eur2(na)} da abbinare</span>`:""}</td><td class="r num pos">${e?eur2(e):m.tipo==="giroconto"&&!UI.pnConto?eur2(v):""}</td><td class="r num neg">${u?eur2(u):""}</td>${prog!=null?`<td class="r num">${eur2(prog)}</td>`:""}</tr>`}).join("");
   const mesi=[...new Set(S.movimenti.map(m=>(m.data||"").slice(0,7)).filter(Boolean))].sort().reverse();
-  return head("Prima nota",`Liquidità totale ${eur2(cs.reduce((a,c)=>a+saldoConto(c.id),0))}`,`<button class="btn" data-new="conti">Nuovo conto</button><button class="btn" data-new="movimenti" data-giro="1">Giroconto</button><button class="btn primary" data-new="movimenti">Registra movimento</button>`)+
+  return head("Prima nota",`Liquidità totale ${eur2(cs.reduce((a,c)=>a+saldoConto(c.id),0))}`,`<button class="btn" data-wiz="c:">Incasso da cliente</button><button class="btn" data-wiz="f:">Pagamento a fornitore</button><button class="btn" data-new="conti">Nuovo conto</button><button class="btn" data-new="movimenti" data-giro="1">Giroconto</button><button class="btn primary" data-new="movimenti">Registra movimento</button>`)+
   `<div class="saldi">${cs.map(c=>{const s=saldoConto(c.id);return `<button class="saldo" data-pnconto="${c.id}" aria-pressed="${UI.pnConto===c.id}"><span class="label">${esc(c.nome)}</span><span class="v ${s<0?"neg":""}">${eur2(s)}</span><span class="small muted">${c.iban?esc(c.iban):"saldo iniziale "+eur2(c.saldoIniziale||0)}</span></button>`}).join("")}</div>
   <section class="panel"><div class="ph"><div class="actions"><select id="pnConto" class="btn" aria-label="Conto"><option value="">Tutti i conti</option>${cs.map(c=>`<option value="${c.id}" ${UI.pnConto===c.id?"selected":""}>${esc(c.nome)}</option>`).join("")}</select>
   <select id="pnMese" class="btn" aria-label="Mese"><option value="">Tutti i mesi</option>${mesi.map(k=>`<option value="${k}" ${mk===k?"selected":""}>${cap(monthLabel(k))}</option>`).join("")}</select>${UI.pnConto?`<button class="btn small" data-editconto="${UI.pnConto}">Modifica conto</button>`:""}</div><span class="small muted">${list.length} movimenti</span></div>
@@ -914,7 +1000,7 @@ function partiteDi(sogg){
   const[t,id]=sogg.split(":"), out=[];
   const allocRows=key=>(allocMap().byDoc[key]||[]).map(x=>{
     if(x.src.startsWith("m:")){const m=byId("movimenti",x.src.slice(2)); if(!m)return null;
-      return {data:m.data,descr:(m.tipo==="entrata"?"Incasso":"Pagamento")+" · "+contoNome(m.conto)+(m.descrizione?" · "+m.descrizione:""),v:x.v,ref:"movimenti:"+m.id,parz:r2(+m.importo)>x.v+0.005?r2(+m.importo):0}}
+      return {data:m.data,descr:(m.tipo==="entrata"?"Incasso":"Pagamento")+(x.rata?" rata "+x.rata:"")+" · "+contoNome(m.conto)+(m.descrizione?" · "+m.descrizione:""),v:x.v,ref:"movimenti:"+m.id,parz:r2(+m.importo)>x.v+0.005?r2(+m.importo):0}}
     const n=byId("fatture",x.src.slice(2)); return n?{data:n.data,descr:"Compensazione con nota di credito "+n.numero,v:x.v,ref:"fatture:"+n.id}:null}).filter(Boolean);
   if(t==="c"){
     S.fatture.filter(f=>f.clienteId===id).forEach(f=>{const x=vTot(f);
@@ -973,12 +1059,12 @@ function vPartite(){
     }).join("");
     const naRows=na.map(c=>{sPay+=c.v; sRes-=c.v; return `<tr class="sub"><td class="mono small">${dShort(c.data)}</td><td class="small">${esc(c.label)}${c.tot>c.v+0.005?` <span class="muted">(parte non abbinata di ${eur2(c.tot)})</span>`:""}</td><td class="r num">${isC?"":eur2(c.v)}</td><td class="r num">${isC?eur2(c.v):""}</td><td class="r num">${eur2(c.v)}</td><td class="r"><button class="btn small" data-abbina="${c.src}" ${openDocs(selK).length?"":"disabled"}>Abbina</button></td></tr>`}).join("");
     est=`<section class="panel"><div class="ph"><div><h2>Estratto conto a partite · ${esc(selX.nome)}</h2><span class="small muted">${tutte?"Tutte le partite, anche saldate":"Solo partite aperte"} · ${isC?"fatture emesse in Dare, incassi in Avere":"fatture ricevute in Avere, pagamenti in Dare"}</span></div>
-      <div class="actions"><button class="btn small" data-mastrino="${selK}">Mastrino cronologico</button><button class="btn small" data-new="movimenti" data-tipo="${isC?"entrata":"uscita"}" data-sogg="${selK}">${isC?"Incasso senza fattura (acconto)":"Pagamento senza fattura (anticipo)"}</button></div></div>
+      <div class="actions"><button class="btn small primary" data-wiz="${selK}">${isC?"Incassa fatture":"Paga fatture"}</button><button class="btn small" data-mastrino="${selK}">Mastrino cronologico</button><button class="btn small" data-new="movimenti" data-tipo="${isC?"entrata":"uscita"}" data-sogg="${selK}">${isC?"Incasso senza fattura (acconto)":"Pagamento senza fattura (anticipo)"}</button></div></div>
       ${parts.length||na.length?`<div class="tablewrap"><table class="est"><thead><tr><th>Data</th><th>Documento e registrazioni</th><th class="r">Dare</th><th class="r">Avere</th><th class="r">Residuo</th><th></th></tr></thead><tbody>${body}
       ${na.length?`<tr class="ph-row"><td></td><td colspan="5"><b>${isC?"Incassi":"Pagamenti"} non ancora abbinati a una fattura</b></td></tr>${naRows}`:""}</tbody>
       <tfoot><tr><td></td><td>Saldo ${isC?"a credito":"a debito"} di questo estratto</td><td class="r num">${eur2(isC?sDoc:sPay)}</td><td class="r num">${eur2(isC?sPay:sDoc)}</td><td class="r num">${eur2(sRes)}</td><td></td></tr></tfoot></table></div>`
       :`<p class="muted">${tutte?"Nessun documento registrato.":"Nessuna partita aperta: tutte le fatture risultano "+(isC?"incassate.":"pagate.")} ${tutte?"":'Attiva "Mostra anche le partite chiuse" per vedere lo storico.'}</p>`}
-      <p class="note">Ogni registrazione sotto la fattura riduce il residuo fino a zero. "${isC?"Registra incasso":"Registra pagamento"}" propone il residuo: scrivi un importo più basso per un ${isC?"incasso":"pagamento"} parziale. Clicca una riga per correggerla o cambiare l'abbinamento.</p></section>`;
+      <p class="note">Ogni registrazione sotto la fattura riduce il residuo fino a zero. "${isC?"Registra incasso":"Registra pagamento"}" apre le rate da saldare: selezionale, scegli banca o cassa e, se serve, scrivi un importo più basso per un ${isC?"incasso":"pagamento"} parziale. Clicca una riga per correggerla o cambiare l'abbinamento.</p></section>`;
   }
   return head("Partite aperte",`${isC?"Crediti verso clienti":"Debiti verso fornitori"}: ${eur2(T.reduce((a,b)=>a+b,0))}`,
    `<div class="seg" role="group" aria-label="Lato"><button data-palato="c" aria-pressed="${isC}">Clienti</button><button data-palato="f" aria-pressed="${!isC}">Fornitori</button></div>
@@ -1316,6 +1402,7 @@ async function submitForm(){
     if(ctx){ const s=al.reduce((a,x)=>a+x.importo,0); if(s>ctx.max+0.005){$("#ferr").textContent="Gli importi abbinati superano l'importo del documento.";return}
       for(const a of al){const r=$(`.al[data-doc="${a.doc}"]`); if(r&&a.importo>+r.dataset.res+0.005){$("#ferr").textContent="Un importo abbinato supera il residuo della fattura.";return}} }
     out.alloc=ctx?al:[];
+    out.alloc=out.alloc.flatMap(a=>{const prev=(rec&&rec.alloc||[]).filter(x=>x.doc===a.doc&&x.rata); const ps=r2(prev.reduce((s,x)=>s+(+x.importo||0),0)); return prev.length&&Math.abs(ps-a.importo)<0.005?prev:[a]});
   }
   if(c==="pagamenti"){
     const g=String(out.rate||"").split(/[^0-9]+/).filter(x=>x!=="").map(Number);
@@ -1436,7 +1523,7 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato]");
+  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
@@ -1477,8 +1564,12 @@ document.addEventListener("click",async e=>{
   if(d.ricalc){recalcScad(true); toast("Scadenze ricalcolate"); return}
   if(d.sclato){UI.scLato=d.sclato;render();return}
   if(d.act==="seedPag"){await seedPagamenti(true);return}
-  if(d.incassa){e.stopPropagation();const f=byId("fatture",d.incassa);if(!f)return;const r=d.imp?+d.imp:residuoV(f), pg=pagOf(f.pagamento)||pagSogg(byId("clienti",f.clienteId))||{};openMovimento({tipo:"entrata",causale:"Incasso cliente",conto:pg.conto||"banca",importo:r,soggetto:"c:"+f.clienteId,alloc:[{doc:"v:"+f.id,importo:r}],descrizione:(pg.strumento?strName(pg.strumento)+" · ":"")+"Incasso "+vLabel(f)+(d.rata?" · rata "+d.rata:"")});return}
-  if(d.paga){e.stopPropagation();const a=byId("acquisti",d.paga);if(!a)return;const r=d.imp?+d.imp:residuoA(a), pg=pagOf(a.pagamento)||pagSogg(byId("fornitori",a.fornitoreId))||{};openMovimento({tipo:"uscita",causale:"Pagamento fornitore",conto:pg.conto||"banca",importo:r,soggetto:"f:"+a.fornitoreId,alloc:[{doc:"a:"+a.id,importo:r}],descrizione:(pg.strumento?strName(pg.strumento)+" · ":"")+"Pagamento "+aLabel(a)+(d.rata?" · rata "+d.rata:"")});return}
+  if(d.incassa){e.stopPropagation();const f=byId("fatture",d.incassa);if(!f)return;openWizard("c",f.clienteId,"v:"+f.id,d.rata,d.imp);return}
+  if(d.paga){e.stopPropagation();const a=byId("acquisti",d.paga);if(!a)return;openWizard("f",a.fornitoreId,"a:"+a.id,d.rata,d.imp);return}
+  if(d.wiz!==undefined){e.stopPropagation();const[l,id]=d.wiz.split(":");openWizard(l,id||"");return}
+  if(d.wzconto){current.conto=d.wzconto;current.contoUser=true;renderWizard();return}
+  if(d.wzall){wizSelect(d.wzall);return}
+  if(d.wzsave){saveWizard();return}
   if(d.abbina){const[t,id]=d.abbina.split(":");const r=byId(t==="m"?"movimenti":"fatture",id);if(r)openForm(t==="m"?"movimenti":"fatture",r);return}
   if(d.mastrino){e.stopPropagation();UI.maSel=d.mastrino;tab="mastrini";render();window.scrollTo(0,0);return}
   if(d.vstato!==undefined){UI.vStato=d.vstato;render();return}
