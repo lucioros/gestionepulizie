@@ -207,6 +207,12 @@ table.agrid .tday{background:color-mix(in srgb,var(--signal) 14%,transparent)}
 .wz input[type=number]:disabled{opacity:.4}
 .wz input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
 .wz select,.wz input[type=date],.wz #wz_descr{border:1px solid var(--line);border-radius:6px;padding:7px 9px;background:var(--bg);width:100%}
+table.altab td{padding:6px 6px;vertical-align:middle}
+table.altab tr.grp td{background:var(--sunk);border-top:2px solid var(--line)}
+table.altab tr:not(.grp) td:nth-child(2){padding-left:18px}
+table.altab input[type=number]{border:1px solid var(--line);border-radius:6px;padding:5px 7px;background:var(--surface);width:110px;text-align:right;font-family:var(--f-mono)}
+table.altab input[type=number]:disabled{opacity:.4}
+table.altab input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
 .err{color:var(--bad);font-size:12px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:6px;font-weight:500;z-index:60;max-width:calc(100% - 32px)}
 pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:6px;font-family:var(--f-mono);font-size:12px;margin:0;overflow-wrap:anywhere}
@@ -349,14 +355,14 @@ function calcScadenze(pag,dataDoc,importo,iva){
   });
 }
 // rate di un documento con quanto è già stato incassato/pagato (gli incassi coprono le rate in ordine)
-function rateDoc(kind,doc){
+function rateDoc(kind,doc,excl){
   if(!doc||doc.tipo==="nc")return [];
   const t=kind==="v"?vTot(doc):aTot(doc);
   let sc=Array.isArray(doc.scadenze)&&doc.scadenze.length?doc.scadenze.map(x=>({data:x.data,importo:+x.importo||0})):[{data:doc.scadenza||doc.data,importo:t.dovuto}];
   const s=r2(sc.reduce((a,x)=>a+x.importo,0)); if(Math.abs(s-t.dovuto)>0.005)sc[sc.length-1].importo=r2(sc[sc.length-1].importo+t.dovuto-s);
-  let pagato=r2(t.dovuto-(kind==="v"?residuoV(doc):residuoA(doc)));
+  let pagato=r2(t.dovuto-(kind==="v"?residuoV(doc,excl):residuoA(doc,excl)));
   // prima le somme abbinate a una rata precisa, poi il resto dalla rata più vecchia
-  const tgt={}; (allocMap().byDoc[(kind==="v"?"v:":"a:")+doc.id]||[]).forEach(x=>{if(x.rata)tgt[x.rata]=(tgt[x.rata]||0)+x.v});
+  const tgt={}; (allocMap().byDoc[(kind==="v"?"v:":"a:")+doc.id]||[]).forEach(x=>{if(x.rata&&x.src!==excl)tgt[x.rata]=(tgt[x.rata]||0)+x.v});
   const out=sc.map((x,i)=>({n:i+1,data:x.data,importo:x.importo,pagato:0}));
   out.forEach(r=>{const t=r2(Math.min(r.importo,tgt[r.n]||0,Math.max(0,pagato))); r.pagato=t; pagato=r2(pagato-t)});
   out.forEach(r=>{const q=r2(Math.min(r.importo-r.pagato,Math.max(0,pagato))); r.pagato=r2(r.pagato+q); pagato=r2(pagato-q)});
@@ -781,13 +787,18 @@ function renderWizard(){
     <div class="fld full"><span class="lb">${isC?"Incassato su":"Pagato da"}</span><div class="seg" role="group" aria-label="Conto">${conti().map(c=>`<button type="button" data-wzconto="${c.id}" aria-pressed="${W.conto===c.id}">${esc(c.nome)}</button>`).join("")}</div></div>
     <div class="full">${!W.sogg?`<p class="muted">Scegli ${isC?"il cliente":"il fornitore"} per vedere le fatture da saldare.</p>`:!rows.length?`<p class="muted">Nessuna fattura da ${isC?"incassare":"pagare"} per questo ${isC?"cliente":"fornitore"}.</p>`:
       `<div class="ph" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px"><span class="lb" style="font-weight:600;font-size:12px">${rows.length} rate da ${isC?"incassare":"pagare"}</span><div class="actions"><button type="button" class="btn small" data-wzall="scadute">Scadute</button><button type="button" class="btn small" data-wzall="tutte">Tutte</button><button type="button" class="btn small" data-wzall="nessuna">Nessuna</button></div></div>
-      <div class="tablewrap"><table><thead><tr><th></th><th>Fattura</th><th>Rata</th><th>Scadenza</th><th>Strumento</th><th class="r">Da saldare</th><th class="r">Importo</th></tr></thead><tbody>${rows.map(x=>{const on=W.sel[x.key]!==undefined, late=x.r.data<td;
-        return `<tr class="${on?"sel":""}"><td><input type="checkbox" data-wzk="${x.key}" ${on?"checked":""} aria-label="Seleziona ${esc(x.label)} rata ${x.r.n}"></td><td class="mono small">${esc(x.label)}<div class="muted">del ${dShort(x.doc.data)}</div></td><td class="small">${x.n>1?x.r.n+"/"+x.n:"unica"}</td><td class="mono small ${late?"neg":""}">${dShort(x.r.data)}${late?'<div class="small">scaduta</div>':""}</td><td class="small">${esc(strName(x.pg.strumento||""))}</td><td class="r num">${eur2(x.r.res)}${x.r.pagato>0.005?`<div class="small muted">di ${eur2(x.r.importo)}</div>`:""}</td><td class="r"><input type="number" step="0.01" min="0" data-wzi="${x.key}" value="${on?W.sel[x.key]:""}" ${on?"":"disabled"} aria-label="Importo"></td></tr>`}).join("")}</tbody></table></div>`}
+      <div class="tablewrap"><table class="altab"><tbody>${(()=>{const order=[];rows.forEach(x=>{if(!order.includes(x.dk))order.push(x.dk)});
+        return order.map(dk=>{const gr=rows.filter(x=>x.dk===dk), g0=gr[0], nOn=gr.filter(x=>W.sel[x.key]!==undefined).length, tot=gr.reduce((a,x)=>a+x.r.res,0);
+          return `<tr class="grp"><td><input type="checkbox" data-wzg="${dk}" ${nOn===gr.length?"checked":""} data-ind="${nOn>0&&nOn<gr.length?1:""}" aria-label="Tutte le rate di ${esc(g0.label)}"></td><td colspan="3"><b class="mono">${esc(g0.label)}</b> <span class="small muted">del ${dShort(g0.doc.data)}${g0.pg.descrizione?" · "+esc(g0.pg.descrizione):""}</span></td><td class="r small muted">${eur2(tot)}</td></tr>`+
+          gr.map(x=>{const on=W.sel[x.key]!==undefined, late=x.r.data<td;
+            return `<tr class="${on?"sel":""}"><td><input type="checkbox" data-wzk="${x.key}" ${on?"checked":""} aria-label="${esc(x.label)} rata ${x.r.n}"></td><td class="small">${x.n>1?"Rata "+x.r.n+"/"+x.n:"Rata unica"}</td><td class="mono small ${late?"neg":""}">${dShort(x.r.data)}${late?" · scaduta":""}</td><td class="r num small">${eur2(x.r.res)}${x.r.pagato>0.005?` <span class="muted">di ${eur2(x.r.importo)}</span>`:""}</td><td class="r"><input type="number" step="0.01" min="0" data-wzi="${x.key}" value="${on?W.sel[x.key]:""}" ${on?"":"disabled"} aria-label="Importo"></td></tr>`}).join("")}).join("")})()}</tbody></table></div>`}
       ${acconti>0.005?`<p class="note">Ci sono ${eur2(acconti)} già ${isC?"incassati":"pagati"} e non abbinati a fatture: li trovi in Partite aperte con il pulsante "Abbina".</p>`:""}</div>
     <div class="fld full"><label for="wz_descr">Descrizione in prima nota</label><input id="wz_descr" value="${esc(descr)}"></div>
     <div class="err full" id="ferr"></div></div>
     <div class="mf"><span class="num" id="wz_tot" style="align-self:center">Totale <b>${eur2(sm.tot)}</b></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-wzsave="1" ${sm.rows.length?"":"disabled"}>${isC?"Registra incasso":"Registra pagamento"} di ${eur2(sm.tot)} · ${esc(contoNome(W.conto))}</button></div></div>`);
+  wizInd();
 }
+function wizInd(){document.querySelectorAll("[data-wzg]").forEach(cb=>cb.indeterminate=!!cb.dataset.ind)}
 function wizRefreshTot(){
   const sm=wizSummary(), W=current; $("#wz_tot").innerHTML=`Totale <b>${eur2(sm.tot)}</b>`;
   const b=$('[data-wzsave]'); if(b){b.textContent=`${W.lato==="c"?"Registra incasso":"Registra pagamento"} di ${eur2(sm.tot)} · ${contoNome(W.conto)}`; b.disabled=!sm.rows.length}
@@ -808,6 +819,7 @@ document.addEventListener("change",e=>{
   if(!current||current.c!=="wiz")return; const t=e.target, W=current;
   if(t.id==="wz_sogg"){W.sogg=t.value;W.sel={};W.contoUser=false;W.descrEdit=false;renderWizard();return}
   if(t.id==="wz_data"){W.data=t.value;return}
+  if(t.dataset.wzg){wizRows().filter(x=>x.dk===t.dataset.wzg).forEach(x=>{if(t.checked)W.sel[x.key]=x.r.res; else delete W.sel[x.key]}); const de=W.descrEdit, dv=$("#wz_descr").value; renderWizard(); if(de)$("#wz_descr").value=dv; return}
   if(t.dataset.wzk){const x=wizRows().find(r=>r.key===t.dataset.wzk); if(t.checked&&x)W.sel[x.key]=x.r.res; else delete W.sel[t.dataset.wzk]; const de=W.descrEdit, dv=$("#wz_descr").value; renderWizard(); if(de)$("#wz_descr").value=dv;}
 });
 document.addEventListener("input",e=>{
@@ -1214,6 +1226,7 @@ function openForm(c,rec,prefill,returnTo){
   if((c==="fatture"||c==="acquisti")&&rec&&!(rec.scadenze&&rec.scadenze.length)&&rec.scadenza&&rec.tipo!=="nc")data.scadenze=[{data:rec.scadenza,importo:(c==="fatture"?vTot(rec):aTot(rec)).dovuto}];
   current={c,rec,defCod,occ:prefill&&prefill._occ,allocInit:(rec&&rec.alloc)||(prefill&&prefill.alloc)||[],returnTo:returnTo||null,lista:prefill&&prefill.lista};
   current.scadManual=!!(data.scadenze&&data.scadenze.length);
+  current.impAuto=c==="movimenti"&&!rec&&!(prefill&&+prefill.importo);
   const extra=c==="fatture"&&rec?fattExtra(rec):"";
   const tOcc=c==="variazioni"&&current.occ?byId("sedi",current.occ.sedeId):null;
   const title=tOcc?`Turno: ${esc(tOcc.nome)} · ${esc(dLong(parse(current.occ.orig)))}`:c==="lista"?`Nuova voce: ${esc(ADD_LABEL["lista:"+String(current.lista).split("_")[0]]||"elenco")}`:`${rec?"Modifica":"Nuovo"}: ${esc(F.t.toLowerCase())}`;
@@ -1267,24 +1280,43 @@ function allocContext(){
     const t=vTot({righe:readField({k:"righe",type:"righe"})}); return {sogg:"c:"+cid,src:current.rec?"n:"+current.rec.id:"",max:t.tot,verb:"nota di credito"}}
   return null;
 }
+// fatture del soggetto con le rate ancora da saldare (escluso il movimento in modifica)
+function allocGroups(ctx){
+  const [t,id]=ctx.sogg.split(":"), k=t==="c"?"v":"a", sg=byId(t==="c"?"clienti":"fornitori",id);
+  const docs=t==="c"?S.fatture.filter(f=>f.clienteId===id&&f.tipo!=="nc"):S.acquisti.filter(a=>a.fornitoreId===id);
+  const init={}; (current.allocInit||[]).forEach(a=>{const kk=a.doc+"#"+(+a.rata||0); init[kk]=r2((init[kk]||0)+(+a.importo||0))});
+  return docs.map(d=>{
+    const dk=k+":"+d.id, rs=rateDoc(k,d,ctx.src);
+    if(init[dk+"#0"]!=null){ const r0=rs.find(r=>r.res>0.005)||rs[0]; if(r0){init[dk+"#"+r0.n]=r2((init[dk+"#"+r0.n]||0)+init[dk+"#0"])} delete init[dk+"#0"] }
+    const rows=rs.filter(r=>r.res>0.005||init[dk+"#"+r.n]!=null).map(r=>({key:dk+"#"+r.n,r,n:rs.length,init:init[dk+"#"+r.n]}));
+    return {dk,doc:d,label:k==="v"?vLabel(d):aLabel(d),pg:pagOf(d.pagamento)||pagSogg(sg),rows};
+  }).filter(g=>g.rows.length).sort((a,b)=>a.rows[0].r.data.localeCompare(b.rows[0].r.data));
+}
 function renderAlloc(keep){
   const box=$("#allocBox"); if(!box)return; const ctx=allocContext();
   if(!ctx){box.hidden=true;box.innerHTML="";return}
-  const prev={}; if(keep!==false){ box.querySelectorAll(".al[data-doc]").forEach(r=>{prev[r.dataset.doc]={on:r.querySelector("[type=checkbox]").checked,v:r.querySelector("[type=number]").value}}) }
-  const init={}; (current.allocInit||[]).forEach(a=>init[a.doc]=a.importo);
-  const docs=openDocs(ctx.sogg,ctx.src);
-  Object.keys(init).forEach(k=>{if(!docs.some(d=>d.key===k)){const[t,id]=k.split(":");const d=t==="v"?byId("fatture",id):byId("acquisti",id);if(d)docs.push({key:k,label:t==="v"?vLabel(d):aLabel(d),data:d.data,scad:d.scadenza,res:t==="v"?residuoV(d,ctx.src):residuoA(d,ctx.src)})}});
+  const prev={}; if(keep!==false){ box.querySelectorAll(".al[data-key]").forEach(r=>{prev[r.dataset.key]={on:r.querySelector("[type=checkbox]").checked,v:r.querySelector("[type=number]").value}}) }
+  const groups=allocGroups(ctx), td=TODAY();
   box.hidden=false;
-  box.innerHTML=`<div class="ph" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><span class="lb" style="font-weight:600;font-size:12px">Abbina questo ${ctx.verb} alle fatture aperte</span>${docs.length?`<button type="button" class="btn small" data-autoalloc="1">Distribuisci dalla più vecchia</button>`:""}</div>
-  ${docs.length?docs.map(d=>{const p=prev[d.key],iv=p?p.v:(init[d.key]!=null?init[d.key]:""),on=p?p.on:init[d.key]!=null;return `<label class="al" data-doc="${d.key}" data-res="${d.res}"><input type="checkbox" ${on?"checked":""} aria-label="Abbina"><span>${esc(d.label)} <span class="muted small">scad. ${dShort(d.scad)}</span></span><span class="res num small muted">residuo ${eur2(d.res)}</span><input type="number" step="0.01" value="${esc(iv)}" aria-label="Importo abbinato"></label>`}).join(""):`<span class="small muted">Nessuna fattura aperta per questo soggetto: l'importo resterà da abbinare come acconto.</span>`}
+  box.innerHTML=`<div class="ph" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><span class="lb" style="font-weight:600;font-size:12px">Fatture e rate da saldare: seleziona quelle che questo ${ctx.verb} chiude</span>${groups.length?`<button type="button" class="btn small" data-autoalloc="1">Distribuisci dalla più vecchia</button>`:""}</div>
+  ${groups.length?`<div class="tablewrap"><table class="altab"><tbody>${groups.map(g=>{const tot=g.rows.reduce((a,x)=>a+x.r.res,0);
+    return `<tr class="grp"><td><input type="checkbox" data-algrp="${g.dk}" aria-label="Tutte le rate di ${esc(g.label)}"></td><td colspan="3"><b class="mono">${esc(g.label)}</b> <span class="small muted">del ${dShort(g.doc.data)}${g.pg?" · "+esc(g.pg.descrizione):""}</span></td><td class="r small muted">${eur2(tot)}</td></tr>`+
+    g.rows.map(x=>{const p=prev[x.key], on=p?p.on:x.init!=null, iv=p?p.v:(x.init!=null?x.init:"");
+      return `<tr class="al" data-key="${x.key}" data-doc="${g.dk}" data-rata="${x.r.n}" data-date="${x.r.data}" data-res="${x.r.res}"><td><input type="checkbox" ${on?"checked":""} aria-label="${esc(g.label)} rata ${x.r.n}"></td><td class="small">${x.n>1?"Rata "+x.r.n+"/"+x.n:"Rata unica"}</td><td class="mono small ${x.r.data<td?"neg":""}">${dShort(x.r.data)}${x.r.data<td?" · scaduta":""}</td><td class="r num small">${eur2(x.r.res)}${x.r.pagato>0.005?` <span class="muted">di ${eur2(x.r.importo)}</span>`:""}</td><td class="r"><input type="number" step="0.01" min="0" value="${esc(iv)}" ${on?"":"disabled"} aria-label="Importo abbinato"></td></tr>`}).join("")}).join("")}</tbody></table></div>`
+  :`<span class="small muted">Nessuna fattura aperta per questo soggetto: l'importo resterà da abbinare come acconto.</span>`}
   <div class="small" id="allocSum"></div>`;
-  updAllocSum();
+  syncGrp(); updAllocSum();
 }
-function readAlloc(){const box=$("#allocBox"); if(!box||box.hidden)return []; return [...box.querySelectorAll(".al[data-doc]")].map(r=>({doc:r.dataset.doc,on:r.querySelector("[type=checkbox]").checked,importo:r2(parseFloat(r.querySelector("[type=number]").value)||0)})).filter(x=>x.on&&x.importo>0).map(({doc,importo})=>({doc,importo}))}
+function syncGrp(){document.querySelectorAll("#allocBox [data-algrp]").forEach(cb=>{const rs=[...document.querySelectorAll(`#allocBox .al[data-doc="${cb.dataset.algrp}"] [type=checkbox]`)]; const n=rs.filter(x=>x.checked).length; cb.checked=n&&n===rs.length; cb.indeterminate=n>0&&n<rs.length})}
+function readAlloc(){const box=$("#allocBox"); if(!box||box.hidden)return []; return [...box.querySelectorAll(".al[data-key]")].map(r=>({doc:r.dataset.doc,rata:+r.dataset.rata,on:r.querySelector("[type=checkbox]").checked,importo:r2(parseFloat(String(r.querySelector("[type=number]").value).replace(",","."))||0)})).filter(x=>x.on&&x.importo>0).map(({doc,rata,importo})=>({doc,importo,rata}))}
 function updAllocSum(){const el=$("#allocSum"); if(!el)return; const ctx=allocContext(); if(!ctx)return; const s=readAlloc().reduce((a,x)=>a+x.importo,0); const rest=r2(ctx.max-s);
   el.innerHTML=`Abbinato <b class="num">${eur2(s)}</b> su ${eur2(ctx.max)}${rest>0.005?` · <span style="color:var(--warn)">${eur2(rest)} resteranno da abbinare</span>`:rest<-0.005?` · <span class="err">supera l'importo di ${eur2(-rest)}</span>`:""}`}
+// selezione di una rata: con importo del movimento ancora da decidere prende tutto il residuo, altrimenti quanto resta
+function setAlRow(r,on){const cb=r.querySelector("[type=checkbox]"), n=r.querySelector("[type=number]"); cb.checked=on; n.disabled=!on;
+  if(on&&!n.value){const ctx=allocContext()||{max:0}; const left=r2(ctx.max-readAlloc().reduce((a,x)=>a+x.importo,0)); n.value=current.impAuto?+r.dataset.res:r2(Math.min(+r.dataset.res,Math.max(0,left)))} if(!on)n.value=""}
+function allocChanged(){ if(current&&current.impAuto&&current.c==="movimenti"&&$("#f_importo")){$("#f_importo").value=r2(readAlloc().reduce((a,x)=>a+x.importo,0))||""} updAllocSum() }
 function autoAlloc(){const ctx=allocContext(); if(!ctx)return; let left=ctx.max;
-  $("#allocBox").querySelectorAll(".al[data-doc]").forEach(r=>{const res=+r.dataset.res; const v=r2(Math.min(res,Math.max(0,left))); left=r2(left-v); r.querySelector("[type=checkbox]").checked=v>0; r.querySelector("[type=number]").value=v>0?v:""}); updAllocSum()}
+  [...$("#allocBox").querySelectorAll(".al[data-key]")].sort((a,b)=>a.dataset.date.localeCompare(b.dataset.date)).forEach(r=>{const res=+r.dataset.res; const v=r2(Math.min(res,Math.max(0,left))); left=r2(left-v); r.querySelector("[type=checkbox]").checked=v>0; const n=r.querySelector("[type=number]"); n.disabled=!(v>0); n.value=v>0?v:""}); syncGrp(); updAllocSum()}
 function fattExtra(f){
   if(f.tipo==="nc")return"";
   const inc=(allocMap().byDoc["v:"+f.id]||[]).map(x=>{if(x.src.startsWith("m:")){const m=byId("movimenti",x.src.slice(2));return m?{d:m.data,l:(m.causale||"Incasso")+" · "+contoNome(m.conto),v:x.v,ref:"movimenti:"+m.id}:null}const n=byId("fatture",x.src.slice(2));return n?{d:n.data,l:"Compensazione con NC "+n.numero,v:x.v,ref:"fatture:"+n.id}:null}).filter(Boolean).sort((a,b)=>a.d.localeCompare(b.d));
@@ -1400,9 +1432,8 @@ async function submitForm(){
   if(F.alloc||c==="fatture"){
     const al=readAlloc(), ctx=allocContext();
     if(ctx){ const s=al.reduce((a,x)=>a+x.importo,0); if(s>ctx.max+0.005){$("#ferr").textContent="Gli importi abbinati superano l'importo del documento.";return}
-      for(const a of al){const r=$(`.al[data-doc="${a.doc}"]`); if(r&&a.importo>+r.dataset.res+0.005){$("#ferr").textContent="Un importo abbinato supera il residuo della fattura.";return}} }
+      for(const a of al){const r=document.querySelector(`#allocBox .al[data-key="${a.doc}#${a.rata}"]`); if(r&&a.importo>+r.dataset.res+0.005){$("#ferr").textContent="Un importo abbinato supera quanto resta da saldare della rata.";return}} }
     out.alloc=ctx?al:[];
-    out.alloc=out.alloc.flatMap(a=>{const prev=(rec&&rec.alloc||[]).filter(x=>x.doc===a.doc&&x.rata); const ps=r2(prev.reduce((s,x)=>s+(+x.importo||0),0)); return prev.length&&Math.abs(ps-a.importo)<0.005?prev:[a]});
   }
   if(c==="pagamenti"){
     const g=String(out.rate||"").split(/[^0-9]+/).filter(x=>x!=="").map(Number);
@@ -1599,8 +1630,8 @@ document.addEventListener("input",e=>{
   if(e.target.closest("#f_scadenze")){current.scadManual=true;updScadInfo();return}
   if(current.c==="pagamenti")updPagPrev();
   if(e.target.closest("#f_righe")||e.target.id==="f_ritenutaPct"){updTot();recalcScad(false)}
-  if(e.target.closest("#allocBox"))updAllocSum();
-  if(e.target.id==="f_importo"){const on=[...document.querySelectorAll("#allocBox .al[data-doc]")].filter(r=>r.querySelector("[type=checkbox]").checked);
+  if(e.target.closest("#allocBox")){allocChanged();}
+  if(e.target.id==="f_importo"){current.impAuto=false; const on=[...document.querySelectorAll("#allocBox .al[data-key]")].filter(r=>r.querySelector("[type=checkbox]").checked);
     if(on.length===1){const v=readField({k:"importo",type:"number"}); on[0].querySelector("[type=number]").value=v>0?r2(Math.min(v,+on[0].dataset.res)):""}
     updAllocSum()}
 });
@@ -1625,7 +1656,10 @@ document.addEventListener("change",async e=>{
   if((current.c==="fatture"||current.c==="acquisti")&&(id==="f_pagamento"||id==="f_data"||id==="f_ritenutaPct")){recalcScad(false);return}
   if(current.c==="pagamenti"){updPagPrev()}
   if((current.c==="variazioni"||current.c==="straordinari")&&(["f_data","f_ora","f_durata"].includes(id)||e.target.closest("#f_operatori"))){renderFree();return}
-  if(e.target.closest("#allocBox")){const r=e.target.closest(".al"); if(r&&e.target.type==="checkbox"){const n=r.querySelector("[type=number]"); if(e.target.checked&&!n.value)n.value=r2(Math.min(+r.dataset.res,Math.max(0,(allocContext()||{max:0}).max-readAlloc().reduce((a,x)=>a+x.importo,0)))); if(!e.target.checked)n.value=""} updAllocSum();return}
+  if(e.target.closest("#allocBox")){const t=e.target;
+    if(t.dataset.algrp)document.querySelectorAll(`#allocBox .al[data-doc="${t.dataset.algrp}"]`).forEach(r=>setAlRow(r,t.checked));
+    else {const r=t.closest(".al"); if(r&&t.type==="checkbox")setAlRow(r,t.checked)}
+    syncGrp(); allocChanged(); return}
   if(current.c==="preventivi"&&id==="f_tipo"){$("#f_produttivita").value=PROD[e.target.value]||200;updCalc();return}
   if(current.c==="movimenti"&&id==="f_tipo"){setCausali();current.allocInit=[];formDynamics();return}
   if(current.c==="movimenti"&&id==="f_soggetto"){current.allocInit=[];renderAlloc(false);return}
