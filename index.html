@@ -269,12 +269,12 @@ pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:
 <script>
 (function(){
 "use strict";
-const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze","pagamenti"];
+const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze","pagamenti","amministratori","cu"];
 const S={}; COLS.forEach(c=>S[c]=[]);
 const loaded={};
 let mode="loading", sb=null, tab="oggi", weekStart=null, fattMese=null, ver=0;
-const UI={vCli:"",aFor:"",prSel:[],scLato:"tutti",scPer:"30",scStr:"",tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
-const NAV=[["Operatività",[["oggi","Oggi"],["piano","Pianificazione"],["agenda","Agenda dipendenti"],["clienti","Clienti e sedi"],["personale","Personale"],["preventivi","Preventivi"],["qualita","Qualità"]]],
+const UI={ammSel:"",ammAnno:"",paAmm:"",maAmm:"",scAmm:"",vAmm:"",vCli:"",aFor:"",prSel:[],scLato:"tutti",scPer:"30",scStr:"",tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
+const NAV=[["Operatività",[["oggi","Oggi"],["piano","Pianificazione"],["agenda","Agenda dipendenti"],["clienti","Clienti e sedi"],["amministratori","Amministratori"],["personale","Personale"],["preventivi","Preventivi"],["qualita","Qualità"]]],
            ["Contabilità",[["vendite","Fatture di vendita"],["acquisti","Fatture d'acquisto"],["fornitori","Fornitori"],["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["pagamenti","Tipi di pagamento"],["mastrini","Mastrini e IVA"]]],
            ["Sistema",[["impostazioni","Impostazioni e app dipendenti"]]]];
 const GIORNI=["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
@@ -341,6 +341,21 @@ function vociPrev(p){ const c=prevCli(p), dc=cliCod(c), out=[], cn=canonePrev(p)
 const totPrev=p=>r2(vociPrev(p).reduce((a,r)=>a+r.qta*r.prezzo,0));
 const fattDaPrev=p=>S.fatture.filter(f=>(f.preventivi||[]).includes(p.id));
 const statoPrev=p=>fattDaPrev(p).length?"Fatturato":p.stato==="Fatturato"?"Accettato":(p.stato||"Bozza");
+// amministratori di condominio
+const ammOpts=()=>S.amministratori.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(a=>[a.id,a.nome]);
+const condDi=aid=>S.clienti.filter(c=>aid==="-"?(!c.amministratoreId&&c.ritenuta):c.amministratoreId===aid).sort((a,b)=>a.nome.localeCompare(b.nome));
+const condNome=c=>/^condominio\b/i.test(c.nome)?c.nome:"Condominio "+c.nome;
+const ammFilter=(aid,cid)=>!aid||(aid==="-"?!(byId("clienti",cid)||{}).amministratoreId:(byId("clienti",cid)||{}).amministratoreId===aid);
+const ammSelect=(id,val)=>`<select id="${id}" class="btn" aria-label="Amministratore"><option value="">Tutti gli amministratori</option>${ammOpts().map(([k,l])=>`<option value="${k}" ${val===k?"selected":""}>${esc(l)}</option>`).join("")}<option value="-" ${val==="-"?"selected":""}>Senza amministratore</option></select>`;
+// ritenute 4%: sulle fatture dell'anno (competenza) e sugli incassi dell'anno (quelle certificate nella CU)
+const ritFatture=(cid,anno)=>r2(S.fatture.filter(f=>f.clienteId===cid&&f.tipo!=="nc"&&(f.data||"").startsWith(anno)).reduce((a,f)=>a+vTot(f).rit,0));
+function ritIncassi(cid,anno){ let s=0;
+  S.movimenti.filter(m=>m.tipo==="entrata"&&(m.data||"").startsWith(anno)).forEach(m=>(m.alloc||[]).forEach(a=>{ if(!a.doc.startsWith("v:"))return; const f=byId("fatture",a.doc.slice(2)); if(!f||f.clienteId!==cid)return; const t=vTot(f); if(t.rit&&t.dovuto)s+=(+a.importo||0)*t.rit/t.dovuto }));
+  return r2(s) }
+function scadutoCli(cid){ return r2(openDocs("c:"+cid).reduce((a,d)=>a+(d.rate||[]).filter(r=>r.res>0.005&&r.data<TODAY()).reduce((x,r)=>x+r.res,0),0)) }
+function apertoCli(cid){ return r2(openDocs("c:"+cid).reduce((a,d)=>a+d.res,0)) }
+function mastrinoAnno(sogg,anno){ const rs=mastrino(sogg); const ap=r2(rs.filter(r=>(r.data||"")<anno+"-01-01").reduce((a,r)=>a+r.dare-r.avere,0)); const cur=rs.filter(r=>(r.data||"").startsWith(anno));
+  const D=r2(cur.reduce((a,r)=>a+r.dare,0)), A=r2(cur.reduce((a,r)=>a+r.avere,0)); return {ap,D,A,fin:r2(ap+D-A),righe:cur} }
 const pagOf=id=>id?S.pagamenti.find(p=>p.id===id)||null:null;
 const pagOpts=()=>S.pagamenti.slice().sort((a,b)=>String(a.descrizione).localeCompare(b.descrizione)).map(p=>[p.id,p.descrizione]);
 const strName=c=>(STRUMENTI.find(s=>s[0]===c)||[c,c||"—"])[1];
@@ -384,7 +399,7 @@ const prossimaRata=(kind,doc)=>{const rs=rateDoc(kind,doc);return rs.find(r=>r.r
 function scadCell(kind,doc){ const rs=rateDoc(kind,doc); if(!rs.length)return""; const nx=rs.find(r=>r.res>0.005);
   return `${dShort((nx||rs[rs.length-1]).data)}${rs.length>1?` <span class="muted">${nx?nx.n:rs.length}/${rs.length}</span>`:""}` }
 const tipiAss=()=>[...TIPI_ASSENZA,...lst("assenze")];
-const ADD_LABEL={pagamenti:"tipo di pagamento",codiceIva:"codice IVA","lista:assenze":"tipo di assenza",clienti:"cliente",fornitori:"fornitore",sedi:"sede",operatori:"operatore",conti:"conto","lista:tipi":"tipo di immobile","lista:categorie":"categoria","lista:causali":"causale"};
+const ADD_LABEL={amministratori:"amministratore",pagamenti:"tipo di pagamento",codiceIva:"codice IVA","lista:assenze":"tipo di assenza",clienti:"cliente",fornitori:"fornitore",sedi:"sede",operatori:"operatore",conti:"conto","lista:tipi":"tipo di immobile","lista:categorie":"categoria","lista:causali":"causale"};
 
 /* ---------- utilità ---------- */
 const $=s=>document.querySelector(s);
@@ -677,7 +692,7 @@ function render(){
   const m=$("#main");
   const empty=!S.clienti.length&&!S.sedi.length&&!S.operatori.length&&!S.fornitori.length;
   if(empty&&["oggi","piano","clienti"].includes(tab)){m.innerHTML=emptyView();return}
-  const V={scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
+  const V={amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
   m.innerHTML=V[tab](al);
 }
 function hasExamples(){return COLS.some(c=>S[c].some(x=>x.esempio))}
@@ -741,7 +756,7 @@ function vClienti(){
   const gg=s=>(s.giorni||[]).slice().sort().map(g=>GIORNI[g-1]).join(" ");
   const orfani=S.sedi.filter(s=>!byId("clienti",s.clienteId));
   const regL=k=>(REGIMI.find(r=>r[0]===k)||REGIMI[0])[1];
-  const block=(c,sedi)=>`<div class="client"><div class="ch">${c?`<b data-edit="clienti:${c.id}">${esc(c.nome)}</b><span class="small muted">${esc([c.referente,c.tel,c.piva?"P.IVA/CF "+c.piva:""].filter(Boolean).join(" · "))} · ${esc(codOf(cliCod(c)).d)} · ${esc((pagSogg(c)||{}).descrizione||"pagamento da impostare")}${(c.righeAbituali||[]).length?" · "+c.righeAbituali.length+" righe abituali":""}${c.ritenuta?" · ritenuta 4%":""} · saldo <span class="num">${eur2(saldoSogg("c:"+c.id))}</span></span>`:`<b>Senza cliente</b>`}</div>
+  const block=(c,sedi)=>`<div class="client"><div class="ch">${c?`<b data-edit="clienti:${c.id}">${esc(c.nome)}</b><span class="small muted">${esc([c.referente,c.tel,c.piva?"P.IVA/CF "+c.piva:""].filter(Boolean).join(" · "))} · ${esc(codOf(cliCod(c)).d)} · ${esc((pagSogg(c)||{}).descrizione||"pagamento da impostare")}${c.amministratoreId&&byId("amministratori",c.amministratoreId)?" · amm. "+esc(byId("amministratori",c.amministratoreId).nome):""}${(c.righeAbituali||[]).length?" · "+c.righeAbituali.length+" righe abituali":""}${c.ritenuta?" · ritenuta 4%":""} · saldo <span class="num">${eur2(saldoSogg("c:"+c.id))}</span></span>`:`<b>Senza cliente</b>`}</div>
    ${sedi.length?`<div class="tablewrap"><table><thead><tr><th>Sede</th><th>Tipo</th><th class="r">m²</th><th>Giorni</th><th>Orario</th><th>Operatori</th><th class="r">Canone</th><th class="r">Margine</th></tr></thead><tbody>${sedi.map(s=>{const m=marginePct(s);return `<tr class="click" data-edit="sedi:${s.id}"><td><b>${esc(s.nome)}</b>${s.attiva===false?' <span class="pill">Sospesa</span>':""}${s.esempio?' <span class="pill">esempio</span>':""}<div class="small muted">${esc(s.indirizzo||"")}</div></td><td>${esc(s.tipo||"")}</td><td class="r num">${s.mq?Number(s.mq).toLocaleString("it-IT"):""}</td><td class="mono small">${gg(s)}</td><td class="mono small">${esc(s.ora||"")} · ${n1(s.durata)} h</td><td>${esc(opNames(s.operatori))||'<span class="pill bad">Nessuno</span>'}</td><td class="r num">${eur(s.canone)}</td><td class="r">${m==null?"—":`<span class="pill ${m<10?"bad":m<20?"warn":"ok"}">${Math.round(m)}%</span>`}</td></tr>`}).join("")}</tbody></table></div>`:`<p class="small muted">Nessuna sede. <button class="btn small" data-newsede="${c?c.id:""}">Aggiungi sede</button></p>`}</div>`;
   return head("Clienti e sedi",`${S.clienti.length} clienti · ${S.sedi.length} sedi`,`<button class="btn" data-new="clienti">Nuovo cliente</button><button class="btn primary" data-new="sedi">Nuova sede</button>`)+
    (S.clienti.length||orfani.length?`<section class="panel">${S.clienti.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>block(c,S.sedi.filter(s=>s.clienteId===c.id))).join("")}${orfani.length?block(null,orfani):""}</section>`:`<div class="empty"><h2>Nessun cliente</h2><p>Aggiungi il primo cliente con il suo codice IVA e le righe abituali, poi le sedi con giorni, orari e canone.</p><button class="btn primary" data-new="clienti">Aggiungi cliente</button></div>`)+
@@ -857,8 +872,8 @@ function vPagamenti(){
 }
 function vScadenzario(){
   const lato=UI.scLato, per=UI.scPer, str=UI.scStr, td=TODAY(), items=[];
-  S.fatture.filter(f=>f.tipo!=="nc").forEach(f=>{const p=pagOf(f.pagamento)||pagSogg(byId("clienti",f.clienteId))||{}; const rs=rateDoc("v",f); rs.forEach(r=>{if(r.res>0.005)items.push({lato:"c",doc:f,sogg:soggNome("c:"+f.clienteId)||f.clienteNome,label:vLabel(f),r,n:rs.length,str:p.strumento||""})})});
-  S.acquisti.forEach(a=>{const p=pagOf(a.pagamento)||pagSogg(byId("fornitori",a.fornitoreId))||{}; const rs=rateDoc("a",a); rs.forEach(r=>{if(r.res>0.005)items.push({lato:"f",doc:a,sogg:soggNome("f:"+a.fornitoreId),label:aLabel(a),r,n:rs.length,str:p.strumento||""})})});
+  S.fatture.filter(f=>f.tipo!=="nc"&&ammFilter(UI.scAmm,f.clienteId)).forEach(f=>{const p=pagOf(f.pagamento)||pagSogg(byId("clienti",f.clienteId))||{}; const rs=rateDoc("v",f); rs.forEach(r=>{if(r.res>0.005)items.push({lato:"c",doc:f,sogg:soggNome("c:"+f.clienteId)||f.clienteNome,label:vLabel(f),r,n:rs.length,str:p.strumento||""})})});
+  if(!UI.scAmm)S.acquisti.forEach(a=>{const p=pagOf(a.pagamento)||pagSogg(byId("fornitori",a.fornitoreId))||{}; const rs=rateDoc("a",a); rs.forEach(r=>{if(r.res>0.005)items.push({lato:"f",doc:a,sogg:soggNome("f:"+a.fornitoreId),label:aLabel(a),r,n:rs.length,str:p.strumento||""})})});
   const sum=(l,fl)=>l.filter(fl).reduce((a,x)=>a+x.r.res,0), in30=iso(addDays(today(),30));
   const lim={scad:td,"7":iso(addDays(today(),7)),"30":in30,"90":iso(addDays(today(),90)),tutte:"9999-12-31"}[per]||in30;
   const list=items.filter(x=>lato==="tutti"||x.lato===lato).filter(x=>per==="scad"?x.r.data<td:x.r.data<=lim).filter(x=>!str||x.str===str).sort((a,b)=>a.r.data.localeCompare(b.r.data)||a.lato.localeCompare(b.lato));
@@ -867,7 +882,7 @@ function vScadenzario(){
   const inc=sum(list,x=>x.lato==="c"), pag=sum(list,x=>x.lato==="f");
   return head("Scadenzario",`Rate aperte di clienti e fornitori, in ordine di scadenza`,`<div class="seg" role="group" aria-label="Lato">${[["tutti","Tutte"],["c","Incassi"],["f","Pagamenti"]].map(([k,l])=>`<button data-sclato="${k}" aria-pressed="${lato===k}">${l}</button>`).join("")}</div>
     <select id="scPer" class="btn" aria-label="Periodo">${[["scad","Già scadute"],["7","Entro 7 giorni"],["30","Entro 30 giorni"],["90","Entro 90 giorni"],["tutte","Tutte"]].map(([k,l])=>`<option value="${k}" ${per===k?"selected":""}>${l}</option>`).join("")}</select>
-    <select id="scStr" class="btn" aria-label="Strumento"><option value="">Tutti gli strumenti</option>${usati.map(c=>`<option value="${c}" ${str===c?"selected":""}>${esc(strName(c))}</option>`).join("")}</select>`)+
+    ${ammSelect("scAmm",UI.scAmm)}<select id="scStr" class="btn" aria-label="Strumento"><option value="">Tutti gli strumenti</option>${usati.map(c=>`<option value="${c}" ${str===c?"selected":""}>${esc(strName(c))}</option>`).join("")}</select>`)+
   `<div class="kpis"><div class="kpi"><span class="label">Incassi scaduti</span><span class="v ${sum(items,x=>x.lato==="c"&&x.r.data<td)?"neg":""}">${eur(sum(items,x=>x.lato==="c"&&x.r.data<td))}</span><span class="n">da sollecitare</span></div>
    <div class="kpi"><span class="label">Incassi entro 30 gg</span><span class="v">${eur(sum(items,x=>x.lato==="c"&&x.r.data>=td&&x.r.data<=in30))}</span><span class="n">attesi</span></div>
    <div class="kpi"><span class="label">Pagamenti scaduti</span><span class="v ${sum(items,x=>x.lato==="f"&&x.r.data<td)?"neg":""}">${eur(sum(items,x=>x.lato==="f"&&x.r.data<td))}</span><span class="n">da saldare</span></div>
@@ -994,6 +1009,66 @@ document.addEventListener("change",e=>{
   if(t.dataset.ppg){const p=byId("preventivi",t.dataset.ppg); vociPrev(p).forEach((_,i)=>{if(t.checked)P.sel[p.id+"#"+i]=true; else delete P.sel[p.id+"#"+i]}); renderPrevPicker(); return}
   if(t.dataset.ppk){if(t.checked)P.sel[t.dataset.ppk]=true; else delete P.sel[t.dataset.ppk]; renderPrevPicker(); return}
 });
+function vAmministratori(){
+  const y=UI.ammAnno||String(today().getFullYear());
+  const anni=[...new Set([String(today().getFullYear()),...S.fatture.map(f=>(f.data||"").slice(0,4)).filter(Boolean)])].sort().reverse();
+  const annoSel=`<select id="ammAnno" class="btn" aria-label="Anno">${anni.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select>`;
+  const am=byId("amministratori",UI.ammSel);
+  if(!am){
+    const senza=condDi("-");
+    const rows=S.amministratori.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(a=>{const cs=condDi(a.id);
+      return {a,cs,fatt:r2(cs.reduce((s,c)=>s+S.fatture.filter(f=>f.clienteId===c.id&&(f.data||"").startsWith(y)).reduce((x,f)=>x+(f.tipo==="nc"?-1:1)*vTot(f).imp,0),0)),aperto:r2(cs.reduce((s,c)=>s+apertoCli(c.id),0)),scad:r2(cs.reduce((s,c)=>s+scadutoCli(c.id),0)),rit:r2(cs.reduce((s,c)=>s+ritIncassi(c.id,y),0))}});
+    return head("Amministratori di condominio",`${S.amministratori.length} amministratori · ${S.clienti.filter(c=>c.amministratoreId).length} condomini collegati`,`${annoSel}<button class="btn primary" data-new="amministratori">Nuovo amministratore</button>`)+
+    (rows.length?`<section class="panel"><div class="tablewrap"><table><thead><tr><th>Amministratore</th><th>Contatti</th><th class="r">Condomini</th><th class="r">Fatturato ${y}</th><th class="r">Da incassare</th><th class="r">Di cui scaduto</th><th class="r">Ritenute 4% ${y}</th></tr></thead><tbody>${rows.map(r=>`<tr class="click" data-ammsel="${r.a.id}"><td><b>${esc(r.a.nome)}</b>${r.a.referente?`<div class="small muted">${esc(r.a.referente)}</div>`:""}</td><td class="small">${esc([r.a.tel,r.a.email].filter(Boolean).join(" · "))}${r.a.pec?`<div class="muted">PEC ${esc(r.a.pec)}</div>`:""}</td><td class="r num">${r.cs.length}</td><td class="r num">${eur2(r.fatt)}</td><td class="r num">${eur2(r.aperto)}</td><td class="r num ${r.scad>0?"neg":""}">${eur2(r.scad)}</td><td class="r num">${eur2(r.rit)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td colspan="3">Totale</td><td class="r num">${eur2(rows.reduce((a,r)=>a+r.fatt,0))}</td><td class="r num">${eur2(rows.reduce((a,r)=>a+r.aperto,0))}</td><td class="r num">${eur2(rows.reduce((a,r)=>a+r.scad,0))}</td><td class="r num">${eur2(rows.reduce((a,r)=>a+r.rit,0))}</td></tr></tfoot></table></div></section>`
+    :`<div class="empty"><h2>Nessun amministratore</h2><p>Aggiungi gli studi che amministrano i tuoi condomini e collegali nella scheda di ogni condominio: vedrai partite aperte, mastrino e ritenute raggruppati per amministratore.</p><button class="btn primary" data-new="amministratori">Aggiungi amministratore</button></div>`)+
+    (senza.length?`<p class="note">${senza.length} condomini con ritenuta 4% non hanno un amministratore collegato: ${senza.map(c=>`<a href="#" data-edit="clienti:${c.id}">${esc(c.nome)}</a>`).join(", ")}.</p>`:"")+
+    `<p class="note">Il fatturato è l'imponibile delle fatture dell'anno al netto delle note di credito. Le ritenute 4% sono quelle trattenute dai condomini sugli incassi dell'anno: devono corrispondere alle Certificazioni Uniche che i condomini ti rilasciano.</p>`;
+  }
+  const cs=condDi(am.id), td=TODAY();
+  const part=cs.map(c=>{const docs=openDocs("c:"+c.id), b=[0,0,0,0,0]; docs.forEach(d=>(d.rate||[]).filter(r=>r.res>0.005).forEach(r=>b[aging(r.data)]+=r.res));
+    const acc=S.movimenti.filter(m=>m.tipo==="entrata"&&movSogg(m)==="c:"+c.id).reduce((a,m)=>a+Math.max(0,nonAbbinato("m:"+m.id)),0);
+    return {c,b,tot:r2(b.reduce((a,x)=>a+x,0)),acc:r2(acc),m:mastrinoAnno("c:"+c.id,y),ritF:ritFatture(c.id,y),ritI:ritIncassi(c.id,y),cu:byId("cu",c.id+"_"+y)}});
+  const sum=(f)=>r2(part.reduce((a,x)=>a+f(x),0));
+  const scad=sum(x=>x.b[1]+x.b[2]+x.b[3]+x.b[4]);
+  const DA=v=>{const x=r2(v);return x===0?"0,00":eur2(Math.abs(x))+(x>0?" D":" A")};
+  const righe=part.flatMap(x=>x.m.righe.map(r=>Object.assign({cond:x.c.nome},r))).sort((a,b)=>(a.data||"").localeCompare(b.data||""));
+  return head(esc(am.nome),`${cs.length} condomini${am.referente?" · "+esc(am.referente):""}${am.pec?" · PEC "+esc(am.pec):am.email?" · "+esc(am.email):""}`,`<button class="btn" data-ammsel="">← Tutti</button>${annoSel}<button class="btn" data-edit="amministratori:${am.id}">Modifica</button><button class="btn" data-ammlettera="sollecito">Lettera di sollecito</button>`)+
+  `<div class="kpis"><div class="kpi"><span class="label">Condomini</span><span class="v">${cs.length}</span><span class="n">amministrati</span></div>
+   <div class="kpi"><span class="label">Da incassare</span><span class="v">${eur(sum(x=>x.tot))}</span><span class="n">rate aperte</span></div>
+   <div class="kpi"><span class="label">Scaduto</span><span class="v ${scad>0?"neg":""}">${eur(scad)}</span><span class="n">da sollecitare</span></div>
+   <div class="kpi"><span class="label">Ritenute 4% ${y}</span><span class="v">${eur(sum(x=>x.ritI))}</span><span class="n">sugli incassi dell'anno</span></div></div>
+  ${cs.length?`<section class="panel"><div class="ph"><h2>Partite aperte per condominio</h2></div><div class="tablewrap"><table><thead><tr><th>Condominio</th>${AGE.map(a=>`<th class="r">${a}</th>`).join("")}<th class="r">Totale</th><th class="r">Da abbinare</th><th></th></tr></thead><tbody>${part.map(x=>`<tr><td><b>${esc(x.c.nome)}</b>${x.c.piva?`<div class="small muted">CF ${esc(x.c.piva)}</div>`:""}</td>${x.b.map((v,i)=>`<td class="r num ${i>=2&&v>0?"neg":""}">${v?eur2(v):"—"}</td>`).join("")}<td class="r num"><b>${eur2(x.tot)}</b></td><td class="r num">${x.acc?eur2(x.acc):"—"}</td><td class="r" style="white-space:nowrap"><button class="btn small" data-ammest="${x.c.id}">Estratto</button> ${x.tot>0?`<button class="btn small" data-wiz="c:${x.c.id}">Incassa</button>`:""}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>Totale</td>${[0,1,2,3,4].map(i=>`<td class="r num">${eur2(sum(x=>x.b[i]))}</td>`).join("")}<td class="r num">${eur2(sum(x=>x.tot))}</td><td class="r num">${eur2(sum(x=>x.acc))}</td><td></td></tr></tfoot></table></div></section>
+  <section class="panel"><div class="ph"><h2>Mastrino per condominio · ${y}</h2></div><div class="tablewrap"><table><thead><tr><th>Condominio</th><th class="r">Saldo al 1/1</th><th class="r">Dare (fatture)</th><th class="r">Avere (incassi, ritenute, NC)</th><th class="r">Saldo</th><th></th></tr></thead><tbody>${part.map(x=>`<tr><td>${esc(x.c.nome)}</td><td class="r num">${DA(x.m.ap)}</td><td class="r num">${eur2(x.m.D)}</td><td class="r num">${eur2(x.m.A)}</td><td class="r num"><b>${DA(x.m.fin)}</b></td><td class="r"><button class="btn small" data-mastrino="c:${x.c.id}">Mastrino</button></td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>Totale amministratore</td><td class="r num">${DA(sum(x=>x.m.ap))}</td><td class="r num">${eur2(sum(x=>x.m.D))}</td><td class="r num">${eur2(sum(x=>x.m.A))}</td><td class="r num">${DA(sum(x=>x.m.fin))}</td><td></td></tr></tfoot></table></div>
+    <details><summary class="small" style="cursor:pointer;font-weight:600">Tutti i movimenti dell'anno (${righe.length})</summary><div class="tablewrap"><table><thead><tr><th>Data</th><th>Condominio</th><th>Descrizione</th><th class="r">Dare</th><th class="r">Avere</th></tr></thead><tbody>${righe.map(r=>`<tr><td class="mono small">${dShort(r.data)}</td><td class="small">${esc(r.cond)}</td><td class="small">${esc(r.descr)}</td><td class="r num">${r.dare?eur2(r.dare):""}</td><td class="r num">${r.avere?eur2(r.avere):""}</td></tr>`).join("")}</tbody></table></div></details></section>
+  <section class="panel"><div class="ph"><h2>Ritenute 4% e Certificazioni Uniche · ${y}</h2></div><div class="tablewrap"><table><thead><tr><th>Condominio</th><th class="r">Su fatture ${y}</th><th class="r">Su incassi ${y}</th><th>CU ricevuta</th></tr></thead><tbody>${part.map(x=>`<tr><td>${esc(x.c.nome)}${x.c.ritenuta?"":' <span class="pill warn">ritenuta non impostata</span>'}</td><td class="r num">${eur2(x.ritF)}</td><td class="r num">${eur2(x.ritI)}</td><td><label class="small"><input type="checkbox" data-cu="${x.c.id}" ${x.cu&&x.cu.ricevuta?"checked":""}> ${x.cu&&x.cu.ricevuta?"ricevuta il "+dShort(x.cu.data):"da ricevere"}</label></td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>Totale</td><td class="r num">${eur2(sum(x=>x.ritF))}</td><td class="r num">${eur2(sum(x=>x.ritI))}</td><td></td></tr></tfoot></table></div>
+    <p class="note">Il condominio trattiene il 4% quando paga (art. 25-ter DPR 600/73) e ogni anno ti rilascia la Certificazione Unica con le ritenute dell'anno: confrontala con la colonna "Su incassi" e spunta quando la ricevi. Le ritenute certificate si scomputano dalle imposte: passa le CU al commercialista.</p></section>`
+  :`<div class="empty"><h2>Nessun condominio collegato</h2><p>Apri la scheda dei condomini gestiti da questo amministratore e sceglilo nel campo "Amministratore di condominio".</p></div>`}`;
+}
+function letteraSollecito(am){
+  const cs=condDi(am.id), td=TODAY(), banca=conti().find(c=>c.iban);
+  let tot=0;
+  const blocchi=cs.map(c=>{const ds=S.fatture.filter(f=>f.clienteId===c.id&&f.tipo!=="nc").map(f=>({f,rs:rateDoc("v",f).filter(r=>r.res>0.005&&r.data<td)})).filter(x=>x.rs.length);
+    if(!ds.length)return""; let sc=0;
+    const l=ds.map(x=>x.rs.map(r=>{sc+=r.res;return `  - ${vLabel(x.f)} del ${dShort(x.f.data)}${x.rs.length>1||rateDoc("v",x.f).length>1?", rata "+r.n:""}, scaduta il ${dShort(r.data)}: ${eur2(r.res)}`}).join("\n")).join("\n");
+    tot+=sc; return `${condNome(c)}${c.piva?" (C.F. "+c.piva+")":""}\n${l}\n  Totale condominio: ${eur2(sc)}`}).filter(Boolean);
+  if(!blocchi.length)return null;
+  return `Spett.le ${am.nome}${am.referente?"\nc.a. "+am.referente:""}${am.indirizzo?"\n"+am.indirizzo:""}${am.pec?"\nPEC: "+am.pec:""}\n\n${dShort(td)}\n\nOggetto: sollecito di pagamento per i servizi di pulizia dei condomini da Voi amministrati\n\nCon la presente Vi segnaliamo che, alla data odierna, risultano scadute e non ancora saldate le seguenti fatture:\n\n${blocchi.join("\n\n")}\n\nTotale complessivo scaduto: ${eur2(tot)}\n\nVi chiediamo di provvedere al pagamento entro 15 giorni dal ricevimento della presente${banca?", tramite bonifico sull'IBAN "+banca.iban:""}, applicando la ritenuta del 4% ove prevista. Se nel frattempo avete già provveduto, vi preghiamo di non tenere conto di questa comunicazione e di inviarci gli estremi del pagamento.\n\nIn caso di mancato pagamento, ai sensi dell'art. 63, comma 1, disp. att. c.c. Vi chiediamo fin d'ora di comunicarci i dati dei condòmini morosi.\n\nDistinti saluti`;
+}
+function estrattoCondominio(c,anno){
+  const fs=S.fatture.filter(f=>f.clienteId===c.id&&(f.data||"").startsWith(anno)).sort((a,b)=>a.data.localeCompare(b.data));
+  const inc=S.movimenti.filter(m=>m.tipo==="entrata"&&movSogg(m)==="c:"+c.id&&(m.data||"").startsWith(anno)).sort((a,b)=>a.data.localeCompare(b.data));
+  const m=mastrinoAnno("c:"+c.id,anno), am=byId("amministratori",c.amministratoreId);
+  const DA=v=>{const x=r2(v);return eur2(Math.abs(x))+(x>0?" a nostro credito":x<0?" a vostro credito":"")};
+  return `Estratto conto ${anno}\n${condNome(c)}${c.piva?" (C.F. "+c.piva+")":""}${am?"\nAmministratore: "+am.nome:""}\n\nSaldo al 1/1/${anno}: ${DA(m.ap)}\n\nFatture e note di credito\n${fs.map(f=>{const t=vTot(f);return `  ${vLabel(f)} del ${dShort(f.data)}: totale ${eur2((f.tipo==="nc"?-1:1)*t.tot)}${t.rit?", ritenuta 4% "+eur2(t.rit)+", netto "+eur2(t.dovuto):""}`}).join("\n")||"  nessuna"}\n\nPagamenti ricevuti\n${inc.map(x=>`  ${dShort(x.data)}: ${eur2(x.importo)}${x.descrizione?" ("+x.descrizione+")":""}`).join("\n")||"  nessuno"}\n\nRitenute 4% sui pagamenti dell'anno: ${eur2(ritIncassi(c.id,anno))}\nSaldo al ${dShort(TODAY()<anno+"-12-31"?TODAY():anno+"-12-31")}: ${DA(m.fin)}`;
+}
+function mostraTesto(titolo,testo){
+  modalShell(esc(titolo),`<div class="mb"><pre class="copy full" id="lettera">${esc(testo)}</pre><p class="note full">Copia il testo nella tua email o PEC, oppure in un documento su carta intestata.</p></div><div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Chiudi</button><button type="button" class="btn primary" data-copylet="1">Copia testo</button></div></div>`);
+  current={c:"lettera"};
+}
 function vQualita(){
   const rows=S.sedi.map(s=>{const l=S.ispezioni.filter(x=>x.sedeId===s.id).sort((a,b)=>a.data<b.data?1:-1);const ps=l.map(x=>punteggio(x.voti)).filter(x=>x!=null);return {s,last:l[0],media:ps.length?Math.round(ps.reduce((a,b)=>a+b,0)/ps.length):null,n:l.length}});
   return head("Qualità",`${S.ispezioni.length} ispezioni registrate`,`<button class="btn primary" data-new="ispezioni">Nuova ispezione</button>`)+
@@ -1007,6 +1082,7 @@ function vVendite(){
   const ys=anni(S.fatture,"data"); const y=UI.vAnno||ys[0];
   let list=S.fatture.filter(f=>y==="*"||(f.data||"").startsWith(y));
   if(UI.vCli)list=list.filter(f=>f.clienteId===UI.vCli);
+  if(UI.vAmm)list=list.filter(f=>ammFilter(UI.vAmm,f.clienteId));
   if(UI.vStato==="aperte")list=list.filter(f=>f.tipo!=="nc"&&residuoV(f)>0.005);
   if(UI.vStato==="scadute")list=list.filter(f=>f.tipo!=="nc"&&statoV(f)[1]==="bad");
   if(UI.vStato==="nc")list=list.filter(f=>f.tipo==="nc");
@@ -1015,7 +1091,7 @@ function vVendite(){
   const res=list.reduce((a,f)=>a+residuoV(f),0);
   return head("Fatture di vendita",`${eur(S.fatture.reduce((a,f)=>a+residuoV(f),0))} ancora da incassare`,
    `<input type="month" id="fattMese" value="${fattMese}" class="btn" aria-label="Mese dei canoni"><button class="btn" data-act="genFatt">Prepara canoni di ${monthLabel(fattMese)}</button><button class="btn" data-prpick="1">Da preventivi</button><button class="btn" data-new="vendite" data-nc="1">Nota di credito</button><button class="btn primary" data-new="vendite">Nuova fattura</button>`)+
-  `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}<option value="*" ${y==="*"?"selected":""}>Tutti gli anni</option></select><select id="vCli" class="btn" aria-label="Cliente"><option value="">Tutti i clienti</option>${S.clienti.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>`<option value="${c.id}" ${UI.vCli===c.id?"selected":""}>${esc(c.nome)}</option>`).join("")}</select>${UI.vCli?`<button class="btn small" data-wiz="c:${UI.vCli}">Incassa fatture</button>`:""}
+  `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}<option value="*" ${y==="*"?"selected":""}>Tutti gli anni</option></select>${ammSelect("vAmm",UI.vAmm)}<select id="vCli" class="btn" aria-label="Cliente"><option value="">Tutti i clienti</option>${S.clienti.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>`<option value="${c.id}" ${UI.vCli===c.id?"selected":""}>${esc(c.nome)}</option>`).join("")}</select>${UI.vCli?`<button class="btn small" data-wiz="c:${UI.vCli}">Incassa fatture</button>`:""}
    <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da incassare"],["scadute","Scadute"],["nc","Note di credito"]].map(([k,l])=>`<button data-vstato="${k}" aria-pressed="${UI.vStato===k}">${l}</button>`).join("")}</div></div><span class="small muted">${list.length} documenti</span></div>
   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Numero</th><th>Data</th><th>Cliente</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(f=>{const t=vTot(f),c=byId("clienti",f.clienteId),r=residuoV(f),s=f.tipo==="nc"?-1:1;return `<tr class="click" data-edit="fatture:${f.id}"><td class="mono">${esc(vLabel(f))}</td><td class="mono small">${dShort(f.data)}</td><td>${esc(c?c.nome:f.clienteNome||"")}${t.tags.length?`<div class="small muted">${esc(t.tags.join(" · "))}</div>`:""}${t.rit?'<div class="small muted">Ritenuta 4%</div>':""}</td><td class="r num">${eur2(s*t.imp)}</td><td class="r num">${eur2(s*t.iva)}</td><td class="r num"><b>${eur2(s*t.tot)}</b></td><td class="r num">${f.tipo==="nc"?"":eur2(r)}</td><td class="mono small">${scadCell("v",f)}</td><td>${pill(statoV(f))}</td><td class="r">${f.tipo!=="nc"&&r>0.005?`<button class="btn small" data-incassa="${f.id}">Incassa</button>`:""}</td></tr>`}).join("")}</tbody>
   <tfoot><tr><td colspan="3">Totale</td><td class="r num">${eur2(sum("imp"))}</td><td class="r num">${eur2(sum("iva"))}</td><td class="r num">${eur2(sum("tot"))}</td><td class="r num">${eur2(res)}</td><td colspan="3"></td></tr></tfoot></table></div>`:`<p class="muted">Nessun documento con questi filtri. "Prepara canoni" crea una fattura per cliente con le sue righe abituali (oppure, se non ne ha, i canoni delle sedi attive) e gli straordinari svolti nel mese.</p>`}</section>
@@ -1102,7 +1178,7 @@ function nonAbbinatiDi(sogg){
 }
 function vPartite(){
   const lato=UI.paLato, isC=lato==="c", tutte=!!UI.paTutte;
-  const anag=(isC?S.clienti:S.fornitori).slice().sort((a,b)=>a.nome.localeCompare(b.nome));
+  const anag=(isC?S.clienti.filter(c=>ammFilter(UI.paAmm,c.id)):S.fornitori).slice().sort((a,b)=>a.nome.localeCompare(b.nome));
   const sogg=anag.map(x=>{const k=lato+":"+x.id;const docs=openDocs(k);const b=[0,0,0,0,0];docs.forEach(d=>(d.rate&&d.rate.length?d.rate.filter(r=>r.res>0.005):[{data:d.scad,res:d.res}]).forEach(r=>b[aging(r.data)]+=r.res));
     const na=nonAbbinatiDi(k), nc=isC?S.fatture.filter(f=>f.tipo==="nc"&&f.clienteId===x.id).reduce((a,f)=>a+Math.max(0,nonAbbinato("n:"+f.id)),0):0;
     return {x,k,docs,b,tot:docs.reduce((a,d)=>a+d.res,0),sosp:na.reduce((a,c)=>a+c.v,0)+nc,hasDocs:isC?S.fatture.some(f=>f.clienteId===x.id):S.acquisti.some(a=>a.fornitoreId===x.id)}})
@@ -1137,13 +1213,13 @@ function vPartite(){
       <p class="note">Ogni registrazione sotto la fattura riduce il residuo fino a zero. "${isC?"Registra incasso":"Registra pagamento"}" apre le rate da saldare: selezionale, scegli banca o cassa e, se serve, scrivi un importo più basso per un ${isC?"incasso":"pagamento"} parziale. Clicca una riga per correggerla o cambiare l'abbinamento.</p></section>`;
   }
   return head("Partite aperte",`${isC?"Crediti verso clienti":"Debiti verso fornitori"}: ${eur2(T.reduce((a,b)=>a+b,0))}`,
-   `<div class="seg" role="group" aria-label="Lato"><button data-palato="c" aria-pressed="${isC}">Clienti</button><button data-palato="f" aria-pressed="${!isC}">Fornitori</button></div>
+   `${isC?ammSelect("paAmm",UI.paAmm):""}<div class="seg" role="group" aria-label="Lato"><button data-palato="c" aria-pressed="${isC}">Clienti</button><button data-palato="f" aria-pressed="${!isC}">Fornitori</button></div>
     <select id="paSel" class="btn" aria-label="${isC?"Cliente":"Fornitore"}">${anag.map(x=>`<option value="${lato}:${x.id}" ${lato+":"+x.id===selK?"selected":""}>${esc(x.nome)}</option>`).join("")}</select>
     <label class="btn" style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="paTutte" ${tutte?"checked":""} style="accent-color:var(--accent)">Mostra anche le partite chiuse</label>`)+
   `<section class="panel"><h2>Anzianità per ${isC?"cliente":"fornitore"}</h2>${sogg.length?`<div class="tablewrap"><table><thead><tr><th>${isC?"Cliente":"Fornitore"}</th>${AGE.map(a=>`<th class="r">${a}</th>`).join("")}<th class="r">Totale aperto</th><th class="r">Da abbinare</th></tr></thead><tbody>${sogg.map(s=>`<tr class="click ${s.k===selK?"sel":""}" data-pasel="${s.k}"><td><b>${esc(s.x.nome)}</b></td>${s.b.map((v,i)=>`<td class="r num ${i>=2&&v>0?"neg":""}">${v?eur2(v):"—"}</td>`).join("")}<td class="r num"><b>${eur2(s.tot)}</b></td><td class="r num">${s.sosp>0.005?eur2(s.sosp):"—"}</td></tr>`).join("")}</tbody><tfoot><tr><td>Totale</td>${T.map(v=>`<td class="r num">${eur2(v)}</td>`).join("")}<td class="r num">${eur2(T.reduce((a,b)=>a+b,0))}</td><td></td></tr></tfoot></table></div>`:`<p class="muted">Nessuna partita aperta verso ${isC?"clienti":"fornitori"}.</p>`}</section>`+est;
 }
 function vMastrini(){
-  const opts=[...S.clienti.map(c=>["c:"+c.id,c.nome,"Clienti"]),...S.fornitori.map(f=>["f:"+f.id,f.nome,"Fornitori"])];
+  const opts=[...S.clienti.filter(c=>ammFilter(UI.maAmm,c.id)).map(c=>["c:"+c.id,c.nome,"Clienti"]),...(UI.maAmm?[]:S.fornitori.map(f=>["f:"+f.id,f.nome,"Fornitori"]))];
   const sel=UI.maSel&&opts.some(o=>o[0]===UI.maSel)?UI.maSel:(opts[0]||[])[0];
   const ys=[...new Set([...anni(S.fatture,"data"),...anni(S.acquisti,"data"),...anni(S.movimenti,"data")])].sort().reverse(); const y=UI.maAnno||ys[0];
   let mast="";
@@ -1170,7 +1246,7 @@ function vMastrini(){
   for(let i=0;i<4;i++){const d=new Date(t0.getFullYear(),t0.getMonth()-i*3,1);const k=d.getFullYear()+"-T"+Math.ceil((d.getMonth()+1)/3);if(!perOpts.some(o=>o[0]===k))perOpts.push([k,Math.ceil((d.getMonth()+1)/3)+"° trimestre "+d.getFullYear()])}
   const saldoIva=r2(deb-cred);
   return head("Mastrini e IVA","Schede contabili di clienti e fornitori",`<button class="btn" data-new="movimenti">Registra movimento</button>`)+
-  `<section class="panel"><div class="ph"><div class="actions"><select id="maSel" class="btn" aria-label="Soggetto">${["Clienti","Fornitori"].map(g=>{const o=opts.filter(x=>x[2]===g);return o.length?`<optgroup label="${g}">${o.map(([k,l])=>`<option value="${k}" ${k===sel?"selected":""}>${esc(l)}</option>`).join("")}</optgroup>`:""}).join("")}</select><select id="maAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select></div>${sel?`<span class="small muted">Saldo attuale ${eur2(saldoSogg(sel))}</span>`:""}</div>
+  `<section class="panel"><div class="ph"><div class="actions">${ammSelect("maAmm",UI.maAmm)}${UI.maAmm&&UI.maAmm!=="-"?`<button class="btn small" data-ammsel="${UI.maAmm}" data-goamm="1">Riepilogo amministratore</button>`:""}<select id="maSel" class="btn" aria-label="Soggetto">${["Clienti","Fornitori"].map(g=>{const o=opts.filter(x=>x[2]===g);return o.length?`<optgroup label="${g}">${o.map(([k,l])=>`<option value="${k}" ${k===sel?"selected":""}>${esc(l)}</option>`).join("")}</optgroup>`:""}).join("")}</select><select id="maAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select></div>${sel?`<span class="small muted">Saldo attuale ${eur2(saldoSogg(sel))}</span>`:""}</div>
   ${sel?mast:`<p class="muted">Aggiungi clienti o fornitori per vedere i loro mastrini.</p>`}</section>
   <section class="panel"><div class="ph"><h2>Riepilogo IVA</h2><select id="ivaPer" class="btn" aria-label="Periodo">${perOpts.map(([k,l])=>`<option value="${k}" ${k===per?"selected":""}>${l}</option>`).join("")}</select></div>
   <table><tbody><tr><td>IVA a debito sulle vendite</td><td class="r num">${eur2(deb)}</td></tr><tr><td>IVA a credito sugli acquisti registrati</td><td class="r num">− ${eur2(cred)}</td></tr>
@@ -1189,7 +1265,7 @@ const contoOpts=()=>conti().map(c=>[c.id,c.nome]);
 const soggOpts=()=>[...cliOpts().map(([k,l])=>["c:"+k,l,"Clienti"]),...forOpts().map(([k,l])=>["f:"+k,l,"Fornitori"])];
 const plus=d=>()=>iso(addDays(today(),d));
 const FORMS={
-  clienti:{t:"Cliente",f:[{k:"nome",l:"Ragione sociale o condominio",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"referente",l:"Referente (amministratore, facility)"},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"indirizzo",l:"Sede legale",full:1},{k:"sdi",l:"Codice destinatario SdI"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"codIva",l:"Codice IVA predefinito",type:"select",opts:codOpts,noEmpty:1,full:1,add:"codiceIva",hint:"Proposto sulle nuove righe. Pulizia di edifici per clienti con partita IVA: inversione contabile. Condomini e privati: 22%."},{k:"ritenuta",l:"Ritenuta d'acconto 4%",type:"bool",yes:"Sì: è un condominio",no:"No",def:false},{k:"righeAbituali",l:"Righe abituali in fattura",type:"righe",full:1,hint:"Ogni riga con il suo codice IVA. Usate per le fatture mensili e richiamabili in ogni fattura. Scrivi {mese} per inserire il mese fatturato."},{k:"note",l:"Note",type:"textarea",full:1}]},
+  clienti:{t:"Cliente",f:[{k:"nome",l:"Ragione sociale o condominio",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"referente",l:"Referente"},{k:"amministratoreId",l:"Amministratore di condominio",type:"select",opts:()=>ammOpts(),add:"amministratori",full:1,hint:"Per i condomini: lo studio che li amministra. Le fatture restano intestate al condominio, con il suo codice fiscale."},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"indirizzo",l:"Sede legale",full:1},{k:"sdi",l:"Codice destinatario SdI"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"codIva",l:"Codice IVA predefinito",type:"select",opts:codOpts,noEmpty:1,full:1,add:"codiceIva",hint:"Proposto sulle nuove righe. Pulizia di edifici per clienti con partita IVA: inversione contabile. Condomini e privati: 22%."},{k:"ritenuta",l:"Ritenuta d'acconto 4%",type:"bool",yes:"Sì: è un condominio",no:"No",def:false},{k:"righeAbituali",l:"Righe abituali in fattura",type:"righe",full:1,hint:"Ogni riga con il suo codice IVA. Usate per le fatture mensili e richiamabili in ogni fattura. Scrivi {mese} per inserire il mese fatturato."},{k:"note",l:"Note",type:"textarea",full:1}]},
   sedi:{t:"Sede e contratto",f:[{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,req:1,add:"clienti"},{k:"nome",l:"Nome sede",req:1,hint:"Es. Condominio Via Padova 12"},{k:"indirizzo",l:"Indirizzo",full:1},{k:"tipo",l:"Tipo",type:"select",opts:()=>tipiList().map(x=>[x,x]),add:"lista:tipi"},{k:"mq",l:"Superficie (m²)",type:"number"},{k:"giorni",l:"Giorni di servizio",type:"days",full:1},{k:"ora",l:"Ora di inizio",type:"time",def:"18:00"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25",def:2},{k:"operatori",l:"Squadra assegnata",type:"ops",full:1,add:"operatori"},{k:"canone",l:"Canone mensile (€, IVA esclusa)",type:"number"},{k:"attiva",l:"Stato",type:"bool",yes:"Attiva",no:"Sospesa"},{k:"accesso",l:"Accesso (chiavi, codici, allarme)",type:"textarea",full:1},{k:"attivita",l:"Mansionario: un'attività per riga",type:"textarea",full:1}]},
   operatori:{t:"Operatore",f:[{k:"nome",l:"Nome e cognome",req:1,full:1},{k:"emailApp",l:"Email per l'app dipendenti",type:"email",full:1,hint:"Il dipendente crea il suo account nell'app con questa email e vede solo i suoi turni."},{k:"mansione",l:"Mansione",hint:"Es. addetto, caposquadra"},{k:"tel",l:"Telefono"},{k:"costoOrario",l:"Costo orario aziendale (€)",type:"number",step:"0.01",def:19},{k:"oreSettimanali",l:"Ore di contratto a settimana",type:"number",def:30},{k:"attivo",l:"Stato",type:"bool",yes:"Attivo",no:"Non attivo"},{k:"note",l:"Note (formazione, idoneità, DPI)",type:"textarea",full:1}]},
   straordinari:{t:"Intervento straordinario",f:[{k:"sedeId",l:"Sede",type:"select",opts:sedeOpts,req:1,add:"sedi"},{k:"descrizione",l:"Descrizione",hint:"Es. lavaggio vetri, pulizia post-cantiere"},{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"ora",l:"Ora",type:"time",def:"09:00"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25",def:3},{k:"importo",l:"Importo da fatturare (€)",type:"number"},{k:"operatori",l:"Squadra",type:"ops",full:1,add:"operatori"}]},
@@ -1199,6 +1275,7 @@ const FORMS={
   fornitori:{t:"Fornitore",f:[{k:"nome",l:"Ragione sociale",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"categoria",l:"Categoria",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"iban",l:"IBAN",full:1},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"note",l:"Note",type:"textarea",full:1}]},
   acquisti:{t:"Fattura d'acquisto",righe:"a",f:[{k:"fornitoreId",l:"Fornitore",type:"select",opts:forOpts,req:1,full:1,add:"fornitori"},{k:"numero",l:"Numero del fornitore",req:1},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"dataReg",l:"Data di registrazione",type:"date",def:plus(0)},{k:"protocollo",l:"Protocollo interno",hint:"Vuoto = automatico"},{k:"categoria",l:"Categoria di costo",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenutaPct",l:"Ritenuta d'acconto da operare (%)",type:"number",def:0,hint:"20 per i professionisti, altrimenti 0"},{k:"righe",l:"Righe del documento",type:"righe",full:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
   movimenti:{t:"Movimento di prima nota",alloc:1,f:[{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"tipo",l:"Tipo",type:"select",noEmpty:1,opts:()=>[["entrata","Entrata"],["uscita","Uscita"],["giroconto","Giroconto tra conti"]]},{k:"conto",l:"Conto",type:"select",noEmpty:1,opts:contoOpts,def:"banca",add:"conti"},{k:"contoDest",l:"Conto di destinazione",type:"select",noEmpty:1,opts:contoOpts,def:"cassa",add:"conti"},{k:"causale",l:"Causale",type:"select",noEmpty:1,opts:()=>causaliList("entrata").map(x=>[x,x]),add:"lista:causali"},{k:"importo",l:"Importo (€)",type:"number",step:"0.01",req:1},{k:"soggetto",l:"Cliente o fornitore",type:"select",opts:soggOpts,full:1,add:["clienti","fornitori"]},{k:"descrizione",l:"Descrizione",full:1,hint:"Es. bonifico, assegno, contanti"}]},
+  amministratori:{t:"Amministratore",f:[{k:"nome",l:"Nome o studio",req:1,full:1},{k:"referente",l:"Referente"},{k:"cf",l:"Codice fiscale / P.IVA"},{k:"tel",l:"Telefono"},{k:"email",l:"Email"},{k:"pec",l:"PEC",full:1},{k:"indirizzo",l:"Indirizzo",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
   pagamenti:{t:"Tipo di pagamento",calcPag:1,f:[{k:"descrizione",l:"Descrizione",req:1,full:1,hint:"Es. RiBa 30/60 gg fine mese"},{k:"strumento",l:"Strumento",type:"select",noEmpty:1,full:1,opts:()=>STRUMENTI.map(([c,n])=>[c,n+(c==="RD"?" (in fattura elettronica di solito MP05)":" · "+c)])},{k:"rate",l:"Giorni delle scadenze",def:"30",hint:"0 = a vista · 30 · più rate: 30,60,90"},{k:"base",l:"Calcolate da",type:"select",noEmpty:1,opts:()=>[["DF","Data fattura"],["FM","Fine mese"]]},{k:"giornoFisso",l:"Giorno fisso (facoltativo)",type:"number",hint:"Es. 10: la scadenza va al giorno 10 del mese successivo"},{k:"ivaPrimaRata",l:"IVA con più rate",type:"bool",yes:"Tutta l'IVA nella prima rata",no:"IVA divisa tra le rate",def:false},{k:"mesiEsclusi",l:"Mesi esclusi",type:"months",full:1,hint:"Le scadenze in questi mesi slittano al mese successivo (tipico agosto per le RiBa)"},{k:"slittamento",l:"Giorno di slittamento",type:"number",def:10,hint:"Giorno del mese successivo in cui cade la scadenza spostata"},{k:"conto",l:"Conto predefinito di incasso o pagamento",type:"select",opts:contoOpts,add:"conti"},{k:"note",l:"Note",type:"textarea",full:1}]},
   timbrature:{t:"Timbratura",f:[{k:"ora",l:"Ora",type:"time",req:1},{k:"nota",l:"Nota",type:"textarea",full:1}]},
   variazioni:{t:"Turno",f:[{k:"data",l:"Giorno",type:"date",req:1},{k:"ora",l:"Ora di inizio",type:"time"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25"},{k:"operatori",l:"Squadra per questo turno",type:"ops",full:1,add:"operatori"},{k:"nota",l:"Nota per questo turno",type:"textarea",full:1,hint:"Es. sostituisce Marco in permesso"}]},
@@ -1472,7 +1549,7 @@ async function submitForm(){
     if(error){$("#ferr").textContent=errMsg(error);return}
     const x=T.find(y=>y.id===rec.id); if(x){x.ts=t.toISOString();x.nota=out.nota;x.corretta=true} ver++; render(); closeModal(); toast("Timbratura corretta"); return;
   }
-  if((c==="clienti"||c==="fornitori"||c==="operatori")&&S[c].some(x=>x.nome.trim().toLowerCase()===out.nome.toLowerCase()&&(!rec||x.id!==rec.id))){$("#ferr").textContent=`Esiste già "${out.nome}" in questo elenco.`;return}
+  if((c==="clienti"||c==="fornitori"||c==="operatori"||c==="amministratori")&&S[c].some(x=>x.nome.trim().toLowerCase()===out.nome.toLowerCase()&&(!rec||x.id!==rec.id))){$("#ferr").textContent=`Esiste già "${out.nome}" in questo elenco.`;return}
   if(c==="sedi"&&!out.giorni.length){$("#ferr").textContent="Scegli almeno un giorno di servizio.";return}
   if(c==="straordinari"&&!rec)out.stato="pianificato";
   if((c==="fatture"||c==="acquisti")&&!out.righe.length){$("#ferr").textContent="Inserisci almeno una riga con descrizione e prezzo.";return}
@@ -1568,10 +1645,10 @@ async function loadExamples(){
   const w=[];
   [["op1","Elena Russo","Caposquadra",21.5,38],["op2","Marco Ferrari","Addetto",18.9,30],["op3","Aisha Diallo","Addetta",18.9,25],["op4","Luca Colombo","Addetto vetri",19.8,20]]
    .forEach(([id,nome,mansione,costoOrario,oreSettimanali])=>w.push(["operatori",{id,nome,mansione,costoOrario,oreSettimanali,attivo:true,esempio:true}]));
-  [["cl1","Condominio Via Padova 112","Studio Bianchi Amministrazioni","22",true,30,[{descr:"Pulizia scale A-B e androni, {mese}",qta:1,prezzo:1250,cod:"22"},{descr:"Pulizia box e cortile, {mese}",qta:1,prezzo:180,cod:"22"}]],
+  [["cl1","Condominio Via Padova 112","Rag. Bianchi","22",true,30,[{descr:"Pulizia scale A-B e androni, {mese}",qta:1,prezzo:1250,cod:"22"},{descr:"Pulizia box e cortile, {mese}",qta:1,prezzo:180,cod:"22"}]],
     ["cl2","Ottica Brera S.r.l.","Sig.ra Galli","RC",false,30,[]],
     ["cl3","Studio Legale Marini","Avv. Marini","RC",false,60,[{descr:"Pulizia uffici piano 3 e archivio, {mese}",qta:1,prezzo:2110,cod:"RC"},{descr:"Fornitura materiale igienico (carta, sapone)",qta:1,prezzo:85,cod:"22"},{descr:"Rimborso spese anticipate in nome e per conto",qta:1,prezzo:0,cod:"N1"}]]]
-   .forEach(([id,nome,referente,codIva,ritenuta,ggPagamento,righeAbituali])=>w.push(["clienti",{id,nome,referente,codIva,ritenuta,pagamento:id==="cl2"?"RB30FM":ggPagamento===60?"BB60FM":"BB30DF",righeAbituali,piva:"",esempio:true}]));
+   .forEach(([id,nome,referente,codIva,ritenuta,ggPagamento,righeAbituali])=>w.push(["clienti",{id,nome,referente,codIva,ritenuta,amministratoreId:id==="cl1"?"am1":"",pagamento:id==="cl2"?"RB30FM":ggPagamento===60?"BB60FM":"BB30DF",righeAbituali,piva:"",esempio:true}]));
   [["se1","cl1","Via Padova 112, scale A-B","Via Padova 112, Milano","Condominio",900,[1,3,5],"07:00",2.5,["op2","op3"],1250],
    ["se2","cl1","Via Padova 112, box e cortile","Via Padova 112, Milano","Condominio",600,[2],"07:30",1.5,["op2"],180],
    ["se3","cl2","Negozio Brera","Corso Garibaldi 40, Milano","Negozio",220,[1,2,3,4,5,6],"08:00",1,["op3"],640],
@@ -1583,6 +1660,7 @@ async function loadExamples(){
   w.push(["assenze",{id:"as1",operatoreId:"op3",tipo:"Ferie",dal:D(1),al:D(3),note:"Ferie concordate",esempio:true}]);
   w.push(["assenze",{id:"as2",operatoreId:"op2",tipo:"Permesso",dal:thu,al:thu,dalle:"18:00",alle:"21:00",note:"Visita medica",esempio:true}]);
   w.push(["variazioni",{id:"se4_"+thu,sedeId:"se4",origData:thu,data:thu,ora:"18:30",durata:2,operatori:["op1","op4"],nota:"Luca sostituisce Marco in permesso",esempio:true}]);
+  w.push(["amministratori",{id:"am1",nome:"Studio Bianchi Amministrazioni",referente:"Rag. Marco Bianchi",tel:"02 2851 0000",email:"info@studiobianchi.example",pec:"studiobianchi@pec.example",indirizzo:"Via Palestrina 10, 20124 Milano",esempio:true}]);
   w.push(["ispezioni",{id:"is1",sedeId:"se1",data:D(-12),ispettore:"Elena Russo",voti:{"Ingressi, scale e androni":4,"Pavimenti":4,"Vetri e superfici":3,"Rifiuti e cestini":5},note:"Corrimano scala B da ripassare",esempio:true}]);
   w.push(["ispezioni",{id:"is2",sedeId:"se4",data:D(-5),ispettore:"Elena Russo",voti:{"Uffici e postazioni":5,"Bagni e servizi":3,"Pavimenti":4,"Rifiuti e cestini":4},note:"Bagno uomini: calcare sui rubinetti",esempio:true}]);
   w.push(["preventivi",{id:"pr2",numero:"PR2/"+y,clienteId:"cl3",cliente:"Studio Legale Marini",descrizione:"Pulizia straordinaria dopo tinteggiatura",tipo:"Uffici",mq:0,righe:[{descr:"Pulizia post-cantiere uffici piano 3",qta:1,prezzo:650,cod:"RC"},{descr:"Lavaggio vetri interni ed esterni",qta:1,prezzo:240,cod:"RC"},{descr:"Fornitura sacchi e prodotti",qta:1,prezzo:45,cod:"22"}],stato:"Accettato",data:D(-5),esempio:true}]);
@@ -1623,7 +1701,7 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea]");
+  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
@@ -1666,6 +1744,10 @@ document.addEventListener("click",async e=>{
   if(d.act==="seedPag"){await seedPagamenti(true);return}
   if(d.incassa){e.stopPropagation();const f=byId("fatture",d.incassa);if(!f)return;openWizard("c",f.clienteId,"v:"+f.id,d.rata,d.imp);return}
   if(d.paga){e.stopPropagation();const a=byId("acquisti",d.paga);if(!a)return;openWizard("f",a.fornitoreId,"a:"+a.id,d.rata,d.imp);return}
+  if(d.ammsel!==undefined){e.preventDefault();UI.ammSel=d.ammsel;tab="amministratori";render();window.scrollTo(0,0);return}
+  if(d.ammest){const c=byId("clienti",d.ammest); if(c)mostraTesto("Estratto conto · "+c.nome,estrattoCondominio(c,UI.ammAnno||String(today().getFullYear()))); return}
+  if(d.ammlettera){const am=byId("amministratori",UI.ammSel); const t=am&&letteraSollecito(am); if(!t){toast("Nessuna fattura scaduta per i condomini di questo amministratore");return} mostraTesto("Lettera di sollecito · "+am.nome,t); return}
+  if(d.copylet){const t=$("#lettera").textContent; try{await navigator.clipboard.writeText(t);toast("Testo copiato")}catch{const r=document.createRange();r.selectNodeContents($("#lettera"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Testo selezionato: premi Ctrl+C")} return}
   if(d.prsel){e.stopPropagation(); UI.prSel=UI.prSel.includes(d.prsel)?UI.prSel.filter(x=>x!==d.prsel):UI.prSel.concat(d.prsel); render(); return}
   if(d.prfatt){e.stopPropagation(); const p=byId("preventivi",d.prfatt), c=p&&prevCli(p); if(!c){toast("Collega prima il preventivo a un cliente in anagrafica");openForm("preventivi",p);return} openPrevPicker(c.id,[p.id]); return}
   if(d.prfattsel){const cs=[...new Set(UI.prSel.map(id=>{const c=prevCli(byId("preventivi",id)||{});return c?c.id:"-"}))]; if(cs.includes("-")){toast("Uno dei preventivi selezionati non è collegato a un cliente");return} if(cs.length>1){toast("Seleziona preventivi dello stesso cliente");return} openPrevPicker(cs[0],UI.prSel.slice()); UI.prSel=[]; return}
@@ -1714,6 +1796,12 @@ document.addEventListener("change",async e=>{
   if(id==="fattMese"&&e.target.value){fattMese=e.target.value;render();return}
   if(id==="vAnno"){UI.vAnno=e.target.value;render();return}
   if(id==="vCli"){UI.vCli=e.target.value;render();return}
+  if(id==="vAmm"){UI.vAmm=e.target.value;render();return}
+  if(id==="paAmm"){UI.paAmm=e.target.value;UI.paSel="";render();return}
+  if(id==="maAmm"){UI.maAmm=e.target.value;UI.maSel="";render();return}
+  if(id==="scAmm"){UI.scAmm=e.target.value;render();return}
+  if(id==="ammAnno"){UI.ammAnno=e.target.value;render();return}
+  if(e.target.dataset&&e.target.dataset.cu){const cid=e.target.dataset.cu, y=UI.ammAnno||String(today().getFullYear()); await save("cu",{id:cid+"_"+y,clienteId:cid,anno:y,ricevuta:e.target.checked,data:TODAY()}); return}
   if(id==="aFor"){UI.aFor=e.target.value;render();return}
   if(id==="pnConto"){UI.pnConto=e.target.value;render();return}
   if(id==="pnMese"){UI.pnMese=e.target.value;render();return}
