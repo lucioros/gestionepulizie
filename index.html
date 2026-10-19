@@ -273,7 +273,7 @@ const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi",
 const S={}; COLS.forEach(c=>S[c]=[]);
 const loaded={};
 let mode="loading", sb=null, tab="oggi", weekStart=null, fattMese=null, ver=0;
-const UI={prSel:[],scLato:"tutti",scPer:"30",scStr:"",tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
+const UI={vCli:"",aFor:"",prSel:[],scLato:"tutti",scPer:"30",scStr:"",tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
 const NAV=[["Operatività",[["oggi","Oggi"],["piano","Pianificazione"],["agenda","Agenda dipendenti"],["clienti","Clienti e sedi"],["personale","Personale"],["preventivi","Preventivi"],["qualita","Qualità"]]],
            ["Contabilità",[["vendite","Fatture di vendita"],["acquisti","Fatture d'acquisto"],["fornitori","Fornitori"],["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["pagamenti","Tipi di pagamento"],["mastrini","Mastrini e IVA"]]],
            ["Sistema",[["impostazioni","Impostazioni e app dipendenti"]]]];
@@ -1005,7 +1005,8 @@ function vQualita(){
 function anni(list,field){const s=new Set(list.map(x=>(x[field]||"").slice(0,4)).filter(Boolean)); s.add(String(today().getFullYear())); return [...s].sort().reverse()}
 function vVendite(){
   const ys=anni(S.fatture,"data"); const y=UI.vAnno||ys[0];
-  let list=S.fatture.filter(f=>(f.data||"").startsWith(y));
+  let list=S.fatture.filter(f=>y==="*"||(f.data||"").startsWith(y));
+  if(UI.vCli)list=list.filter(f=>f.clienteId===UI.vCli);
   if(UI.vStato==="aperte")list=list.filter(f=>f.tipo!=="nc"&&residuoV(f)>0.005);
   if(UI.vStato==="scadute")list=list.filter(f=>f.tipo!=="nc"&&statoV(f)[1]==="bad");
   if(UI.vStato==="nc")list=list.filter(f=>f.tipo==="nc");
@@ -1014,15 +1015,16 @@ function vVendite(){
   const res=list.reduce((a,f)=>a+residuoV(f),0);
   return head("Fatture di vendita",`${eur(S.fatture.reduce((a,f)=>a+residuoV(f),0))} ancora da incassare`,
    `<input type="month" id="fattMese" value="${fattMese}" class="btn" aria-label="Mese dei canoni"><button class="btn" data-act="genFatt">Prepara canoni di ${monthLabel(fattMese)}</button><button class="btn" data-prpick="1">Da preventivi</button><button class="btn" data-new="vendite" data-nc="1">Nota di credito</button><button class="btn primary" data-new="vendite">Nuova fattura</button>`)+
-  `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select>
+  `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}<option value="*" ${y==="*"?"selected":""}>Tutti gli anni</option></select><select id="vCli" class="btn" aria-label="Cliente"><option value="">Tutti i clienti</option>${S.clienti.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>`<option value="${c.id}" ${UI.vCli===c.id?"selected":""}>${esc(c.nome)}</option>`).join("")}</select>${UI.vCli?`<button class="btn small" data-wiz="c:${UI.vCli}">Incassa fatture</button>`:""}
    <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da incassare"],["scadute","Scadute"],["nc","Note di credito"]].map(([k,l])=>`<button data-vstato="${k}" aria-pressed="${UI.vStato===k}">${l}</button>`).join("")}</div></div><span class="small muted">${list.length} documenti</span></div>
   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Numero</th><th>Data</th><th>Cliente</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(f=>{const t=vTot(f),c=byId("clienti",f.clienteId),r=residuoV(f),s=f.tipo==="nc"?-1:1;return `<tr class="click" data-edit="fatture:${f.id}"><td class="mono">${esc(vLabel(f))}</td><td class="mono small">${dShort(f.data)}</td><td>${esc(c?c.nome:f.clienteNome||"")}${t.tags.length?`<div class="small muted">${esc(t.tags.join(" · "))}</div>`:""}${t.rit?'<div class="small muted">Ritenuta 4%</div>':""}</td><td class="r num">${eur2(s*t.imp)}</td><td class="r num">${eur2(s*t.iva)}</td><td class="r num"><b>${eur2(s*t.tot)}</b></td><td class="r num">${f.tipo==="nc"?"":eur2(r)}</td><td class="mono small">${scadCell("v",f)}</td><td>${pill(statoV(f))}</td><td class="r">${f.tipo!=="nc"&&r>0.005?`<button class="btn small" data-incassa="${f.id}">Incassa</button>`:""}</td></tr>`}).join("")}</tbody>
   <tfoot><tr><td colspan="3">Totale</td><td class="r num">${eur2(sum("imp"))}</td><td class="r num">${eur2(sum("iva"))}</td><td class="r num">${eur2(sum("tot"))}</td><td class="r num">${eur2(res)}</td><td colspan="3"></td></tr></tfoot></table></div>`:`<p class="muted">Nessun documento con questi filtri. "Prepara canoni" crea una fattura per cliente con le sue righe abituali (oppure, se non ne ha, i canoni delle sedi attive) e gli straordinari svolti nel mese.</p>`}</section>
   <p class="note">Ogni riga ha il suo codice IVA, anche diversi nello stesso documento. Questi documenti servono alla gestione interna: crediti, incassi e partite aperte. In Italia la fattura va trasmessa in formato elettronico allo SdI: dal dettaglio puoi copiare i dati nel tuo programma di fatturazione elettronica. Pulizia di edifici verso clienti con partita IVA: <b>inversione contabile</b> (art. 17, c. 6, lett. a-ter, DPR 633/72). Condomini: fattura con IVA e ritenuta del 4% trattenuta dal condominio (art. 25-ter, DPR 600/73), calcolata qui sull'imponibile.</p>`;
 }
 function vAcquisti(){
-  const ys=anni(S.acquisti,"data"); const y=UI.vAnno&&ys.includes(UI.vAnno)?UI.vAnno:ys[0];
-  let list=S.acquisti.filter(a=>(a.data||"").startsWith(y));
+  const ys=anni(S.acquisti,"data"); const y=UI.vAnno==="*"||(UI.vAnno&&ys.includes(UI.vAnno))?UI.vAnno:ys[0];
+  let list=S.acquisti.filter(a=>y==="*"||(a.data||"").startsWith(y));
+  if(UI.aFor)list=list.filter(a=>a.fornitoreId===UI.aFor);
   if(UI.aStato==="aperte")list=list.filter(a=>residuoA(a)>0.005);
   if(UI.aStato==="scadute")list=list.filter(a=>statoA(a)[1]==="bad");
   list.sort((a,b)=>(b.dataReg||b.data||"").localeCompare(a.dataReg||a.data||""));
@@ -1030,11 +1032,11 @@ function vAcquisti(){
   const byCat={}; list.forEach(a=>{byCat[a.categoria||"Altro"]=(byCat[a.categoria||"Altro"]||0)+aTot(a).imp});
   const maxC=Math.max(1,...Object.values(byCat));
   return head("Fatture d'acquisto",`${eur(S.acquisti.reduce((a,x)=>a+residuoA(x),0))} ancora da pagare ai fornitori`,`<button class="btn" data-new="fornitori">Nuovo fornitore</button><button class="btn primary" data-new="acquisti">Registra fattura</button>`)+
-  `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select>
+  `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}<option value="*" ${y==="*"?"selected":""}>Tutti gli anni</option></select><select id="aFor" class="btn" aria-label="Fornitore"><option value="">Tutti i fornitori</option>${S.fornitori.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(f=>`<option value="${f.id}" ${UI.aFor===f.id?"selected":""}>${esc(f.nome)}</option>`).join("")}</select>${UI.aFor?`<button class="btn small" data-wiz="f:${UI.aFor}">Paga fatture</button>`:""}
    <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da pagare"],["scadute","Scadute"]].map(([k,l])=>`<button data-astato="${k}" aria-pressed="${UI.aStato===k}">${l}</button>`).join("")}</div></div><span class="small muted">${list.length} documenti</span></div>
   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Prot.</th><th>Fornitore</th><th>Numero e data</th><th>Categoria</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(a=>{const t=aTot(a),fo=byId("fornitori",a.fornitoreId),r=residuoA(a);return `<tr class="click" data-edit="acquisti:${a.id}"><td class="mono small">${esc(a.protocollo||"")}</td><td>${esc(fo?fo.nome:"(eliminato)")}</td><td class="mono small">${esc(a.numero)}<div class="muted">${dShort(a.data)}</div></td><td class="small">${esc(a.categoria||"")}</td><td class="r num">${eur2(t.imp)}</td><td class="r num">${eur2(t.iva)}</td><td class="r num"><b>${eur2(t.tot)}</b>${t.rit?`<div class="small muted">rit. ${eur2(t.rit)}</div>`:""}</td><td class="r num">${eur2(r)}</td><td class="mono small">${scadCell("a",a)}</td><td>${pill(statoA(a))}</td><td class="r">${r>0.005?`<button class="btn small" data-paga="${a.id}">Paga</button>`:""}</td></tr>`}).join("")}</tbody>
   <tfoot><tr><td colspan="4">Totale</td><td class="r num">${eur2(sum("imp"))}</td><td class="r num">${eur2(sum("iva"))}</td><td class="r num">${eur2(sum("tot"))}</td><td class="r num">${eur2(list.reduce((a,x)=>a+residuoA(x),0))}</td><td colspan="3"></td></tr></tfoot></table></div>`:`<p class="muted">Nessuna fattura d'acquisto registrata con questi filtri.</p>`}</section>
-  ${Object.keys(byCat).length?`<section class="panel"><h2>Costi per categoria, ${y}</h2><table><tbody>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td style="width:35%">${esc(k)}</td><td><div class="bar"><i style="width:${v/maxC*100}%"></i></div></td><td class="r num">${eur2(v)}</td></tr>`).join("")}</tbody></table><p class="note">Imponibile delle fatture registrate. Il costo del personale non passa da qui: registralo in prima nota come stipendi e F24.</p></section>`:""}`;
+  ${Object.keys(byCat).length?`<section class="panel"><h2>Costi per categoria, ${y==="*"?"tutti gli anni":y}${UI.aFor?" · "+esc(soggNome("f:"+UI.aFor)):""}</h2><table><tbody>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td style="width:35%">${esc(k)}</td><td><div class="bar"><i style="width:${v/maxC*100}%"></i></div></td><td class="r num">${eur2(v)}</td></tr>`).join("")}</tbody></table><p class="note">Imponibile delle fatture registrate. Il costo del personale non passa da qui: registralo in prima nota come stipendi e F24.</p></section>`:""}`;
 }
 function vFornitori(){
   return head("Fornitori",`${S.fornitori.length} fornitori`,`<button class="btn primary" data-new="fornitori">Nuovo fornitore</button>`)+
@@ -1711,6 +1713,8 @@ document.addEventListener("change",async e=>{
   const id=e.target.id;
   if(id==="fattMese"&&e.target.value){fattMese=e.target.value;render();return}
   if(id==="vAnno"){UI.vAnno=e.target.value;render();return}
+  if(id==="vCli"){UI.vCli=e.target.value;render();return}
+  if(id==="aFor"){UI.aFor=e.target.value;render();return}
   if(id==="pnConto"){UI.pnConto=e.target.value;render();return}
   if(id==="pnMese"){UI.pnMese=e.target.value;render();return}
   if(id==="maSel"){UI.maSel=e.target.value;render();return}
