@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0B6E67">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Turni">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Turni · Registro Pulizie</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* App del dipendente: una colonna, pollice in basso. Stesso registro di cantiere del gestionale:
+   carta minerale, inchiostro, verde detergente; giallo segnaletica solo per "in corso". */
+:root{
+  --bg:#EDF1F0; --surface:#FFFFFF; --sunk:#E3E9E7; --ink:#142326; --muted:#566769; --line:#D2DBD9;
+  --accent:#0B6E67; --accent-ink:#FFFFFF; --accent-soft:#D6ECE9; --signal:#E9B824; --signal-ink:#2A2104;
+  --ok:#2E7D4F; --ok-soft:#DDF0E3; --warn:#9A6514; --warn-soft:#F7EBD3; --bad:#B23A3A; --bad-soft:#F6DEDE;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif; --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1618; --surface:#162124; --sunk:#111B1D; --ink:#E2EBE9; --muted:#93A4A5; --line:#273739;
+  --accent:#3FB4A9; --accent-ink:#06201D; --accent-soft:#163A37; --signal:#F0C94F; --signal-ink:#2A2104;
+  --ok:#5BC489; --ok-soft:#173326; --warn:#E1AA4F; --warn-soft:#3A2C12; --bad:#EC7B7B; --bad-soft:#3D1D1D; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0E1618; --surface:#162124; --sunk:#111B1D; --ink:#E2EBE9; --muted:#93A4A5; --line:#273739;
+  --accent:#3FB4A9; --accent-ink:#06201D; --accent-soft:#163A37; --signal:#F0C94F; --signal-ink:#2A2104;
+  --ok:#5BC489; --ok-soft:#173326; --warn:#E1AA4F; --warn-soft:#3A2C12; --bad:#EC7B7B; --bad-soft:#3D1D1D; color-scheme:dark }
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{min-height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
+button,input,textarea{font:inherit;color:inherit}
+h1,h2,h3{font-family:var(--f-display);font-stretch:85%;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+header.top{position:sticky;top:0;z-index:5;background:var(--bg);padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.toprow{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.brand{font-family:var(--f-display);font-stretch:75%;font-weight:800;text-transform:uppercase;letter-spacing:.03em;font-size:15px;color:var(--accent)}
+.hello{font-size:24px;font-weight:700;margin-top:2px}
+.sub{color:var(--muted);font-size:14px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:500;min-height:44px}
+.btn.small{min-height:36px;padding:6px 12px;font-size:14px}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn.big{width:100%;min-height:58px;font-size:18px;font-weight:700;border-radius:12px;font-family:var(--f-display);font-stretch:90%;letter-spacing:.01em}
+.btn.stop{background:var(--signal);color:var(--signal-ink);border-color:var(--signal)}
+.btn.confirm{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn:disabled{opacity:.55}
+.btn:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(3,1fr);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+.tabs button{all:unset;cursor:pointer;text-align:center;padding:12px 4px 14px;font-weight:600;font-size:14px;color:var(--muted)}
+.tabs button[aria-current="page"]{color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+.tabs button:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
+.card.live{border-color:var(--signal);box-shadow:inset 0 4px 0 var(--signal)}
+.card.done{border-color:var(--ok)}
+.card.off{opacity:.65}
+.when{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.when .t{font-family:var(--f-mono);font-size:20px;font-weight:500}
+.sede{font-size:21px;font-weight:700;line-height:1.15}
+.meta{color:var(--muted);font-size:14px;display:flex;flex-direction:column;gap:2px}
+.meta a{color:var(--accent);font-weight:600}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:10px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}.pill.live{background:var(--signal);color:var(--signal-ink)}
+.notebox{background:var(--warn-soft);color:var(--ink);border-radius:8px;padding:10px 12px;font-size:14px}
+details{border-top:1px solid var(--line);padding-top:10px}
+summary{cursor:pointer;font-weight:600;font-size:15px}
+details ul{margin:8px 0 0;padding-left:20px}
+details li{margin:4px 0}
+.status{display:flex;flex-direction:column;gap:8px}
+.state{font-size:15px}
+.state b{font-family:var(--f-mono)}
+.err{color:var(--bad);font-size:14px}
+.okmsg{color:var(--ok);font-size:14px}
+textarea{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg);width:100%;min-height:70px;resize:vertical}
+.banner{border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:15px}
+.banner.bad{background:var(--bad-soft)}.banner.warn{background:var(--warn-soft)}.banner.info{background:var(--accent-soft)}
+.day{margin:18px 0 8px;display:flex;justify-content:space-between;align-items:baseline}
+.day h2{font-size:18px}
+.mini{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
+.mini .t{font-family:var(--f-mono);min-width:96px;font-size:14px;padding-top:2px}
+.mini b{display:block}
+.empty{color:var(--muted);padding:6px 0 14px}
+.auth{padding-top:calc(8vh + env(safe-area-inset-top,0px))}
+.auth form{display:flex;flex-direction:column;gap:14px}
+.fld{display:flex;flex-direction:column;gap:6px}
+.fld label{font-weight:600;font-size:14px}
+.fld input{border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--surface);width:100%;font-size:16px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+table{width:100%;border-collapse:collapse;font-size:15px}
+td{padding:9px 4px;border-bottom:1px solid var(--line)}
+td.r{text-align:right;font-family:var(--f-mono);white-space:nowrap}
+.total{font-family:var(--f-display);font-stretch:80%;font-size:34px;font-weight:700}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:500;z-index:9;max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion:no-preference){.btn{transition:filter .12s,background .12s}.btn:active{filter:brightness(.92)}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">Turni</h1><p class="sub">Caricamento…</p></div></div>
+<nav class="tabs" id="tabs" hidden aria-label="Sezioni"></nav>
+<div class="toast" id="toast" hidden role="status"></div>
+<script src="../vendor/supabase.js"></script>
+<script src="../config.js"></script>
+<script>
+(function(){
+"use strict";
+const CFG=window.RP_CONFIG||{};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=n=>String(n).padStart(2,"0");
+const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const parse=s=>{const[y,m,d]=String(s).split("-").map(Number);return new Date(y,(m||1)-1,d||1)};
+const TODAY=()=>iso(new Date());
+const GIORNI=["domenica","lunedì","martedì","mercoledì","giovedì","venerdì","sabato"];
+const MESI=["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"];
+const dLong=s=>{const d=parse(s);return GIORNI[d.getDay()]+" "+d.getDate()+" "+MESI[d.getMonth()]};
+const cap=s=>String(s).replace(/^./,c=>c.toUpperCase());
+const tsHM=ts=>{const d=new Date(ts);return pad(d.getHours())+":"+pad(d.getMinutes())};
+const durata=ms=>{const m=Math.max(0,Math.round(ms/60000));return Math.floor(m/60)+" h "+pad(m%60)+" min"};
+const oreDec=ms=>(Math.max(0,ms)/36e5).toLocaleString("it-IT",{maximumFractionDigits:2});
+function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,3500)}
+
+let sb=null, me=null, op=null, agenda=null, timb=[], gps=false, tab="oggi", mode="loading", recovery=false;
+let authMsg="", authOk="", cardMsg={}, busy={}, confirm={}, noteOpen={}, mese=TODAY().slice(0,7), installEvt=null;
+
+/* ---------- accesso ---------- */
+function traduci(m){
+  m=String(m||"");
+  if(/Invalid login credentials/i.test(m))return"Email o password non corretti.";
+  if(/Email not confirmed/i.test(m))return"Devi prima confermare l'email: apri il messaggio che ti abbiamo mandato.";
+  if(/already registered|already exists/i.test(m))return"Esiste già un account con questa email: premi Entra.";
+  if(/Password should be/i.test(m))return"La password deve avere almeno 8 caratteri.";
+  if(/rate limit|too many/i.test(m))return"Troppi tentativi: riprova tra qualche minuto.";
+  if(/Failed to fetch|NetworkError/i.test(m))return"Connessione assente: controlla internet e riprova.";
+  if(/duplicate key/i.test(m))return"Hai già segnato questo passaggio.";
+  return m;
+}
+function authView(){
+  const msg=(authMsg?`<p class="err" role="alert">${esc(authMsg)}</p>`:"")+(authOk?`<p class="okmsg" role="status">${esc(authOk)}</p>`:"");
+  if(recovery)return `<div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">Nuova password</h1><form id="authForm" data-def="newpw" novalidate>
+    <div class="fld"><label for="a_pw">Nuova password (almeno 8 caratteri)</label><input id="a_pw" type="password" autocomplete="new-password"></div>${msg}
+    <button class="btn primary big" type="submit">Salva la password</button></form></div>`;
+  return `<div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">I miei turni</h1><p class="sub">Entra con l'email che hai comunicato all'ufficio.</p>
+  <form id="authForm" data-def="login" novalidate style="margin-top:18px">
+    <div class="fld"><label for="a_email">Email</label><input id="a_email" type="email" autocomplete="username" inputmode="email" autocapitalize="off"></div>
+    <div class="fld"><label for="a_pw">Password</label><input id="a_pw" type="password" autocomplete="current-password"></div>${msg}
+    <button class="btn primary big" type="submit">Entra</button>
+    <div class="row"><button class="btn" type="button" data-auth="signup">Prima volta? Crea account</button><button class="btn ghost" type="button" data-auth="reset">Password dimenticata?</button></div>
+  </form></div>`;
+}
+async function authAction(kind){
+  authMsg="";authOk="";
+  const email=(($("#a_email")||{}).value||"").trim().toLowerCase(), pw=($("#a_pw")||{}).value||"";
+  const redirect=location.href.split("#")[0].split("?")[0];
+  try{
+    if(kind==="newpw"){ if(pw.length<8){authMsg="La password deve avere almeno 8 caratteri.";return render()}
+      const {error}=await sb.auth.updateUser({password:pw}); if(error)throw error; recovery=false;
+      const {data:{session}}=await sb.auth.getSession(); if(session)return enter(session); authOk="Password aggiornata: ora puoi entrare."; return render() }
+    if(!email){authMsg="Scrivi la tua email.";return render()}
+    if(kind==="reset"){ const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:redirect}); if(error)throw error; authOk="Se l'email è registrata riceverai un link per scegliere una nuova password."; return render() }
+    if(pw.length<8){authMsg="La password deve avere almeno 8 caratteri.";return render()}
+    if(kind==="signup"){ const {data,error}=await sb.auth.signUp({email,password:pw,options:{emailRedirectTo:redirect}}); if(error)throw error;
+      if(data.session)return enter(data.session); authOk="Account creato. Apri l'email che ti abbiamo mandato e tocca il link di conferma, poi torna qui ed entra."; return render() }
+    const {data,error}=await sb.auth.signInWithPassword({email,password:pw}); if(error)throw error; return enter(data.session);
+  }catch(e){ authMsg=traduci(e.message); render() }
+}
+
+/* ---------- dati ---------- */
+async function caricaAgenda(){
+  const {data,error}=await sb.from("docs").select("data").eq("col","agenda").eq("id",op).maybeSingle();
+  if(error)throw error; agenda=data?data.data:null;
+}
+async function caricaTimbrature(){
+  const from=new Date(); from.setDate(1); from.setMonth(from.getMonth()-2);
+  const {data,error}=await sb.from("timbrature").select("*").gte("data",iso(from)).order("ts");
+  if(error)throw error; timb=data||[];
+}
+async function ricarica(silenzioso){
+  try{ await Promise.all([caricaAgenda(),caricaTimbrature()]); const g=await sb.rpc("gps_attivo"); gps=!!g.data; if(!silenzioso)toast("Aggiornato") }
+  catch(e){ toast(traduci(e.message)) }
+  render();
+}
+async function enter(session){
+  me=session.user; mode="loading"; authMsg=""; render();
+  const {data,error}=await sb.rpc("mio_operatore");
+  if(error){ mode="login"; authMsg="Il servizio non è pronto: avvisa l'ufficio. ("+error.message+")"; return render() }
+  if(!data){ mode="nolink"; return render() }
+  op=data; await ricarica(true); mode="app"; render();
+  sb.channel("turni").on("postgres_changes",{event:"*",schema:"public",table:"docs",filter:"id=eq."+op},()=>ricarica(true))
+    .on("postgres_changes",{event:"*",schema:"public",table:"timbrature"},()=>caricaTimbrature().then(render)).subscribe();
+}
+
+/* ---------- timbratura ---------- */
+const giornoDi=id=>(agenda&&agenda.giorni||[]).find(g=>g.turni.some(t=>t.id===id));
+const turnoDi=id=>{const g=giornoDi(id);return g?g.turni.find(t=>t.id===id):null};
+const miaT=(id,tipo)=>timb.find(t=>t.turno_id===id&&t.tipo===tipo);
+function posizione(){
+  return new Promise(res=>{
+    if(!navigator.geolocation)return res(null);
+    navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude,precisione:p.coords.accuracy}),()=>res(null),{enableHighAccuracy:true,timeout:12000,maximumAge:30000});
+  });
+}
+async function timbra(id,tipo){
+  if(busy[id])return;
+  if(tipo==="fine"&&!confirm[id]){confirm[id]=true;render();setTimeout(()=>{if(confirm[id]){confirm[id]=false;render()}},6000);return}
+  const g=giornoDi(id); let nota=(($("#nota_"+CSS.escape(id))||{}).value||"").trim();
+  confirm[id]=false; busy[id]=true; cardMsg[id]=""; render();
+  let pos=null;
+  if(gps){ cardMsg[id]="Rilevo la posizione…"; render(); pos=await posizione();
+    if(!pos)nota=(nota?nota+" · ":"")+"posizione non disponibile"; }
+  const row={operatore_id:op,turno_id:id,data:g?g.data:TODAY(),tipo,nota:nota||null};
+  if(pos)Object.assign(row,pos);
+  const {error}=await sb.from("timbrature").insert(row);
+  busy[id]=false;
+  if(error){ cardMsg[id]=traduci(error.message); if(nota){noteOpen[id]=true;render();const t=document.getElementById("nota_"+id);if(t)t.value=nota} else render(); return }
+  cardMsg[id]=""; noteOpen[id]=false;
+  await caricaTimbrature(); render();
+  toast(tipo==="inizio"?"Inizio registrato alle "+tsHM(miaT(id,"inizio").ts):"Fine registrata. Buon lavoro!");
+  if(navigator.vibrate)navigator.vibrate(60);
+}
+
+/* ---------- viste ---------- */
+function cardTurno(t,g){
+  const i=miaT(t.id,"inizio"), f=miaT(t.id,"fine"), live=i&&!f;
+  const maps="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(t.indirizzo||t.sede);
+  let st="";
+  if(t.annullato) st=`<p class="state"><span class="pill">Turno annullato</span></p>`;
+  else if(f) st=`<p class="state">Completato: <b>${tsHM(i.ts)}–${tsHM(f.ts)}</b> · ${durata(new Date(f.ts)-new Date(i.ts))}</p>`;
+  else if(i) st=`<p class="state"><span class="pill live">In corso</span> dalle <b>${tsHM(i.ts)}</b></p>
+    ${noteOpen[t.id]?`<label for="nota_${esc(t.id)}" class="sub">Nota per l'ufficio (facoltativa)</label><textarea id="nota_${esc(t.id)}" placeholder="Es. manca carta igienica al 2° piano"></textarea>`:`<button class="btn small ghost" data-nota="${esc(t.id)}" style="align-self:flex-start">+ Aggiungi una nota</button>`}
+    <button class="btn big ${confirm[t.id]?"confirm":"stop"}" data-timbra="fine|${esc(t.id)}" ${busy[t.id]?"disabled":""}>${confirm[t.id]?"Tocca di nuovo per confermare la fine":"Termina lavoro"}</button>`;
+  else if(g.data===TODAY()) st=`${noteOpen[t.id]?`<label for="nota_${esc(t.id)}" class="sub">Nota per l'ufficio (facoltativa)</label><textarea id="nota_${esc(t.id)}"></textarea>`:`<button class="btn small ghost" data-nota="${esc(t.id)}" style="align-self:flex-start">+ Aggiungi una nota</button>`}
+    <button class="btn big primary" data-timbra="inizio|${esc(t.id)}" ${busy[t.id]?"disabled":""}>Inizia lavoro</button>${gps?`<p class="sub" style="margin:0">Alla timbratura viene registrata anche la posizione.</p>`:""}`;
+  else st=`<p class="state sub">Non timbrato</p>`;
+  return `<article class="card ${live?"live":f?"done":""} ${t.annullato?"off":""}">
+    <div class="when"><span class="t">${esc(t.ora)}–${esc(t.fine)}</span>${t.tipo==="extra"?'<span class="pill warn">Straordinario</span>':t.variato?'<span class="pill warn">Modificato</span>':""}</div>
+    <div><div class="sede">${esc(t.sede)}</div><div class="meta">${t.cliente&&t.cliente!==t.sede?`<span>${esc(t.cliente)}</span>`:""}${t.indirizzo?`<a href="${maps}" target="_blank" rel="noopener">${esc(t.indirizzo)} · Apri in Maps</a>`:""}<span>${t.colleghi.length?"Con "+esc(t.colleghi.join(", ")):"Da solo"}</span></div></div>
+    ${t.nota?`<div class="notebox">${esc(t.nota)}</div>`:""}
+    ${t.accesso?`<details><summary>Accesso e chiavi</summary><p style="margin:8px 0 0;white-space:pre-wrap">${esc(t.accesso)}</p></details>`:""}
+    ${(t.attivita||[]).length?`<details><summary>Cosa fare (${t.attivita.length})</summary><ul>${t.attivita.map(a=>`<li>${esc(a)}</li>`).join("")}</ul></details>`:""}
+    <div class="status">${st}${cardMsg[t.id]?`<p class="${/Rilevo/.test(cardMsg[t.id])?"sub":"err"}" role="alert">${esc(cardMsg[t.id])}</p>`:""}</div>
+  </article>`;
+}
+function vOggi(){
+  const td=TODAY(), giorni=agenda&&agenda.giorni||[];
+  const g=giorni.find(x=>x.data===td);
+  // turni di ieri rimasti aperti (es. lavoro iniziato prima di mezzanotte)
+  const aperti=giorni.filter(x=>x.data<td).flatMap(x=>x.turni.filter(t=>miaT(t.id,"inizio")&&!miaT(t.id,"fine")).map(t=>[t,x]));
+  let h="";
+  if(agenda&&agenda.generato&&(Date.now()-new Date(agenda.generato))>3*864e5) h+=`<div class="banner warn">L'agenda è stata aggiornata il ${esc(dLong(agenda.generato.slice(0,10)))}: se qualcosa non torna chiedi all'ufficio.</div>`;
+  if(g&&g.assenza) h+=`<div class="banner bad">Oggi risulti in <b>${esc(g.assenza.tipo.toLowerCase())}</b>${g.assenza.dalle?" dalle "+esc(g.assenza.dalle)+" alle "+esc(g.assenza.alle):""}.</div>`;
+  h+=aperti.map(([t,x])=>cardTurno(t,x)).join("");
+  if(g&&g.turni.length) h+=g.turni.map(t=>cardTurno(t,g)).join("");
+  else if(!aperti.length) h+=`<div class="card"><h2>Nessun turno oggi</h2><p class="sub" style="margin:0">${agenda?"Controlla i prossimi giorni qui sotto.":"L'ufficio non ha ancora pubblicato la tua agenda."}</p></div>`;
+  return h;
+}
+function vProssimi(){
+  const td=TODAY(), giorni=(agenda&&agenda.giorni||[]).filter(g=>g.data>td);
+  if(!giorni.length)return `<p class="empty">Nessun giorno in agenda.</p>`;
+  return giorni.map(g=>`<div class="day"><h2>${esc(cap(dLong(g.data)))}</h2><span class="sub num">${g.turni.filter(t=>!t.annullato).reduce((a,t)=>a+(+t.durata||0),0).toLocaleString("it-IT")} h</span></div>
+    ${g.assenza?`<div class="banner bad">${esc(g.assenza.tipo)}${g.assenza.dalle?" dalle "+esc(g.assenza.dalle)+" alle "+esc(g.assenza.alle):""}</div>`:""}
+    ${g.turni.length?g.turni.map(t=>`<div class="mini ${t.annullato?"off":""}"><span class="t">${esc(t.ora)}–${esc(t.fine)}</span><div><b>${esc(t.sede)}</b><span class="sub">${esc(t.indirizzo||"")}${t.colleghi.length?" · con "+esc(t.colleghi.join(", ")):""}</span>${t.nota?`<div class="sub">${esc(t.nota)}</div>`:""}${t.annullato?' <span class="pill">Annullato</span>':t.variato?' <span class="pill warn">Modificato</span>':""}</div></div>`).join(""):g.assenza?"":`<p class="empty">Libero</p>`}`).join("");
+}
+function vOre(){
+  const m={}; timb.filter(t=>t.data.startsWith(mese)).forEach(t=>{(m[t.turno_id]=m[t.turno_id]||{data:t.data,turno:t.turno_id})[t.tipo]=t});
+  const rows=Object.values(m).sort((a,b)=>a.data.localeCompare(b.data));
+  const tot=rows.reduce((a,r)=>a+(r.inizio&&r.fine?new Date(r.fine.ts)-new Date(r.inizio.ts):0),0);
+  const [y,mm]=mese.split("-").map(Number), prev=iso(new Date(y,mm-2,1)).slice(0,7), next=iso(new Date(y,mm,1)).slice(0,7);
+  return `<div class="card"><div class="when"><button class="btn small" data-mese="${prev}" aria-label="Mese precedente">←</button><h2>${cap(MESI[mm-1])} ${y}</h2><button class="btn small" data-mese="${next}" ${next>TODAY().slice(0,7)?"disabled":""} aria-label="Mese successivo">→</button></div>
+    <div><span class="total">${oreDec(tot)}</span> <span class="sub">ore timbrate</span></div>
+    ${rows.length?`<table><tbody>${rows.map(r=>{const t=turnoDi(r.turno);return `<tr><td>${esc(cap(dLong(r.data)))}<div class="sub">${esc(t?t.sede:"")}</div></td><td class="r">${r.inizio?tsHM(r.inizio.ts):"—"}–${r.fine?tsHM(r.fine.ts):"…"}${r.inizio&&r.inizio.corretta||r.fine&&r.fine.corretta?'<div class="pill warn">corretta</div>':""}</td><td class="r">${r.inizio&&r.fine?oreDec(new Date(r.fine.ts)-new Date(r.inizio.ts)):""}</td></tr>`}).join("")}</tbody></table>`:`<p class="empty">Nessuna timbratura in questo mese.</p>`}
+    <p class="sub" style="margin:0">Le ore sono calcolate dall'inizio alla fine di ogni turno. Le correzioni dell'ufficio sono segnate.</p></div>`;
+}
+function render(){
+  const app=$("#app"), tabs=$("#tabs");
+  if(mode==="login"){tabs.hidden=true; app.innerHTML=authView(); return}
+  if(mode==="loading"){tabs.hidden=true; app.innerHTML=`<div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">I miei turni</h1><p class="sub">Caricamento…</p></div>`; return}
+  if(mode==="nolink"){tabs.hidden=true; app.innerHTML=`<div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">Account non ancora collegato</h1>
+    <p>Sei entrato come <b>${esc(me.email)}</b>, ma questa email non è ancora collegata a un dipendente.</p><p class="sub">Chiedi all'ufficio di inserirla nella tua scheda, nel campo "Email per l'app dipendenti", poi tocca "Riprova".</p>
+    <div class="row"><button class="btn primary" data-act="retry">Riprova</button><button class="btn" data-act="logout">Esci</button></div></div>`; return}
+  const nome=(agenda&&agenda.nome||"").split(" ")[0];
+  const off=!navigator.onLine?`<div class="banner warn">Sei offline: le timbrature funzionano solo con la connessione.</div>`:"";
+  const inst=installEvt?`<button class="btn small" data-act="install">Installa app</button>`:"";
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)&&!window.navigator.standalone&&!localGet("iosHint")?`<div class="banner info">Per averla come app: tocca <b>Condividi</b> in Safari e poi <b>Aggiungi alla schermata Home</b>. <button class="btn small ghost" data-act="iosok">Ok</button></div>`:"";
+  app.innerHTML=`<header class="top"><div class="toprow"><span class="brand">Registro Pulizie</span><div class="row">${inst}<button class="btn small ghost" data-act="refresh" aria-label="Aggiorna">Aggiorna</button><button class="btn small ghost" data-act="logout">Esci</button></div></div>
+    <div class="hello">${tab==="oggi"?"Ciao"+(nome?" "+esc(nome):""):tab==="prossimi"?"Prossimi giorni":"Le mie ore"}</div><div class="sub">${tab==="oggi"?esc(cap(dLong(TODAY()))):tab==="prossimi"?"Fino a due settimane":"Riepilogo delle timbrature"}</div></header>
+    ${off}${ios}${tab==="oggi"?vOggi():tab==="prossimi"?vProssimi():vOre()}`;
+  tabs.hidden=false;
+  tabs.innerHTML=[["oggi","Oggi"],["prossimi","Prossimi giorni"],["ore","Le mie ore"]].map(([k,l])=>`<button data-tab="${k}" ${tab===k?'aria-current="page"':""}>${l}</button>`).join("");
+}
+function localGet(k){try{return localStorage.getItem("rp_"+k)}catch{return null}}
+function localSet(k,v){try{localStorage.setItem("rp_"+k,v)}catch{}}
+
+/* ---------- eventi ---------- */
+document.addEventListener("click",async e=>{
+  const el=e.target.closest("[data-tab],[data-timbra],[data-nota],[data-act],[data-auth],[data-mese]"); if(!el)return; const d=el.dataset;
+  if(d.tab){tab=d.tab;render();window.scrollTo(0,0);return}
+  if(d.timbra){const[tipo,id]=d.timbra.split("|");timbra(id,tipo);return}
+  if(d.nota){noteOpen[d.nota]=true;render();const t=document.getElementById("nota_"+d.nota);if(t)t.focus();return}
+  if(d.mese){mese=d.mese;render();return}
+  if(d.auth){authAction(d.auth);return}
+  if(d.act==="logout"){await sb.auth.signOut();location.reload();return}
+  if(d.act==="refresh"){ricarica();return}
+  if(d.act==="retry"){const {data:{session}}=await sb.auth.getSession(); if(session)enter(session);return}
+  if(d.act==="install"&&installEvt){installEvt.prompt();installEvt=null;render();return}
+  if(d.act==="iosok"){localSet("iosHint","1");render();return}
+});
+document.addEventListener("submit",e=>{if(e.target.id==="authForm"){e.preventDefault();authAction(e.target.dataset.def||"login")}});
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=e;if(mode==="app")render()});
+window.addEventListener("online",()=>{if(mode==="app")ricarica(true)});
+window.addEventListener("offline",()=>{if(mode==="app")render()});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&mode==="app")ricarica(true)});
+setInterval(()=>{if(mode==="app"&&!Object.values(busy).some(Boolean)&&!document.activeElement.matches("textarea"))render()},60000);
+if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
+
+/* ---------- avvio ---------- */
+(async()=>{
+  if(!window.supabase||!CFG.url){mode="login";authMsg="App non configurata: avvisa l'ufficio.";return render()}
+  sb=window.supabase.createClient(CFG.url,CFG.anonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  sb.auth.onAuthStateChange(ev=>{if(ev==="PASSWORD_RECOVERY"){recovery=true;mode="login";render()}});
+  const {data:{session}}=await sb.auth.getSession();
+  if(location.hash.includes("type=recovery")){recovery=true;mode="login";return render()}
+  if(session)return enter(session);
+  mode="login"; render();
+})();
+})();
+</script>
+</body>
+</html>
