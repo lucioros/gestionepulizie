@@ -273,7 +273,7 @@ const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi",
 const S={}; COLS.forEach(c=>S[c]=[]);
 const loaded={};
 let mode="loading", sb=null, tab="oggi", weekStart=null, fattMese=null, ver=0;
-const UI={scLato:"tutti",scPer:"30",scStr:"",tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
+const UI={prSel:[],scLato:"tutti",scPer:"30",scStr:"",tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
 const NAV=[["Operatività",[["oggi","Oggi"],["piano","Pianificazione"],["agenda","Agenda dipendenti"],["clienti","Clienti e sedi"],["personale","Personale"],["preventivi","Preventivi"],["qualita","Qualità"]]],
            ["Contabilità",[["vendite","Fatture di vendita"],["acquisti","Fatture d'acquisto"],["fornitori","Fornitori"],["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["pagamenti","Tipi di pagamento"],["mastrini","Mastrini e IVA"]]],
            ["Sistema",[["impostazioni","Impostazioni e app dipendenti"]]]];
@@ -330,6 +330,17 @@ const codOptsHtml=v=>codici().map(c=>`<option value="${esc(c.id)}" ${c.id===v?"s
 function legacyCod(reg,iva){ if(reg==="reverse")return"RC"; if(reg==="esente")return"N4"; const a=String(iva??22); if(reg==="split")return a==="10"?"10S":"22S"; if(a==="0")return"N4"; return codici().some(c=>c.id===a)?a:"22" }
 const cliCod=c=>c?(c.codIva||legacyCod(c.regime,22)):"22";
 function tplRows(c,dataStr){const mk=(dataStr||TODAY()).slice(0,7);return (c&&c.righeAbituali||[]).map(r=>({descr:String(r.descr||"").replace(/\{mese\}/gi,monthLabel(mk)),qta:+r.qta||1,prezzo:+r.prezzo||0,cod:r.cod||cliCod(c)}))}
+// preventivi: cliente collegato, voci fatturabili e fatture già emesse
+const prevCli=p=>byId("clienti",p.clienteId)||S.clienti.find(c=>c.nome.trim().toLowerCase()===String(p.cliente||"").trim().toLowerCase())||null;
+const prevNome=p=>{const c=prevCli(p);return c?c.nome:(p.cliente||"—")};
+const canonePrev=p=>+p.canoneOfferto>0?r2(+p.canoneOfferto):(+p.mq>0?r2(calcPrev(p).prezzo):0);
+function vociPrev(p){ const c=prevCli(p), dc=cliCod(c), out=[], cn=canonePrev(p);
+  if(cn>0)out.push({descr:`Servizio di pulizia continuativo${p.descrizione?", "+p.descrizione:""}: canone mensile`,qta:1,prezzo:cn,cod:dc});
+  righeOf({righe:p.righe||[]}).forEach(r=>out.push({descr:r.descr,qta:+r.qta||1,prezzo:+r.prezzo||0,cod:r.cod||dc}));
+  return out }
+const totPrev=p=>r2(vociPrev(p).reduce((a,r)=>a+r.qta*r.prezzo,0));
+const fattDaPrev=p=>S.fatture.filter(f=>(f.preventivi||[]).includes(p.id));
+const statoPrev=p=>fattDaPrev(p).length?"Fatturato":p.stato==="Fatturato"?"Accettato":(p.stato||"Bozza");
 const pagOf=id=>id?S.pagamenti.find(p=>p.id===id)||null:null;
 const pagOpts=()=>S.pagamenti.slice().sort((a,b)=>String(a.descrizione).localeCompare(b.descrizione)).map(p=>[p.id,p.descrizione]);
 const strName=c=>(STRUMENTI.find(s=>s[0]===c)||[c,c||"—"])[1];
@@ -931,13 +942,58 @@ function vAgenda(){
   <section class="panel"><div class="ph"><h2>Assenze in corso e future</h2><button class="btn small" data-new="assenze">Registra assenza</button></div>${assList.length?`<div class="list">${assList.map(x=>{const op=byId("operatori",x.operatoreId);const nScop=occForRange(parse(x.dal),Math.min(62,daysBetween(x.dal,x.al||x.dal)+1)).filter(o=>o.scoperto&&o.assenti.includes(x.operatoreId)).length;return `<div class="row click" data-edit="assenze:${x.id}" style="cursor:pointer"><div class="b"><b>${esc(op?op.nome:"(eliminato)")}</b> <span class="pill ${x.dalle?"warn":"bad"}">${esc(x.tipo)}</span><div class="small muted">${x.dal===(x.al||x.dal)?dShort(x.dal):"dal "+dShort(x.dal)+" al "+dShort(x.al)}${x.dalle?" · "+esc(x.dalle)+"–"+esc(x.alle):""}${x.note?" · "+esc(x.note):""}</div></div>${nScop?`<span class="pill bad">${nScop} turn${nScop>1?"i":"o"} da coprire</span>`:'<span class="pill ok">Coperto</span>'}</div>`}).join("")}</div>`:`<p class="muted">Nessuna assenza registrata. Registra ferie, malattie e permessi: i turni coinvolti diventano "da coprire" e la modifica del turno ti propone i colleghi liberi.</p>`}</section></div>`;
 }
 function vPreventivi(){
-  const pl={Bozza:"",Inviato:"acc",Accettato:"ok",Rifiutato:"bad"};
-  const tot=S.preventivi.filter(p=>p.stato==="Inviato").reduce((a,p)=>a+calcPrev(p).prezzo,0);
-  return head("Preventivi",`${S.preventivi.length} preventivi · ${eur(tot)}/mese in attesa di risposta`,`<button class="btn primary" data-new="preventivi">Nuovo preventivo</button>`)+
-  (S.preventivi.length?`<section class="panel"><div class="tablewrap"><table><thead><tr><th>Cliente</th><th>Immobile</th><th class="r">m²</th><th class="r">Passaggi/sett.</th><th class="r">Ore/mese</th><th class="r">Prezzo/mese</th><th>Stato</th><th></th></tr></thead><tbody>${S.preventivi.slice().sort((a,b)=>(b.data||"").localeCompare(a.data||"")).map(p=>{const r=calcPrev(p);return `<tr class="click" data-edit="preventivi:${p.id}"><td><b>${esc(p.cliente)}</b><div class="small muted">${dShort(p.data)}</div></td><td>${esc(p.descrizione||"")}<div class="small muted">${esc(p.tipo||"")}</div></td><td class="r num">${Number(p.mq||0).toLocaleString("it-IT")}</td><td class="r num">${p.giorni}</td><td class="r num">${n1(r.oreMese)}</td><td class="r num"><b>${eur(r.prezzo)}</b></td><td><span class="pill ${pl[p.stato]||""}">${esc(p.stato||"Bozza")}</span></td><td class="r"><button class="btn small" data-tosede="${p.id}">Crea sede</button></td></tr>`}).join("")}</tbody></table></div></section>`:
-  `<div class="empty"><h2>Calcola il primo preventivo</h2><p>Inserisci metri quadri, tipo di immobile e passaggi settimanali: il calcolo stima ore di lavoro, costo e canone mensile con il margine che scegli. Un preventivo accettato diventa una sede con un clic.</p><button class="btn primary" data-new="preventivi">Nuovo preventivo</button></div>`)+
-  `<p class="note">Metodo: ore per passaggio = m² ÷ resa oraria (m²/h). Ore mese = ore per passaggio × passaggi settimanali × ${n1(VISITE_MESE)}. Prezzo = costi (lavoro + materiali + spese generali) ÷ (1 − margine). Le rese predefinite sono indicative: adattale alla tua esperienza.</p>`;
+  const pl={Bozza:"",Inviato:"acc",Accettato:"ok",Rifiutato:"bad",Fatturato:"ok"};
+  UI.prSel=UI.prSel.filter(id=>byId("preventivi",id));
+  const attesa=S.preventivi.filter(p=>statoPrev(p)==="Inviato").reduce((a,p)=>a+canonePrev(p),0);
+  const n=UI.prSel.length;
+  return head("Preventivi",`${S.preventivi.length} preventivi · ${eur(attesa)}/mese di canoni in attesa di risposta`,`${n?`<button class="btn primary" data-prfattsel="1">Crea fattura da ${n} preventiv${n>1?"i":"o"}</button>`:""}<button class="btn" data-prpick="1">Fattura da preventivi</button><button class="btn${n?"":" primary"}" data-new="preventivi">Nuovo preventivo</button>`)+
+  (S.preventivi.length?`<section class="panel"><div class="tablewrap"><table><thead><tr><th></th><th>Numero</th><th>Cliente e oggetto</th><th class="r">Canone</th><th class="r">Altre voci</th><th>Stato</th><th></th></tr></thead><tbody>${S.preventivi.slice().sort((a,b)=>(b.data||"").localeCompare(a.data||"")).map(p=>{
+    const cn=canonePrev(p), vo=r2(righeOf({righe:p.righe||[]}).reduce((a,r)=>a+(+r.qta||0)*(+r.prezzo||0),0)), st=statoPrev(p), ff=fattDaPrev(p);
+    return `<tr class="click ${UI.prSel.includes(p.id)?"sel":""}" data-edit="preventivi:${p.id}"><td><input type="checkbox" data-prsel="${p.id}" ${UI.prSel.includes(p.id)?"checked":""} aria-label="Seleziona ${esc(p.numero||"")}"></td><td class="mono small">${esc(p.numero||"—")}<div class="muted">${dShort(p.data)}</div></td><td><b>${esc(prevNome(p))}</b>${prevCli(p)?"":' <span class="pill warn">non in anagrafica</span>'}<div class="small muted">${esc(p.descrizione||"")}${p.tipo?" · "+esc(p.tipo):""}</div></td><td class="r num">${cn?eur(cn)+"/mese":"—"}</td><td class="r num">${vo?eur2(vo):"—"}</td><td><span class="pill ${pl[st]||""}">${esc(st)}</span>${ff.length?`<div class="small muted">${ff.map(f=>esc(vLabel(f))).join(", ")}</div>`:""}</td><td class="r" style="white-space:nowrap"><button class="btn small" data-prfatt="${p.id}">Fattura</button> ${cn?`<button class="btn small" data-tosede="${p.id}">Crea sede</button>`:""}</td></tr>`}).join("")}</tbody></table></div></section>`:
+  `<div class="empty"><h2>Calcola il primo preventivo</h2><p>Inserisci metri quadri, tipo di immobile e passaggi settimanali per il canone mensile, oppure solo le voci di un lavoro una tantum. Da uno o più preventivi accettati crei la fattura con un clic.</p><button class="btn primary" data-new="preventivi">Nuovo preventivo</button></div>`)+
+  `<p class="note">Seleziona uno o più preventivi dello stesso cliente e premi "Crea fattura", oppure usa "Fattura da preventivi" per scegliere cliente e singole voci. Il canone mensile si può anche trasformare in una sede con "Crea sede". Metodo del canone: ore per passaggio = m² ÷ resa oraria; ore mese = ore per passaggio × passaggi settimanali × ${n1(VISITE_MESE)}; prezzo = costi ÷ (1 − margine).</p>`;
 }
+/* ---------- fattura da preventivi ---------- */
+function openPrevPicker(cliId,ids){
+  current={c:"prpick",cli:cliId||"",sel:{}};
+  const base=ids&&ids.length?ids.map(id=>byId("preventivi",id)).filter(Boolean):prevDelCliente(cliId).filter(p=>statoPrev(p)==="Accettato");
+  base.forEach(p=>vociPrev(p).forEach((_,i)=>current.sel[p.id+"#"+i]=true));
+  renderPrevPicker();
+}
+const prevDelCliente=cid=>cid?S.preventivi.filter(p=>{const c=prevCli(p);return c&&c.id===cid&&statoPrev(p)!=="Rifiutato"}).sort((a,b)=>(b.data||"").localeCompare(a.data||"")):[];
+function renderPrevPicker(){
+  const P=current, list=prevDelCliente(P.cli);
+  const clis=S.clienti.filter(c=>S.preventivi.some(p=>{const x=prevCli(p);return x&&x.id===c.id})).sort((a,b)=>a.nome.localeCompare(b.nome));
+  const orfani=S.preventivi.filter(p=>!prevCli(p)&&statoPrev(p)!=="Rifiutato").length;
+  let tot=0; list.forEach(p=>vociPrev(p).forEach((v,i)=>{if(P.sel[p.id+"#"+i])tot+=v.qta*v.prezzo}));
+  const pl={Bozza:"",Inviato:"acc",Accettato:"ok",Fatturato:"ok"};
+  modalShell("Fattura da preventivi",`<div class="mb wz">
+    <div class="fld full"><label for="pp_cli">Cliente</label><select id="pp_cli"><option value="">Scegli…</option>${clis.map(c=>{const k=prevDelCliente(c.id).filter(p=>statoPrev(p)!=="Fatturato").length;return `<option value="${c.id}" ${c.id===P.cli?"selected":""}>${esc(c.nome)}${k?" · "+k+" da fatturare":""}</option>`}).join("")}</select></div>
+    <div class="full">${!P.cli?`<p class="muted">Scegli il cliente per vedere i suoi preventivi.</p>`:!list.length?`<p class="muted">Nessun preventivo per questo cliente.</p>`:
+    `<div class="tablewrap"><table class="altab"><tbody>${list.map(p=>{const vs=vociPrev(p), nOn=vs.filter((_,i)=>P.sel[p.id+"#"+i]).length, st=statoPrev(p), ff=fattDaPrev(p);
+      return `<tr class="grp"><td><input type="checkbox" data-ppg="${p.id}" ${nOn&&nOn===vs.length?"checked":""} data-ind="${nOn>0&&nOn<vs.length?1:""}" aria-label="Tutto il preventivo ${esc(p.numero||"")}"></td><td colspan="2"><b class="mono">${esc(p.numero||"Preventivo")}</b> <span class="small muted">del ${dShort(p.data)}${p.descrizione?" · "+esc(p.descrizione):""}</span> <span class="pill ${pl[st]||""}">${esc(st)}</span>${ff.length?` <span class="small warn">già in ${ff.map(f=>esc(vLabel(f))).join(", ")}</span>`:""}</td><td class="r small muted">${eur2(totPrev(p))}</td></tr>`+
+        vs.map((v,i)=>`<tr><td><input type="checkbox" data-ppk="${p.id}#${i}" ${P.sel[p.id+"#"+i]?"checked":""} aria-label="${esc(v.descr)}"></td><td class="small">${esc(v.descr)}</td><td class="small mono">${n1(v.qta)} × ${eur2(v.prezzo)} · ${esc(codShort(codOf(v.cod)))}</td><td class="r num small">${eur2(v.qta*v.prezzo)}</td></tr>`).join("")}).join("")}</tbody></table></div>`}
+    ${orfani?`<p class="note">${orfani} preventiv${orfani>1?"i":"o"} non ${orfani>1?"sono collegati":"è collegato"} a un cliente in anagrafica: aprili e scegli il cliente per poterli fatturare.</p>`:""}</div>
+    <div class="err full" id="ferr"></div></div>
+    <div class="mf"><span class="num" style="align-self:center">Imponibile selezionato <b>${eur2(tot)}</b></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-ppcrea="1" ${tot>0?"":"disabled"}>Crea la fattura</button></div></div>`);
+  document.querySelectorAll("[data-ppg]").forEach(cb=>cb.indeterminate=!!cb.dataset.ind);
+}
+function creaFatturaDaPrev(){
+  const P=current, c=byId("clienti",P.cli); if(!c)return;
+  const list=prevDelCliente(P.cli), righe=[], ids=[];
+  list.forEach(p=>{const vs=vociPrev(p).filter((_,i)=>P.sel[p.id+"#"+i]); if(vs.length)ids.push(p.id)});
+  list.filter(p=>ids.includes(p.id)).forEach(p=>vociPrev(p).forEach((v,i)=>{if(P.sel[p.id+"#"+i])righe.push({descr:(ids.length>1?`(${p.numero||"prev."}) `:"")+v.descr,qta:v.qta,prezzo:v.prezzo,cod:v.cod})}));
+  if(!righe.length){$("#ferr").textContent="Seleziona almeno una voce.";return}
+  const rif="Rif. "+(ids.length>1?"preventivi ":"preventivo ")+ids.map(id=>{const p=byId("preventivi",id);return (p.numero||"")+" del "+dShort(p.data)}).join(", ");
+  closeAll();
+  openForm("fatture",null,{clienteId:c.id,righe,ritenuta:!!c.ritenuta,pagamento:c.pagamento||"",note:rif,_extra:{preventivi:ids}});
+}
+document.addEventListener("change",e=>{
+  if(!current||current.c!=="prpick")return; const t=e.target, P=current;
+  if(t.id==="pp_cli"){openPrevPicker(t.value,[]);return}
+  if(t.dataset.ppg){const p=byId("preventivi",t.dataset.ppg); vociPrev(p).forEach((_,i)=>{if(t.checked)P.sel[p.id+"#"+i]=true; else delete P.sel[p.id+"#"+i]}); renderPrevPicker(); return}
+  if(t.dataset.ppk){if(t.checked)P.sel[t.dataset.ppk]=true; else delete P.sel[t.dataset.ppk]; renderPrevPicker(); return}
+});
 function vQualita(){
   const rows=S.sedi.map(s=>{const l=S.ispezioni.filter(x=>x.sedeId===s.id).sort((a,b)=>a.data<b.data?1:-1);const ps=l.map(x=>punteggio(x.voti)).filter(x=>x!=null);return {s,last:l[0],media:ps.length?Math.round(ps.reduce((a,b)=>a+b,0)/ps.length):null,n:l.length}});
   return head("Qualità",`${S.ispezioni.length} ispezioni registrate`,`<button class="btn primary" data-new="ispezioni">Nuova ispezione</button>`)+
@@ -957,7 +1013,7 @@ function vVendite(){
   const sum=k=>list.reduce((a,f)=>a+(f.tipo==="nc"?-1:1)*vTot(f)[k],0);
   const res=list.reduce((a,f)=>a+residuoV(f),0);
   return head("Fatture di vendita",`${eur(S.fatture.reduce((a,f)=>a+residuoV(f),0))} ancora da incassare`,
-   `<input type="month" id="fattMese" value="${fattMese}" class="btn" aria-label="Mese dei canoni"><button class="btn" data-act="genFatt">Prepara canoni di ${monthLabel(fattMese)}</button><button class="btn" data-new="vendite" data-nc="1">Nota di credito</button><button class="btn primary" data-new="vendite">Nuova fattura</button>`)+
+   `<input type="month" id="fattMese" value="${fattMese}" class="btn" aria-label="Mese dei canoni"><button class="btn" data-act="genFatt">Prepara canoni di ${monthLabel(fattMese)}</button><button class="btn" data-prpick="1">Da preventivi</button><button class="btn" data-new="vendite" data-nc="1">Nota di credito</button><button class="btn primary" data-new="vendite">Nuova fattura</button>`)+
   `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select>
    <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da incassare"],["scadute","Scadute"],["nc","Note di credito"]].map(([k,l])=>`<button data-vstato="${k}" aria-pressed="${UI.vStato===k}">${l}</button>`).join("")}</div></div><span class="small muted">${list.length} documenti</span></div>
   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Numero</th><th>Data</th><th>Cliente</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(f=>{const t=vTot(f),c=byId("clienti",f.clienteId),r=residuoV(f),s=f.tipo==="nc"?-1:1;return `<tr class="click" data-edit="fatture:${f.id}"><td class="mono">${esc(vLabel(f))}</td><td class="mono small">${dShort(f.data)}</td><td>${esc(c?c.nome:f.clienteNome||"")}${t.tags.length?`<div class="small muted">${esc(t.tags.join(" · "))}</div>`:""}${t.rit?'<div class="small muted">Ritenuta 4%</div>':""}</td><td class="r num">${eur2(s*t.imp)}</td><td class="r num">${eur2(s*t.iva)}</td><td class="r num"><b>${eur2(s*t.tot)}</b></td><td class="r num">${f.tipo==="nc"?"":eur2(r)}</td><td class="mono small">${scadCell("v",f)}</td><td>${pill(statoV(f))}</td><td class="r">${f.tipo!=="nc"&&r>0.005?`<button class="btn small" data-incassa="${f.id}">Incassa</button>`:""}</td></tr>`}).join("")}</tbody>
@@ -1136,7 +1192,7 @@ const FORMS={
   operatori:{t:"Operatore",f:[{k:"nome",l:"Nome e cognome",req:1,full:1},{k:"emailApp",l:"Email per l'app dipendenti",type:"email",full:1,hint:"Il dipendente crea il suo account nell'app con questa email e vede solo i suoi turni."},{k:"mansione",l:"Mansione",hint:"Es. addetto, caposquadra"},{k:"tel",l:"Telefono"},{k:"costoOrario",l:"Costo orario aziendale (€)",type:"number",step:"0.01",def:19},{k:"oreSettimanali",l:"Ore di contratto a settimana",type:"number",def:30},{k:"attivo",l:"Stato",type:"bool",yes:"Attivo",no:"Non attivo"},{k:"note",l:"Note (formazione, idoneità, DPI)",type:"textarea",full:1}]},
   straordinari:{t:"Intervento straordinario",f:[{k:"sedeId",l:"Sede",type:"select",opts:sedeOpts,req:1,add:"sedi"},{k:"descrizione",l:"Descrizione",hint:"Es. lavaggio vetri, pulizia post-cantiere"},{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"ora",l:"Ora",type:"time",def:"09:00"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25",def:3},{k:"importo",l:"Importo da fatturare (€)",type:"number"},{k:"operatori",l:"Squadra",type:"ops",full:1,add:"operatori"}]},
   ispezioni:{t:"Ispezione qualità",f:[{k:"sedeId",l:"Sede",type:"select",opts:sedeOpts,req:1,add:"sedi"},{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"ispettore",l:"Ispezione eseguita da",full:1},{k:"voti",l:"Valutazione per area (1 = scarso, 5 = ottimo)",type:"votes",full:1},{k:"note",l:"Problemi riscontrati e azioni",type:"textarea",full:1}]},
-  preventivi:{t:"Preventivo",calc:1,f:[{k:"cliente",l:"Cliente o condominio",req:1},{k:"descrizione",l:"Immobile",hint:"Es. uffici 2° piano, scale A e B"},{k:"tipo",l:"Tipo di immobile",type:"select",opts:()=>tipiList().map(x=>[x,x]),add:"lista:tipi"},{k:"mq",l:"Superficie (m²)",type:"number",req:1},{k:"giorni",l:"Passaggi a settimana",type:"number",def:3},{k:"produttivita",l:"Resa oraria (m²/h)",type:"number",def:200},{k:"costoOrario",l:"Costo orario (€)",type:"number",step:"0.01",def:()=>avgCosto()},{k:"materiali",l:"Materiali (% sul lavoro)",type:"number",def:6},{k:"generali",l:"Spese generali (%)",type:"number",def:10},{k:"margine",l:"Margine sul prezzo (%)",type:"number",def:15},{k:"stato",l:"Stato",type:"select",noEmpty:1,opts:()=>["Bozza","Inviato","Accettato","Rifiutato"].map(x=>[x,x])},{k:"data",l:"Data",type:"date",def:plus(0)}]},
+  preventivi:{t:"Preventivo",calc:1,f:[{k:"numero",l:"Numero",hint:"Vuoto = automatico"},{k:"data",l:"Data",type:"date",def:plus(0)},{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,add:"clienti",full:1,hint:"Se non è ancora cliente lascia vuoto e scrivi il nominativo qui sotto: lo colleghi quando accetta."},{k:"cliente",l:"Nominativo (se non è ancora cliente)"},{k:"stato",l:"Stato",type:"select",noEmpty:1,opts:()=>["Bozza","Inviato","Accettato","Rifiutato","Fatturato"].map(x=>[x,x])},{k:"descrizione",l:"Immobile o oggetto",full:1,hint:"Es. uffici 2° piano, scale A e B"},{k:"tipo",l:"Tipo di immobile",type:"select",opts:()=>tipiList().map(x=>[x,x]),add:"lista:tipi"},{k:"mq",l:"Superficie (m²) per il canone",type:"number",hint:"0 = preventivo solo a voci"},{k:"giorni",l:"Passaggi a settimana",type:"number",def:3},{k:"produttivita",l:"Resa oraria (m²/h)",type:"number",def:200},{k:"costoOrario",l:"Costo orario (€)",type:"number",step:"0.01",def:()=>avgCosto()},{k:"materiali",l:"Materiali (% sul lavoro)",type:"number",def:6},{k:"generali",l:"Spese generali (%)",type:"number",def:10},{k:"margine",l:"Margine sul prezzo (%)",type:"number",def:15},{k:"canoneOfferto",l:"Canone offerto (€/mese)",type:"number",step:"0.01",hint:"Vuoto = prezzo calcolato"},{k:"righe",l:"Altre voci: lavori una tantum, forniture",type:"righe",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
   fatture:{t:"Documento di vendita",righe:"v",f:[{k:"tipo",l:"Documento",type:"select",noEmpty:1,opts:()=>[["fattura","Fattura"],["nc","Nota di credito"]]},{k:"numero",l:"Numero",hint:"Lascia vuoto per la numerazione automatica"},{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,req:1,full:1,add:"clienti"},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"pagamento",l:"Tipo di incasso",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenuta",l:"Ritenuta 4% (condominio)",type:"bool",yes:"Applicata dal cliente",no:"No",def:false},{k:"righe",l:"Righe del documento",type:"righe",full:1,tpl:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"rifDoc",l:"Riferimento",hint:"Per le note di credito: fattura stornata",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
   fornitori:{t:"Fornitore",f:[{k:"nome",l:"Ragione sociale",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"categoria",l:"Categoria",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"iban",l:"IBAN",full:1},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"note",l:"Note",type:"textarea",full:1}]},
   acquisti:{t:"Fattura d'acquisto",righe:"a",f:[{k:"fornitoreId",l:"Fornitore",type:"select",opts:forOpts,req:1,full:1,add:"fornitori"},{k:"numero",l:"Numero del fornitore",req:1},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"dataReg",l:"Data di registrazione",type:"date",def:plus(0)},{k:"protocollo",l:"Protocollo interno",hint:"Vuoto = automatico"},{k:"categoria",l:"Categoria di costo",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenutaPct",l:"Ritenuta d'acconto da operare (%)",type:"number",def:0,hint:"20 per i professionisti, altrimenti 0"},{k:"righe",l:"Righe del documento",type:"righe",full:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
@@ -1222,12 +1278,14 @@ function openForm(c,rec,prefill,returnTo){
   if(c==="acquisti"&&rec)data.righe=righeOf(rec);
   if(c==="clienti"&&!data.codIva)data.codIva=cliCod(rec);
   if(c==="clienti"&&rec&&rec.righeAbituali)data.righeAbituali=righeOf({righe:rec.righeAbituali,regime:rec.regime});
-  const defCod=c==="fatture"?cliCod(byId("clienti",data.clienteId)):c==="clienti"?data.codIva:"22";
+  const defCod=c==="fatture"?cliCod(byId("clienti",data.clienteId)):c==="clienti"?data.codIva:c==="preventivi"?cliCod(prevCli(data)):"22";
   if((c==="fatture"||c==="acquisti")&&rec&&!(rec.scadenze&&rec.scadenze.length)&&rec.scadenza&&rec.tipo!=="nc")data.scadenze=[{data:rec.scadenza,importo:(c==="fatture"?vTot(rec):aTot(rec)).dovuto}];
   current={c,rec,defCod,occ:prefill&&prefill._occ,allocInit:(rec&&rec.alloc)||(prefill&&prefill.alloc)||[],returnTo:returnTo||null,lista:prefill&&prefill.lista};
   current.scadManual=!!(data.scadenze&&data.scadenze.length);
+  current.extra=(prefill&&prefill._extra)||null;
   current.impAuto=c==="movimenti"&&!rec&&!(prefill&&+prefill.importo);
-  const extra=c==="fatture"&&rec?fattExtra(rec):"";
+  const prevRef=c==="fatture"?((current.extra&&current.extra.preventivi)||(rec&&rec.preventivi)||[]).map(id=>byId("preventivi",id)).filter(Boolean):[];
+  const extra=(prevRef.length?`<p class="note full">Da preventiv${prevRef.length>1?"i":"o"}: <b>${prevRef.map(p=>esc(p.numero||p.descrizione||"")).join(", ")}</b></p>`:"")+(c==="fatture"&&rec?fattExtra(rec):"");
   const tOcc=c==="variazioni"&&current.occ?byId("sedi",current.occ.sedeId):null;
   const title=tOcc?`Turno: ${esc(tOcc.nome)} · ${esc(dLong(parse(current.occ.orig)))}`:c==="lista"?`Nuova voce: ${esc(ADD_LABEL["lista:"+String(current.lista).split("_")[0]]||"elenco")}`:`${rec?"Modifica":"Nuovo"}: ${esc(F.t.toLowerCase())}`;
   modalShell(title+(stack.length?` <span class="small muted" style="font-family:var(--f-body);font-weight:400">· poi torni a ${esc(FORMS[stack[stack.length-1].cur.c].t.toLowerCase())}</span>`:""),
@@ -1325,7 +1383,7 @@ function fattExtra(f){
 }
 function updCalc(){
   const p={}; FORMS.preventivi.f.forEach(f=>p[f.k]=readField(f)); const r=calcPrev(p);
-  $("#calcBox").innerHTML=`<div><span class="label">Prezzo mensile</span><span class="big">${eur(r.prezzo)}</span><span class="small muted">IVA esclusa</span></div>
+  $("#calcBox").innerHTML=`<div><span class="label">Canone mensile calcolato</span><span class="big">${eur(r.prezzo)}</span><span class="small muted">${+p.canoneOfferto>0?"offerto "+eur(+p.canoneOfferto)+(r.prezzo>0?" ("+(p.canoneOfferto>=r.prezzo?"+":"")+Math.round((p.canoneOfferto/r.prezzo-1)*100)+"%)":""):"IVA esclusa"}</span></div>
   <div><span class="label">Ore</span><span class="v">${n1(r.oreVisita)} h a passaggio</span><span class="v">${n1(r.oreMese)} h al mese</span></div>
   <div><span class="label">Costi mese</span><span class="v">Lavoro ${eur(r.lavoro)}</span><span class="v">Mat. + gen. ${eur(r.materiali+r.generali)}</span></div>
   <div><span class="label">Per passaggio</span><span class="v">${eur2(r.perVisita)}</span></div><div><span class="label">Per m² al mese</span><span class="v">${eur2(r.perMq)}</span></div><div><span class="label">Utile mese</span><span class="v">${eur(r.prezzo-r.costo)}</span></div>`;
@@ -1449,9 +1507,17 @@ async function submitForm(){
     out.scadenze.sort((a,b)=>a.data.localeCompare(b.data)); out.scadenza=out.scadenze[0]?out.scadenze[0].data:out.data;
   }
   if(c==="fatture"&&out.tipo==="nc"){delete out.scadenze;delete out.pagamento}
-  const obj=Object.assign({},rec||{},out); if(rec&&rec.esempio)obj.esempio=true;
+  if(c==="preventivi"){
+    if(!out.clienteId&&!out.cliente){$("#ferr").textContent="Scegli il cliente oppure scrivi il nominativo.";return}
+    if(!(+out.mq>0)&&!(+out.canoneOfferto>0)&&!out.righe.length){$("#ferr").textContent="Indica la superficie per il canone oppure almeno una voce.";return}
+    if(!out.numero)out.numero=rec&&rec.numero||nextNumero("PR",parse(out.data||TODAY()).getFullYear(),S.preventivi,"numero");
+    if(S.preventivi.some(x=>x.numero===out.numero&&(!rec||x.id!==rec.id))){$("#ferr").textContent=`Il numero ${out.numero} è già usato.`;return}
+    if(out.clienteId){const cc=byId("clienti",out.clienteId); if(cc)out.cliente=cc.nome}
+  }
+  const obj=Object.assign({},rec||{},current.extra||{},out); if(rec&&rec.esempio)obj.esempio=true;
   const rt=current.returnTo;
   const id=await save(c,obj); if(!id)return;
+  if(c==="fatture"&&!rec&&obj.preventivi) for(const pid of obj.preventivi){const pv=byId("preventivi",pid); if(pv&&pv.stato!=="Fatturato")await save("preventivi",Object.assign({},pv,{stato:"Fatturato"}))}
   closeModal();
   if(rt){ applyNew(rt,(rt.k==="soggetto"?(c==="clienti"?"c:":"f:"):"")+id); toast(`"${obj.nome||obj.descrizione}" aggiunto e selezionato`); return }
   toast(c==="fatture"&&!rec?`Salvata ${obj.tipo==="nc"?"nota di credito":"fattura"} ${obj.numero}`:"Salvato");
@@ -1517,7 +1583,8 @@ async function loadExamples(){
   w.push(["variazioni",{id:"se4_"+thu,sedeId:"se4",origData:thu,data:thu,ora:"18:30",durata:2,operatori:["op1","op4"],nota:"Luca sostituisce Marco in permesso",esempio:true}]);
   w.push(["ispezioni",{id:"is1",sedeId:"se1",data:D(-12),ispettore:"Elena Russo",voti:{"Ingressi, scale e androni":4,"Pavimenti":4,"Vetri e superfici":3,"Rifiuti e cestini":5},note:"Corrimano scala B da ripassare",esempio:true}]);
   w.push(["ispezioni",{id:"is2",sedeId:"se4",data:D(-5),ispettore:"Elena Russo",voti:{"Uffici e postazioni":5,"Bagni e servizi":3,"Pavimenti":4,"Rifiuti e cestini":4},note:"Bagno uomini: calcare sui rubinetti",esempio:true}]);
-  w.push(["preventivi",{id:"pr1",cliente:"Condominio Via Pacini 8",descrizione:"Scale e androne, 6 piani",tipo:"Condominio",mq:750,giorni:2,produttivita:260,costoOrario:19.5,materiali:6,generali:10,margine:15,stato:"Inviato",data:D(-3),esempio:true}]);
+  w.push(["preventivi",{id:"pr2",numero:"PR2/"+y,clienteId:"cl3",cliente:"Studio Legale Marini",descrizione:"Pulizia straordinaria dopo tinteggiatura",tipo:"Uffici",mq:0,righe:[{descr:"Pulizia post-cantiere uffici piano 3",qta:1,prezzo:650,cod:"RC"},{descr:"Lavaggio vetri interni ed esterni",qta:1,prezzo:240,cod:"RC"},{descr:"Fornitura sacchi e prodotti",qta:1,prezzo:45,cod:"22"}],stato:"Accettato",data:D(-5),esempio:true}]);
+  w.push(["preventivi",{id:"pr1",numero:"PR1/"+y,cliente:"Condominio Via Pacini 8",descrizione:"Scale e androne, 6 piani",tipo:"Condominio",mq:750,giorni:2,produttivita:260,costoOrario:19.5,materiali:6,generali:10,margine:15,stato:"Inviato",data:D(-3),esempio:true}]);
   // vendite del mese scorso
   const can=(s,n,cod)=>({descr:`Servizio di pulizia continuativo, ${s}, ${monthLabel(pk)}`,qta:1,prezzo:n,cod:cod||"22"});
   w.push(["fatture",{id:"fa1",tipo:"fattura",numero:"1/"+py,clienteId:"cl1",clienteNome:"Condominio Via Padova 112",data:pmEnd,mese:pk,righe:[can("Via Padova 112, scale A-B",1250),can("Via Padova 112, box e cortile",180)],ritenuta:true,scadenza:iso(addDays(parse(pmEnd),30)),alloc:[],esempio:true}]);
@@ -1554,7 +1621,7 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave]");
+  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
@@ -1597,6 +1664,11 @@ document.addEventListener("click",async e=>{
   if(d.act==="seedPag"){await seedPagamenti(true);return}
   if(d.incassa){e.stopPropagation();const f=byId("fatture",d.incassa);if(!f)return;openWizard("c",f.clienteId,"v:"+f.id,d.rata,d.imp);return}
   if(d.paga){e.stopPropagation();const a=byId("acquisti",d.paga);if(!a)return;openWizard("f",a.fornitoreId,"a:"+a.id,d.rata,d.imp);return}
+  if(d.prsel){e.stopPropagation(); UI.prSel=UI.prSel.includes(d.prsel)?UI.prSel.filter(x=>x!==d.prsel):UI.prSel.concat(d.prsel); render(); return}
+  if(d.prfatt){e.stopPropagation(); const p=byId("preventivi",d.prfatt), c=p&&prevCli(p); if(!c){toast("Collega prima il preventivo a un cliente in anagrafica");openForm("preventivi",p);return} openPrevPicker(c.id,[p.id]); return}
+  if(d.prfattsel){const cs=[...new Set(UI.prSel.map(id=>{const c=prevCli(byId("preventivi",id)||{});return c?c.id:"-"}))]; if(cs.includes("-")){toast("Uno dei preventivi selezionati non è collegato a un cliente");return} if(cs.length>1){toast("Seleziona preventivi dello stesso cliente");return} openPrevPicker(cs[0],UI.prSel.slice()); UI.prSel=[]; return}
+  if(d.prpick){openPrevPicker("",[]);return}
+  if(d.ppcrea){creaFatturaDaPrev();return}
   if(d.wiz!==undefined){e.stopPropagation();const[l,id]=d.wiz.split(":");openWizard(l,id||"");return}
   if(d.wzconto){current.conto=d.wzconto;current.contoUser=true;renderWizard();return}
   if(d.wzall){wizSelect(d.wzall);return}
@@ -1609,7 +1681,7 @@ document.addEventListener("click",async e=>{
   if(d.editconto){const c=conti().find(x=>x.id===d.editconto);if(c)openForm("conti",Object.assign({},c));return}
   if(d.palato){UI.paLato=d.palato;UI.paSel="";render();return}
   if(d.pasel){UI.paSel=d.pasel;render();return}
-  if(d.tosede){e.stopPropagation();const p=byId("preventivi",d.tosede);if(!p)return;const r=calcPrev(p);const cli=S.clienti.find(c=>c.nome.toLowerCase()===String(p.cliente).toLowerCase());
+  if(d.tosede){e.stopPropagation();const p=byId("preventivi",d.tosede);if(!p)return;const r=calcPrev(p);const cli=prevCli(p);
     openForm("sedi",null,{clienteId:cli?cli.id:"",nome:p.descrizione?p.cliente+", "+p.descrizione:p.cliente,tipo:p.tipo,mq:p.mq,durata:Math.max(.25,Math.round(r.oreVisita*4)/4),canone:Math.round(r.prezzo),giorni:[1,2,3,4,5,6].slice(0,Math.min(6,+p.giorni||1))});
     if(!cli)$("#ferr").textContent=`Crea prima il cliente "${p.cliente}" oppure scegline uno esistente.`;return}
   if(d.copytxt&&current&&current.rec){const t=fattText(current.rec);try{await navigator.clipboard.writeText(t);toast("Dati copiati")}catch{modalShell("Dati della fattura",`<div class="mb"><pre class="copy full">${esc(t)}</pre></div>`);current=null;toast("Seleziona il testo e copialo")}return}
