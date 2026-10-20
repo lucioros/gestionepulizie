@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
-<title>Registro Pulizie</title>
+<title>Gestione impresa pulizie</title>
 <link rel="icon" type="image/png" href="dipendenti/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -255,7 +255,7 @@ pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:
 
 <div class="app">
   <aside class="rail">
-    <div class="brand"><b>Registro Pulizie</b><span>Uffici e condomini</span></div>
+    <div class="brand"><b>Gestione impresa pulizie</b><span>Uffici e condomini</span></div>
     <nav class="nav" id="nav" aria-label="Sezioni"></nav>
     <div class="foot" id="foot"></div>
   </aside>
@@ -2390,14 +2390,14 @@ function scheduleRender(){clearTimeout(scheduleRender._t);scheduleRender._t=setT
 const stripGen=d=>{const x=Object.assign({},d);delete x.generato;return x};
 
 function authView(){
-  if(mode==="loading")return `<div class="authbox"><h1>Registro Pulizie</h1><p class="muted">Caricamento dei dati…</p></div>`;
+  if(mode==="loading")return `<div class="authbox"><h1>Gestione impresa pulizie</h1><p class="muted">Caricamento dei dati…</p></div>`;
   if(mode==="migra")return migraView();
   if(mode==="notowner")return `<div class="authbox panel"><h1>Accesso riservato</h1><p>Sei entrato come <b>${esc(me&&me.email||"")}</b>, che non è l'account del titolare.</p><p class="note">Se sei un dipendente usa l'app dipendenti: <a href="dipendenti/">apri l'app dipendenti</a>.</p><div class="actions"><button class="btn" data-act="logout">Esci</button></div></div>`;
   const msg=(authMsg?`<p class="err" role="alert">${esc(authMsg)}</p>`:"")+(authOk?`<p class="ok-msg" role="status">${esc(authOk)}</p>`:"");
   if(recovery)return `<div class="authbox panel"><h1>Nuova password</h1><form id="authForm" data-def="newpw" novalidate>
     <div class="fld"><label for="a_pw">Nuova password (almeno 8 caratteri)</label><input id="a_pw" type="password" autocomplete="new-password"></div>${msg}
     <div class="actions"><button class="btn primary" type="submit">Salva la nuova password</button></div></form></div>`;
-  return `<div class="authbox panel"><h1>Registro Pulizie</h1><p class="muted">Gestionale del titolare</p><form id="authForm" data-def="login" novalidate>
+  return `<div class="authbox panel"><h1>Gestione impresa pulizie</h1><p class="muted">Gestionale del titolare</p><form id="authForm" data-def="login" novalidate>
     <div class="fld"><label for="a_email">Email</label><input id="a_email" type="email" autocomplete="username" inputmode="email"></div>
     <div class="fld"><label for="a_pw">Password</label><input id="a_pw" type="password" autocomplete="current-password"></div>${msg}
     <div class="actions"><button class="btn primary" type="submit">Entra</button><button class="btn" type="button" data-auth="signup">Crea account</button><button class="btn ghost" type="button" data-auth="reset">Password dimenticata?</button></div>
@@ -2506,7 +2506,7 @@ async function leggiImport(file){
   let j; try{ j=JSON.parse(await file.text()) }catch{ toast("Il file non è un backup valido (JSON non leggibile)."); return }
   const dati=j&&j.dati?j.dati:j; const rows=[];
   COLS.forEach(c=>(Array.isArray(dati&&dati[c])?dati[c]:[]).forEach(x=>{ if(!x||!x.id)return; rows.push({col:c,id:String(x.id),data:x}) }));
-  if(!rows.length){toast("Nel file non ci sono dati del Registro Pulizie.");return}
+  if(!rows.length){toast("Nel file non ci sono dati del gestionale.");return}
   importBuf=rows;
   const cnt={}; rows.forEach(r=>cnt[r.col]=(cnt[r.col]||0)+1);
   modalShell("Importa dati",`<div class="mb"><p class="full">Il file <b>${esc(file.name)}</b> contiene <b>${rows.length}</b> record:</p><p class="full small muted">${Object.entries(cnt).map(([k,v])=>esc(k)+" "+v).join(" · ")}</p><p class="full note">I record con lo stesso codice di quelli già presenti verranno sovrascritti. Gli altri dati restano invariati.</p><div class="err full" id="ferr"></div></div><div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-act="doImport">Importa ${rows.length} record</button></div></div>`);
