@@ -15,7 +15,7 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 | `dipendenti/` | App dipendenti: turni di oggi e dei prossimi giorni, timbratura di inizio e fine lavoro, ore del mese |
 | `supabase/schema.sql` | Tabelle e permessi del database, da eseguire una volta in Supabase |
 | `config.js` | Indirizzo del progetto Supabase e chiave pubblica (anon) |
-| `vendor/` | Libreria Supabase (MIT), inclusa per non dipendere da CDN esterni |
+| `vendor/` | Librerie Supabase e JSZip (MIT), incluse per non dipendere da CDN esterni |
 
 ## Messa in funzione (una volta sola)
 
@@ -52,8 +52,20 @@ GitHub → repository → **Settings → Pages** → *Build and deployment*: **D
 - **Timbrature**: l'ora è quella del server, non del telefono. Si possono timbrare solo i turni della propria agenda, e solo il giorno stesso. La fine richiede prima l'inizio. Le correzioni del titolare restano segnate come "corretta".
 - **Posizione GPS**: è disattivata finché non la attivi in Impostazioni. In Italia è un controllo a distanza (art. 4 Statuto dei Lavoratori): verifica prima con il consulente del lavoro.
 
+## Fattura elettronica
+
+1. **Impostazioni → Dati della tua impresa**: denominazione, partita IVA, regime fiscale, sede, IBAN, REA. Finiscono in ogni fattura.
+2. Nelle schede **clienti** servono partita IVA (aziende) o codice fiscale (condomini e privati), indirizzo, CAP, comune e il codice destinatario SdI (o la PEC). Partita IVA e codice fiscale vengono controllati.
+3. In **Fatture di vendita** il pulsante **XML** controlla i dati obbligatori e genera il file FatturaPA (formato 1.2, specifiche 1.9). Ogni riga ha la sua aliquota o natura (N6.7 inversione contabile, N1, N2.2...). Il file include anche la ritenuta 4% dei condomini (causale W), la scissione dei pagamenti, il bollo virtuale, le scadenze con IBAN, l'ordine/CIG/CUP e la fattura collegata alle note di credito. **Scarica XML da inviare** crea uno zip con tutte le fatture ancora da trasmettere.
+4. Carica i file sul portale **Fatture e Corrispettivi** dell'Agenzia delle Entrate (Fatturazione elettronica → Trasmissione) o dal tuo intermediario, **entro 12 giorni** dalla data della fattura.
+5. Aggiorna lo **stato SdI** (inviata, consegnata, non consegnata, scartata). Le fatture trasmesse non si possono eliminare: si corregge con una nota di credito. In **Oggi** compaiono gli avvisi per scarti e ritardi.
+6. **Copia di cortesia**: versione stampabile o PDF da mandare al cliente, obbligatoria di fatto quando la fattura resta nell'area riservata (codice 0000000).
+7. **Imposta di bollo**: in Impostazioni c'è il riepilogo trimestrale (2 € per fattura con più di 77,47 € senza IVA, F24 codici 2521–2524). Fa fede il calcolo dell'Agenzia nel portale.
+8. **Fatture d'acquisto → Importa XML**: carica i file .xml, .xml.p7m o .zip scaricati dal portale. Crea il fornitore se manca e registra righe, IVA, ritenuta e scadenze, saltando i doppioni.
+
+Prima di usarla in produzione fai controllare dal commercialista un XML di prova per ogni caso (condominio con ritenuta, azienda in inversione contabile, nota di credito). Puoi anche verificare i file con il controllo gratuito del portale.
+
 ## Da sapere
 
 - **Piano gratuito di Supabase**: il progetto viene messo in pausa dopo una settimana senza utilizzo e non include backup automatici. Per dati contabili valuta il piano Pro; in ogni caso usa ogni tanto **Esporta dati** come copia di sicurezza.
 - **Email di sistema**: il servizio email incluso in Supabase invia pochi messaggi all'ora. Se registri molti dipendenti insieme, alcuni potrebbero dover riprovare più tardi; per un uso intenso si configura un SMTP proprio (Authentication → Emails).
-- Le fatture sono documenti di gestione interna: l'invio allo SdI va fatto con il programma di fatturazione elettronica.

@@ -248,6 +248,7 @@ pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:
   .al .res{grid-column:2}
 }
 @media (prefers-reduced-motion:no-preference){.btn,.nav button{transition:background .12s,border-color .12s}}
+.banner-err{background:var(--bad-soft);color:var(--bad);border-radius:var(--r);padding:10px 12px}.banner-warn{background:var(--warn-soft);color:var(--ink);border-radius:var(--r);padding:10px 12px}.banner-err ul,.banner-warn ul{margin:4px 0 0;padding-left:18px}.ok-msg{color:var(--ok);margin:0}
 </style>
 </head>
 <body>
@@ -264,8 +265,10 @@ pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:
 <div id="toast" class="toast" hidden></div>
 
 <script src="vendor/supabase.js"></script>
+<script src="vendor/jszip.min.js"></script>
 <script src="config.js"></script>
 <input type="file" id="impFile" accept=".json,application/json" hidden>
+<input type="file" id="xmlFile" accept=".xml,.p7m,.zip" multiple hidden>
 <script>
 (function(){
 "use strict";
@@ -680,6 +683,14 @@ function alerts(){
   S.sedi.filter(s=>s.attiva!==false).forEach(s=>{const l=lastIspezione(s.id); if(l){const p=punteggio(l.voti); if(p!=null&&p<70)a.push(["warn",`${s.nome}: ultima ispezione ${p}/100.`,"qualita"])}});
   const mk=monthKey(today()); if(S.sedi.some(s=>s.attiva!==false&&+s.canone>0)&&!S.fatture.some(f=>f.mese===mk)) a.push(["warn",`Fatture dei canoni di ${monthLabel(mk)} non ancora preparate.`,"vendite"]);
   conti().forEach(c=>{const s=saldoConto(c.id); if(s<0)a.push(["bad",`${c.nome}: saldo negativo ${eur2(s)}.`,"primanota"])});
+  const sc=S.fatture.filter(f=>["scartata","rifiutata"].includes(sdiStato(f)));
+  if(sc.length)a.push(["bad",`${sc.length} fattur${sc.length>1?"e scartate":"a scartata"} dallo SdI: correggi e reinvia entro 5 giorni dallo scarto.`,"vendite"]);
+  const dal=azienda().feDal;
+  if(dal){ const ni=S.fatture.filter(f=>f.data>=dal&&!SDI_TRASMESSA.includes(sdiStato(f))&&!["scartata","rifiutata"].includes(sdiStato(f)));
+    const l12=iso(addDays(today(),-12)), l8=iso(addDays(today(),-8));
+    const late=ni.filter(f=>f.data<l12), soon=ni.filter(f=>f.data>=l12&&f.data<=l8);
+    if(late.length)a.push(["bad",`${late.length} fattur${late.length>1?"e non trasmesse":"a non trasmessa"} allo SdI oltre i 12 giorni dalla data.`,"vendite"]);
+    if(soon.length)a.push(["warn",`${soon.length} fattur${soon.length>1?"e":"a"} da trasmettere allo SdI nei prossimi giorni (termine: 12 giorni dalla data).`,"vendite"]); }
   return a;
 }
 
@@ -918,6 +929,7 @@ function vImpostazioni(){
     <div class="actions"><button class="btn primary" data-act="import">Importa dati</button><button class="btn" data-act="export">Esporta dati</button></div>
     <p class="note">"Importa dati" carica il file esportato dall'app su Claude (o un backup di questa app). I record con lo stesso codice vengono sovrascritti. "Esporta dati" salva una copia completa sul tuo computer: fallo ogni tanto come backup.</p>
     <div class="actions">${hasExamples()?'<button class="btn" data-act="rmEx">Rimuovi dati di esempio</button>':'<button class="btn" data-act="loadEx">Carica dati di esempio</button>'}</div></section>
+    ${fePanel()}
     <section class="panel"><h2>Account</h2><p class="note">Sei entrato come <b>${esc(me&&me.email||"")}</b>, titolare. Per cambiare password usa "Password dimenticata" nella pagina di accesso.</p></section></div></div>`;
 }
 function vAgenda(){
@@ -1054,7 +1066,7 @@ function letteraSollecito(am){
   const blocchi=cs.map(c=>{const ds=S.fatture.filter(f=>f.clienteId===c.id&&f.tipo!=="nc").map(f=>({f,rs:rateDoc("v",f).filter(r=>r.res>0.005&&r.data<td)})).filter(x=>x.rs.length);
     if(!ds.length)return""; let sc=0;
     const l=ds.map(x=>x.rs.map(r=>{sc+=r.res;return `  - ${vLabel(x.f)} del ${dShort(x.f.data)}${x.rs.length>1||rateDoc("v",x.f).length>1?", rata "+r.n:""}, scaduta il ${dShort(r.data)}: ${eur2(r.res)}`}).join("\n")).join("\n");
-    tot+=sc; return `${condNome(c)}${c.piva?" (C.F. "+c.piva+")":""}\n${l}\n  Totale condominio: ${eur2(sc)}`}).filter(Boolean);
+    tot+=sc; return `${condNome(c)}${(c.cf||c.piva)?" (C.F. "+(c.cf||c.piva)+")":""}\n${l}\n  Totale condominio: ${eur2(sc)}`}).filter(Boolean);
   if(!blocchi.length)return null;
   return `Spett.le ${am.nome}${am.referente?"\nc.a. "+am.referente:""}${am.indirizzo?"\n"+am.indirizzo:""}${am.pec?"\nPEC: "+am.pec:""}\n\n${dShort(td)}\n\nOggetto: sollecito di pagamento per i servizi di pulizia dei condomini da Voi amministrati\n\nCon la presente Vi segnaliamo che, alla data odierna, risultano scadute e non ancora saldate le seguenti fatture:\n\n${blocchi.join("\n\n")}\n\nTotale complessivo scaduto: ${eur2(tot)}\n\nVi chiediamo di provvedere al pagamento entro 15 giorni dal ricevimento della presente${banca?", tramite bonifico sull'IBAN "+banca.iban:""}, applicando la ritenuta del 4% ove prevista. Se nel frattempo avete già provveduto, vi preghiamo di non tenere conto di questa comunicazione e di inviarci gli estremi del pagamento.\n\nIn caso di mancato pagamento, ai sensi dell'art. 63, comma 1, disp. att. c.c. Vi chiediamo fin d'ora di comunicarci i dati dei condòmini morosi.\n\nDistinti saluti`;
 }
@@ -1063,7 +1075,7 @@ function estrattoCondominio(c,anno){
   const inc=S.movimenti.filter(m=>m.tipo==="entrata"&&movSogg(m)==="c:"+c.id&&(m.data||"").startsWith(anno)).sort((a,b)=>a.data.localeCompare(b.data));
   const m=mastrinoAnno("c:"+c.id,anno), am=byId("amministratori",c.amministratoreId);
   const DA=v=>{const x=r2(v);return eur2(Math.abs(x))+(x>0?" a nostro credito":x<0?" a vostro credito":"")};
-  return `Estratto conto ${anno}\n${condNome(c)}${c.piva?" (C.F. "+c.piva+")":""}${am?"\nAmministratore: "+am.nome:""}\n\nSaldo al 1/1/${anno}: ${DA(m.ap)}\n\nFatture e note di credito\n${fs.map(f=>{const t=vTot(f);return `  ${vLabel(f)} del ${dShort(f.data)}: totale ${eur2((f.tipo==="nc"?-1:1)*t.tot)}${t.rit?", ritenuta 4% "+eur2(t.rit)+", netto "+eur2(t.dovuto):""}`}).join("\n")||"  nessuna"}\n\nPagamenti ricevuti\n${inc.map(x=>`  ${dShort(x.data)}: ${eur2(x.importo)}${x.descrizione?" ("+x.descrizione+")":""}`).join("\n")||"  nessuno"}\n\nRitenute 4% sui pagamenti dell'anno: ${eur2(ritIncassi(c.id,anno))}\nSaldo al ${dShort(TODAY()<anno+"-12-31"?TODAY():anno+"-12-31")}: ${DA(m.fin)}`;
+  return `Estratto conto ${anno}\n${condNome(c)}${(c.cf||c.piva)?" (C.F. "+(c.cf||c.piva)+")":""}${am?"\nAmministratore: "+am.nome:""}\n\nSaldo al 1/1/${anno}: ${DA(m.ap)}\n\nFatture e note di credito\n${fs.map(f=>{const t=vTot(f);return `  ${vLabel(f)} del ${dShort(f.data)}: totale ${eur2((f.tipo==="nc"?-1:1)*t.tot)}${t.rit?", ritenuta 4% "+eur2(t.rit)+", netto "+eur2(t.dovuto):""}`}).join("\n")||"  nessuna"}\n\nPagamenti ricevuti\n${inc.map(x=>`  ${dShort(x.data)}: ${eur2(x.importo)}${x.descrizione?" ("+x.descrizione+")":""}`).join("\n")||"  nessuno"}\n\nRitenute 4% sui pagamenti dell'anno: ${eur2(ritIncassi(c.id,anno))}\nSaldo al ${dShort(TODAY()<anno+"-12-31"?TODAY():anno+"-12-31")}: ${DA(m.fin)}`;
 }
 function mostraTesto(titolo,testo){
   modalShell(esc(titolo),`<div class="mb"><pre class="copy full" id="lettera">${esc(testo)}</pre><p class="note full">Copia il testo nella tua email o PEC, oppure in un documento su carta intestata.</p></div><div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Chiudi</button><button type="button" class="btn primary" data-copylet="1">Copia testo</button></div></div>`);
@@ -1086,16 +1098,19 @@ function vVendite(){
   if(UI.vStato==="aperte")list=list.filter(f=>f.tipo!=="nc"&&residuoV(f)>0.005);
   if(UI.vStato==="scadute")list=list.filter(f=>f.tipo!=="nc"&&statoV(f)[1]==="bad");
   if(UI.vStato==="nc")list=list.filter(f=>f.tipo==="nc");
+  if(UI.vStato==="dainv")list=list.filter(f=>!SDI_TRASMESSA.includes(sdiStato(f)));
+  if(UI.vStato==="scart")list=list.filter(f=>["scartata","rifiutata"].includes(sdiStato(f)));
+  lastDaInv=list.filter(f=>!SDI_TRASMESSA.includes(sdiStato(f))).map(f=>f.id); const nXml=list.filter(f=>sdiStato(f)==="xml").length;
   list.sort((a,b)=>(b.data||"").localeCompare(a.data||"")||String(b.numero).localeCompare(String(a.numero),undefined,{numeric:true}));
   const sum=k=>list.reduce((a,f)=>a+(f.tipo==="nc"?-1:1)*vTot(f)[k],0);
   const res=list.reduce((a,f)=>a+residuoV(f),0);
   return head("Fatture di vendita",`${eur(S.fatture.reduce((a,f)=>a+residuoV(f),0))} ancora da incassare`,
    `<input type="month" id="fattMese" value="${fattMese}" class="btn" aria-label="Mese dei canoni"><button class="btn" data-act="genFatt">Prepara canoni di ${monthLabel(fattMese)}</button><button class="btn" data-prpick="1">Da preventivi</button><button class="btn" data-new="vendite" data-nc="1">Nota di credito</button><button class="btn primary" data-new="vendite">Nuova fattura</button>`)+
   `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}<option value="*" ${y==="*"?"selected":""}>Tutti gli anni</option></select>${ammSelect("vAmm",UI.vAmm)}<select id="vCli" class="btn" aria-label="Cliente"><option value="">Tutti i clienti</option>${S.clienti.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>`<option value="${c.id}" ${UI.vCli===c.id?"selected":""}>${esc(c.nome)}</option>`).join("")}</select>${UI.vCli?`<button class="btn small" data-wiz="c:${UI.vCli}">Incassa fatture</button>`:""}
-   <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da incassare"],["scadute","Scadute"],["nc","Note di credito"]].map(([k,l])=>`<button data-vstato="${k}" aria-pressed="${UI.vStato===k}">${l}</button>`).join("")}</div></div><span class="small muted">${list.length} documenti</span></div>
-  ${list.length?`<div class="tablewrap"><table><thead><tr><th>Numero</th><th>Data</th><th>Cliente</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(f=>{const t=vTot(f),c=byId("clienti",f.clienteId),r=residuoV(f),s=f.tipo==="nc"?-1:1;return `<tr class="click" data-edit="fatture:${f.id}"><td class="mono">${esc(vLabel(f))}</td><td class="mono small">${dShort(f.data)}</td><td>${esc(c?c.nome:f.clienteNome||"")}${t.tags.length?`<div class="small muted">${esc(t.tags.join(" · "))}</div>`:""}${t.rit?'<div class="small muted">Ritenuta 4%</div>':""}</td><td class="r num">${eur2(s*t.imp)}</td><td class="r num">${eur2(s*t.iva)}</td><td class="r num"><b>${eur2(s*t.tot)}</b></td><td class="r num">${f.tipo==="nc"?"":eur2(r)}</td><td class="mono small">${scadCell("v",f)}</td><td>${pill(statoV(f))}</td><td class="r">${f.tipo!=="nc"&&r>0.005?`<button class="btn small" data-incassa="${f.id}">Incassa</button>`:""}</td></tr>`}).join("")}</tbody>
-  <tfoot><tr><td colspan="3">Totale</td><td class="r num">${eur2(sum("imp"))}</td><td class="r num">${eur2(sum("iva"))}</td><td class="r num">${eur2(sum("tot"))}</td><td class="r num">${eur2(res)}</td><td colspan="3"></td></tr></tfoot></table></div>`:`<p class="muted">Nessun documento con questi filtri. "Prepara canoni" crea una fattura per cliente con le sue righe abituali (oppure, se non ne ha, i canoni delle sedi attive) e gli straordinari svolti nel mese.</p>`}</section>
-  <p class="note">Ogni riga ha il suo codice IVA, anche diversi nello stesso documento. Questi documenti servono alla gestione interna: crediti, incassi e partite aperte. In Italia la fattura va trasmessa in formato elettronico allo SdI: dal dettaglio puoi copiare i dati nel tuo programma di fatturazione elettronica. Pulizia di edifici verso clienti con partita IVA: <b>inversione contabile</b> (art. 17, c. 6, lett. a-ter, DPR 633/72). Condomini: fattura con IVA e ritenuta del 4% trattenuta dal condominio (art. 25-ter, DPR 600/73), calcolata qui sull'imponibile.</p>`;
+   <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da incassare"],["scadute","Scadute"],["nc","Note di credito"],["dainv","Da inviare allo SdI"],["scart","Scartate"]].map(([k,l])=>`<button data-vstato="${k}" aria-pressed="${UI.vStato===k}">${l}</button>`).join("")}</div>${lastDaInv.length?`<button class="btn small" data-act="zipFE">Scarica XML da inviare (${lastDaInv.length})</button>`:""}${nXml?`<button class="btn small" data-act="segnaInv">Segna inviate (${nXml})</button>`:""}</div><span class="small muted">${list.length} documenti</span></div>
+  ${list.length?`<div class="tablewrap"><table><thead><tr><th>Numero</th><th>Data</th><th>Cliente</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th>SdI</th><th></th></tr></thead><tbody>${list.map(f=>{const t=vTot(f),c=byId("clienti",f.clienteId),r=residuoV(f),s=f.tipo==="nc"?-1:1;return `<tr class="click" data-edit="fatture:${f.id}"><td class="mono">${esc(vLabel(f))}</td><td class="mono small">${dShort(f.data)}</td><td>${esc(c?c.nome:f.clienteNome||"")}${t.tags.length?`<div class="small muted">${esc(t.tags.join(" · "))}</div>`:""}${t.rit?'<div class="small muted">Ritenuta 4%</div>':""}</td><td class="r num">${eur2(s*t.imp)}</td><td class="r num">${eur2(s*t.iva)}</td><td class="r num"><b>${eur2(s*t.tot)}</b></td><td class="r num">${f.tipo==="nc"?"":eur2(r)}</td><td class="mono small">${scadCell("v",f)}</td><td>${pill(statoV(f))}</td><td>${sdiPill(f)}</td><td class="r"><div class="actions" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn small" data-fe="${f.id}">XML</button>${f.tipo!=="nc"&&r>0.005?`<button class="btn small" data-incassa="${f.id}">Incassa</button>`:""}</div></td></tr>`}).join("")}</tbody>
+  <tfoot><tr><td colspan="3">Totale</td><td class="r num">${eur2(sum("imp"))}</td><td class="r num">${eur2(sum("iva"))}</td><td class="r num">${eur2(sum("tot"))}</td><td class="r num">${eur2(res)}</td><td colspan="4"></td></tr></tfoot></table></div>`:`<p class="muted">Nessun documento con questi filtri. "Prepara canoni" crea una fattura per cliente con le sue righe abituali (oppure, se non ne ha, i canoni delle sedi attive) e gli straordinari svolti nel mese.</p>`}</section>
+  <p class="note">Ogni riga ha il suo codice IVA, anche diversi nello stesso documento. Questi documenti servono alla gestione interna: crediti, incassi e partite aperte. Il pulsante <b>XML</b> controlla i dati obbligatori e genera il file FatturaPA da caricare sul portale "Fatture e Corrispettivi" dell'Agenzia delle Entrate o dal tuo intermediario, entro 12 giorni dalla data della fattura; poi qui aggiorni l'esito (consegnata, scartata). Pulizia di edifici verso clienti con partita IVA: <b>inversione contabile</b> (art. 17, c. 6, lett. a-ter, DPR 633/72). Condomini: fattura con IVA e ritenuta del 4% trattenuta dal condominio (art. 25-ter, DPR 600/73), calcolata qui sull'imponibile.</p>`;
 }
 function vAcquisti(){
   const ys=anni(S.acquisti,"data"); const y=UI.vAnno==="*"||(UI.vAnno&&ys.includes(UI.vAnno))?UI.vAnno:ys[0];
@@ -1107,7 +1122,7 @@ function vAcquisti(){
   const sum=k=>list.reduce((a,x)=>a+aTot(x)[k],0);
   const byCat={}; list.forEach(a=>{byCat[a.categoria||"Altro"]=(byCat[a.categoria||"Altro"]||0)+aTot(a).imp});
   const maxC=Math.max(1,...Object.values(byCat));
-  return head("Fatture d'acquisto",`${eur(S.acquisti.reduce((a,x)=>a+residuoA(x),0))} ancora da pagare ai fornitori`,`<button class="btn" data-new="fornitori">Nuovo fornitore</button><button class="btn primary" data-new="acquisti">Registra fattura</button>`)+
+  return head("Fatture d'acquisto",`${eur(S.acquisti.reduce((a,x)=>a+residuoA(x),0))} ancora da pagare ai fornitori`,`<button class="btn" data-new="fornitori">Nuovo fornitore</button><button class="btn" data-act="impXml">Importa XML</button><button class="btn primary" data-new="acquisti">Registra fattura</button>`)+
   `<section class="panel"><div class="ph"><div class="actions"><select id="vAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}<option value="*" ${y==="*"?"selected":""}>Tutti gli anni</option></select><select id="aFor" class="btn" aria-label="Fornitore"><option value="">Tutti i fornitori</option>${S.fornitori.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(f=>`<option value="${f.id}" ${UI.aFor===f.id?"selected":""}>${esc(f.nome)}</option>`).join("")}</select>${UI.aFor?`<button class="btn small" data-wiz="f:${UI.aFor}">Paga fatture</button>`:""}
    <div class="seg" role="group" aria-label="Filtro">${[["","Tutte"],["aperte","Da pagare"],["scadute","Scadute"]].map(([k,l])=>`<button data-astato="${k}" aria-pressed="${UI.aStato===k}">${l}</button>`).join("")}</div></div><span class="small muted">${list.length} documenti</span></div>
   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Prot.</th><th>Fornitore</th><th>Numero e data</th><th>Categoria</th><th class="r">Imponibile</th><th class="r">IVA</th><th class="r">Totale</th><th class="r">Residuo</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead><tbody>${list.map(a=>{const t=aTot(a),fo=byId("fornitori",a.fornitoreId),r=residuoA(a);return `<tr class="click" data-edit="acquisti:${a.id}"><td class="mono small">${esc(a.protocollo||"")}</td><td>${esc(fo?fo.nome:"(eliminato)")}</td><td class="mono small">${esc(a.numero)}<div class="muted">${dShort(a.data)}</div></td><td class="small">${esc(a.categoria||"")}</td><td class="r num">${eur2(t.imp)}</td><td class="r num">${eur2(t.iva)}</td><td class="r num"><b>${eur2(t.tot)}</b>${t.rit?`<div class="small muted">rit. ${eur2(t.rit)}</div>`:""}</td><td class="r num">${eur2(r)}</td><td class="mono small">${scadCell("a",a)}</td><td>${pill(statoA(a))}</td><td class="r">${r>0.005?`<button class="btn small" data-paga="${a.id}">Paga</button>`:""}</td></tr>`}).join("")}</tbody>
@@ -1265,14 +1280,15 @@ const contoOpts=()=>conti().map(c=>[c.id,c.nome]);
 const soggOpts=()=>[...cliOpts().map(([k,l])=>["c:"+k,l,"Clienti"]),...forOpts().map(([k,l])=>["f:"+k,l,"Fornitori"])];
 const plus=d=>()=>iso(addDays(today(),d));
 const FORMS={
-  clienti:{t:"Cliente",f:[{k:"nome",l:"Ragione sociale o condominio",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"referente",l:"Referente"},{k:"amministratoreId",l:"Amministratore di condominio",type:"select",opts:()=>ammOpts(),add:"amministratori",full:1,hint:"Per i condomini: lo studio che li amministra. Le fatture restano intestate al condominio, con il suo codice fiscale."},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"indirizzo",l:"Sede legale",full:1},{k:"sdi",l:"Codice destinatario SdI"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"codIva",l:"Codice IVA predefinito",type:"select",opts:codOpts,noEmpty:1,full:1,add:"codiceIva",hint:"Proposto sulle nuove righe. Pulizia di edifici per clienti con partita IVA: inversione contabile. Condomini e privati: 22%."},{k:"ritenuta",l:"Ritenuta d'acconto 4%",type:"bool",yes:"Sì: è un condominio",no:"No",def:false},{k:"righeAbituali",l:"Righe abituali in fattura",type:"righe",full:1,hint:"Ogni riga con il suo codice IVA. Usate per le fatture mensili e richiamabili in ogni fattura. Scrivi {mese} per inserire il mese fatturato."},{k:"note",l:"Note",type:"textarea",full:1}]},
+  clienti:{t:"Cliente",f:[{k:"nome",l:"Ragione sociale o condominio",req:1,full:1},{k:"piva",l:"Partita IVA",hint:"11 cifre. Vuota per condomini e privati"},{k:"cf",l:"Codice fiscale",hint:"Condomini: il codice fiscale del condominio (inizia di solito con 9)"},{k:"referente",l:"Referente"},{k:"amministratoreId",l:"Amministratore di condominio",type:"select",opts:()=>ammOpts(),add:"amministratori",full:1,hint:"Per i condomini: lo studio che li amministra. Le fatture restano intestate al condominio, con il suo codice fiscale."},{k:"tel",l:"Telefono"},{k:"email",l:"Email",hint:"Per la copia di cortesia e i solleciti"},{k:"indirizzo",l:"Indirizzo (via e numero civico)",full:1},{k:"cap",l:"CAP"},{k:"comune",l:"Comune"},{k:"provincia",l:"Provincia (sigla)",hint:"Es. MI"},{k:"sdi",l:"Codice destinatario SdI",hint:"7 caratteri (6 per la pubblica amministrazione). Vuoto: 0000000"},{k:"pec",l:"PEC",hint:"Usata solo se manca il codice destinatario",full:1},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"codIva",l:"Codice IVA predefinito",type:"select",opts:codOpts,noEmpty:1,full:1,add:"codiceIva",hint:"Proposto sulle nuove righe. Pulizia di edifici per clienti con partita IVA: inversione contabile. Condomini e privati: 22%."},{k:"ritenuta",l:"Ritenuta d'acconto 4%",type:"bool",yes:"Sì: è un condominio",no:"No",def:false},{k:"righeAbituali",l:"Righe abituali in fattura",type:"righe",full:1,hint:"Ogni riga con il suo codice IVA. Usate per le fatture mensili e richiamabili in ogni fattura. Scrivi {mese} per inserire il mese fatturato."},{k:"note",l:"Note",type:"textarea",full:1}]},
   sedi:{t:"Sede e contratto",f:[{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,req:1,add:"clienti"},{k:"nome",l:"Nome sede",req:1,hint:"Es. Condominio Via Padova 12"},{k:"indirizzo",l:"Indirizzo",full:1},{k:"tipo",l:"Tipo",type:"select",opts:()=>tipiList().map(x=>[x,x]),add:"lista:tipi"},{k:"mq",l:"Superficie (m²)",type:"number"},{k:"giorni",l:"Giorni di servizio",type:"days",full:1},{k:"ora",l:"Ora di inizio",type:"time",def:"18:00"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25",def:2},{k:"operatori",l:"Squadra assegnata",type:"ops",full:1,add:"operatori"},{k:"canone",l:"Canone mensile (€, IVA esclusa)",type:"number"},{k:"attiva",l:"Stato",type:"bool",yes:"Attiva",no:"Sospesa"},{k:"accesso",l:"Accesso (chiavi, codici, allarme)",type:"textarea",full:1},{k:"attivita",l:"Mansionario: un'attività per riga",type:"textarea",full:1}]},
   operatori:{t:"Operatore",f:[{k:"nome",l:"Nome e cognome",req:1,full:1},{k:"emailApp",l:"Email per l'app dipendenti",type:"email",full:1,hint:"Il dipendente crea il suo account nell'app con questa email e vede solo i suoi turni."},{k:"mansione",l:"Mansione",hint:"Es. addetto, caposquadra"},{k:"tel",l:"Telefono"},{k:"costoOrario",l:"Costo orario aziendale (€)",type:"number",step:"0.01",def:19},{k:"oreSettimanali",l:"Ore di contratto a settimana",type:"number",def:30},{k:"attivo",l:"Stato",type:"bool",yes:"Attivo",no:"Non attivo"},{k:"note",l:"Note (formazione, idoneità, DPI)",type:"textarea",full:1}]},
   straordinari:{t:"Intervento straordinario",f:[{k:"sedeId",l:"Sede",type:"select",opts:sedeOpts,req:1,add:"sedi"},{k:"descrizione",l:"Descrizione",hint:"Es. lavaggio vetri, pulizia post-cantiere"},{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"ora",l:"Ora",type:"time",def:"09:00"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25",def:3},{k:"importo",l:"Importo da fatturare (€)",type:"number"},{k:"operatori",l:"Squadra",type:"ops",full:1,add:"operatori"}]},
   ispezioni:{t:"Ispezione qualità",f:[{k:"sedeId",l:"Sede",type:"select",opts:sedeOpts,req:1,add:"sedi"},{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"ispettore",l:"Ispezione eseguita da",full:1},{k:"voti",l:"Valutazione per area (1 = scarso, 5 = ottimo)",type:"votes",full:1},{k:"note",l:"Problemi riscontrati e azioni",type:"textarea",full:1}]},
   preventivi:{t:"Preventivo",calc:1,f:[{k:"numero",l:"Numero",hint:"Vuoto = automatico"},{k:"data",l:"Data",type:"date",def:plus(0)},{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,add:"clienti",full:1,hint:"Se non è ancora cliente lascia vuoto e scrivi il nominativo qui sotto: lo colleghi quando accetta."},{k:"cliente",l:"Nominativo (se non è ancora cliente)"},{k:"stato",l:"Stato",type:"select",noEmpty:1,opts:()=>["Bozza","Inviato","Accettato","Rifiutato","Fatturato"].map(x=>[x,x])},{k:"descrizione",l:"Immobile o oggetto",full:1,hint:"Es. uffici 2° piano, scale A e B"},{k:"tipo",l:"Tipo di immobile",type:"select",opts:()=>tipiList().map(x=>[x,x]),add:"lista:tipi"},{k:"mq",l:"Superficie (m²) per il canone",type:"number",hint:"0 = preventivo solo a voci"},{k:"giorni",l:"Passaggi a settimana",type:"number",def:3},{k:"produttivita",l:"Resa oraria (m²/h)",type:"number",def:200},{k:"costoOrario",l:"Costo orario (€)",type:"number",step:"0.01",def:()=>avgCosto()},{k:"materiali",l:"Materiali (% sul lavoro)",type:"number",def:6},{k:"generali",l:"Spese generali (%)",type:"number",def:10},{k:"margine",l:"Margine sul prezzo (%)",type:"number",def:15},{k:"canoneOfferto",l:"Canone offerto (€/mese)",type:"number",step:"0.01",hint:"Vuoto = prezzo calcolato"},{k:"righe",l:"Altre voci: lavori una tantum, forniture",type:"righe",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
-  fatture:{t:"Documento di vendita",righe:"v",f:[{k:"tipo",l:"Documento",type:"select",noEmpty:1,opts:()=>[["fattura","Fattura"],["nc","Nota di credito"]]},{k:"numero",l:"Numero",hint:"Lascia vuoto per la numerazione automatica"},{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,req:1,full:1,add:"clienti"},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"pagamento",l:"Tipo di incasso",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenuta",l:"Ritenuta 4% (condominio)",type:"bool",yes:"Applicata dal cliente",no:"No",def:false},{k:"righe",l:"Righe del documento",type:"righe",full:1,tpl:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"rifDoc",l:"Riferimento",hint:"Per le note di credito: fattura stornata",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
-  fornitori:{t:"Fornitore",f:[{k:"nome",l:"Ragione sociale",req:1,full:1},{k:"piva",l:"P.IVA / Codice fiscale"},{k:"categoria",l:"Categoria",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"tel",l:"Telefono"},{k:"email",l:"Email / PEC"},{k:"iban",l:"IBAN",full:1},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"note",l:"Note",type:"textarea",full:1}]},
+  fatture:{t:"Documento di vendita",righe:"v",f:[{k:"tipo",l:"Documento",type:"select",noEmpty:1,opts:()=>[["fattura","Fattura"],["nc","Nota di credito"]]},{k:"numero",l:"Numero",hint:"Lascia vuoto per la numerazione automatica"},{k:"clienteId",l:"Cliente",type:"select",opts:cliOpts,req:1,full:1,add:"clienti"},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"pagamento",l:"Tipo di incasso",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenuta",l:"Ritenuta 4% (condominio)",type:"bool",yes:"Applicata dal cliente",no:"No",def:false},{k:"righe",l:"Righe del documento",type:"righe",full:1,tpl:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"rifDoc",l:"Riferimento",hint:"Per le note di credito: numero della fattura stornata, es. 3/2026",full:1},{k:"rifOrdine",l:"Ordine o contratto del cliente",hint:"Facoltativo; obbligatorio se il cliente lo richiede"},{k:"cig",l:"CIG",hint:"Solo pubblica amministrazione"},{k:"cup",l:"CUP",hint:"Solo se previsto"},{k:"note",l:"Note",type:"textarea",full:1,hint:"Vanno nella causale della fattura elettronica"}]},
+  azienda:{t:"Dati della tua impresa",f:[{k:"denominazione",l:"Denominazione o ditta",req:1,full:1},{k:"piva",l:"Partita IVA",req:1},{k:"cf",l:"Codice fiscale",hint:"Se diverso dalla partita IVA (ditte individuali)"},{k:"regimeFiscale",l:"Regime fiscale",type:"select",noEmpty:1,opts:()=>REGIMI_FISC,def:"RF01",full:1},{k:"indirizzo",l:"Indirizzo della sede (via e numero)",req:1,full:1},{k:"cap",l:"CAP",req:1},{k:"comune",l:"Comune",req:1},{k:"provincia",l:"Provincia (sigla)"},{k:"tel",l:"Telefono"},{k:"email",l:"Email"},{k:"pec",l:"PEC"},{k:"iban",l:"IBAN per gli incassi",full:1,hint:"Stampato nelle fatture con pagamento bancario"},{k:"reaUfficio",l:"REA: sigla provincia",hint:"Società iscritte al registro imprese, es. MI"},{k:"reaNumero",l:"REA: numero"},{k:"capitaleSociale",l:"Capitale sociale versato (€)",type:"number",hint:"Solo società di capitali"},{k:"socioUnico",l:"Soci",type:"select",opts:()=>[["SU","Socio unico"],["SM","Più soci"]],hint:"Solo società di capitali"},{k:"tipoRitenuta",l:"Tipo di ritenuta subita",type:"select",noEmpty:1,opts:()=>[["RT02","RT02 · Società e enti"],["RT01","RT01 · Ditte individuali e persone fisiche"]],def:"RT02"},{k:"causaleRitenuta",l:"Causale della ritenuta",def:"W",hint:"W = appalti nei condomini (art. 25-ter). Confermala con il commercialista"},{k:"feDal",l:"Fatture elettroniche gestite da qui dal",type:"date",def:plus(0),hint:"Gli avvisi di invio riguardano le fatture da questa data"}]},
+  fornitori:{t:"Fornitore",f:[{k:"nome",l:"Ragione sociale",req:1,full:1},{k:"piva",l:"Partita IVA"},{k:"cf",l:"Codice fiscale"},{k:"categoria",l:"Categoria",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"tel",l:"Telefono"},{k:"email",l:"Email"},{k:"pec",l:"PEC"},{k:"indirizzo",l:"Indirizzo",full:1},{k:"cap",l:"CAP"},{k:"comune",l:"Comune"},{k:"provincia",l:"Provincia (sigla)"},{k:"iban",l:"IBAN",full:1},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"note",l:"Note",type:"textarea",full:1}]},
   acquisti:{t:"Fattura d'acquisto",righe:"a",f:[{k:"fornitoreId",l:"Fornitore",type:"select",opts:forOpts,req:1,full:1,add:"fornitori"},{k:"numero",l:"Numero del fornitore",req:1},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"dataReg",l:"Data di registrazione",type:"date",def:plus(0)},{k:"protocollo",l:"Protocollo interno",hint:"Vuoto = automatico"},{k:"categoria",l:"Categoria di costo",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenutaPct",l:"Ritenuta d'acconto da operare (%)",type:"number",def:0,hint:"20 per i professionisti, altrimenti 0"},{k:"righe",l:"Righe del documento",type:"righe",full:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
   movimenti:{t:"Movimento di prima nota",alloc:1,f:[{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"tipo",l:"Tipo",type:"select",noEmpty:1,opts:()=>[["entrata","Entrata"],["uscita","Uscita"],["giroconto","Giroconto tra conti"]]},{k:"conto",l:"Conto",type:"select",noEmpty:1,opts:contoOpts,def:"banca",add:"conti"},{k:"contoDest",l:"Conto di destinazione",type:"select",noEmpty:1,opts:contoOpts,def:"cassa",add:"conti"},{k:"causale",l:"Causale",type:"select",noEmpty:1,opts:()=>causaliList("entrata").map(x=>[x,x]),add:"lista:causali"},{k:"importo",l:"Importo (€)",type:"number",step:"0.01",req:1},{k:"soggetto",l:"Cliente o fornitore",type:"select",opts:soggOpts,full:1,add:["clienti","fornitori"]},{k:"descrizione",l:"Descrizione",full:1,hint:"Es. bonifico, assegno, contanti"}]},
   amministratori:{t:"Amministratore",f:[{k:"nome",l:"Nome o studio",req:1,full:1},{k:"referente",l:"Referente"},{k:"cf",l:"Codice fiscale / P.IVA"},{k:"tel",l:"Telefono"},{k:"email",l:"Email"},{k:"pec",l:"PEC",full:1},{k:"indirizzo",l:"Indirizzo",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
@@ -1369,7 +1385,7 @@ function openForm(c,rec,prefill,returnTo){
   const title=tOcc?`Turno: ${esc(tOcc.nome)} · ${esc(dLong(parse(current.occ.orig)))}`:c==="lista"?`Nuova voce: ${esc(ADD_LABEL["lista:"+String(current.lista).split("_")[0]]||"elenco")}`:`${rec?"Modifica":"Nuovo"}: ${esc(F.t.toLowerCase())}`;
   modalShell(title+(stack.length?` <span class="small muted" style="font-family:var(--f-body);font-weight:400">· poi torni a ${esc(FORMS[stack[stack.length-1].cur.c].t.toLowerCase())}</span>`:""),
    `<form id="frm" novalidate><div class="mb">${tOcc?`<p class="note full">Turno ricorrente: ${esc(GIORNI_L[isoDow(parse(current.occ.orig))-1])} ${dShort(current.occ.orig)}, ${esc(tOcc.ora||"")}, ${n1(tOcc.durata)} h, ${esc(opNames(tOcc.operatori)||"nessuno")}. Le modifiche valgono solo per questo giorno.</p>`:""}${F.f.map(f=>fieldHtml(f,data[f.k])).join("")}${F.calc?'<div class="calc" id="calcBox"></div>':""}${F.calcPag?'<div class="calc" id="pagPrev" style="grid-template-columns:1fr"></div>':""}${F.alloc||c==="fatture"?'<div class="alloc" id="allocBox" hidden></div>':""}${c==="variazioni"||c==="straordinari"?'<div class="alloc" id="freeBox" hidden></div>':""}${extra}<div class="err full" id="ferr"></div></div>
-   <div class="mf"><div class="actions">${rec?`<button type="button" class="btn danger" data-del="1">${c==="variazioni"?"Ripristina turno originale":"Elimina"}</button>`:""}${c==="fatture"&&rec?`<button type="button" class="btn" data-copytxt="1">Copia dati</button>`:""}${c==="fatture"&&rec&&rec.tipo!=="nc"&&residuoV(rec)>0.005?`<button type="button" class="btn" data-incassa="${rec.id}">Registra incasso</button>`:""}${c==="acquisti"&&rec&&residuoA(rec)>0.005?`<button type="button" class="btn" data-paga="${rec.id}">Registra pagamento</button>`:""}</div><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="submit" class="btn primary">Salva</button></div></div></form>`);
+   <div class="mf"><div class="actions">${rec?`<button type="button" class="btn danger" data-del="1">${c==="variazioni"?"Ripristina turno originale":"Elimina"}</button>`:""}${c==="fatture"&&rec?`<button type="button" class="btn" data-fe="${rec.id}">Fattura elettronica</button>`:""}${c==="fatture"&&rec&&rec.tipo!=="nc"&&residuoV(rec)>0.005?`<button type="button" class="btn" data-incassa="${rec.id}">Registra incasso</button>`:""}${c==="acquisti"&&rec&&residuoA(rec)>0.005?`<button type="button" class="btn" data-paga="${rec.id}">Registra pagamento</button>`:""}</div><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="submit" class="btn primary">Salva</button></div></div></form>`);
   if(c==="movimenti"){ setCausali(data.causale); }
   if(F.calc)updCalc();
   if(F.calcPag)updPagPrev();
@@ -1550,10 +1566,24 @@ async function submitForm(){
     const x=T.find(y=>y.id===rec.id); if(x){x.ts=t.toISOString();x.nota=out.nota;x.corretta=true} ver++; render(); closeModal(); toast("Timbratura corretta"); return;
   }
   if((c==="clienti"||c==="fornitori"||c==="operatori"||c==="amministratori")&&S[c].some(x=>x.nome.trim().toLowerCase()===out.nome.toLowerCase()&&(!rec||x.id!==rec.id))){$("#ferr").textContent=`Esiste già "${out.nome}" in questo elenco.`;return}
+  if(c==="clienti"||c==="fornitori"||c==="azienda"){
+    const lab=c==="azienda"?"":"";
+    out.piva=String(out.piva||"").replace(/\s/g,"").toUpperCase().replace(/^IT(?=\d{11}$)/,""); out.cf=String(out.cf||"").replace(/\s/g,"").toUpperCase();
+    if(/^[A-Z0-9]{16}$/.test(out.piva)&&!/^\d+$/.test(out.piva)&&!out.cf){out.cf=out.piva;out.piva=""}
+    if(out.provincia)out.provincia=out.provincia.toUpperCase();
+    if(out.piva&&(/^\d+$/.test(out.piva)||c!=="fornitori")&&!pivaOk(out.piva)){$("#ferr").textContent="La partita IVA non è valida: controlla le 11 cifre."+lab;return}
+    if(out.cf&&!cfOk(out.cf)){$("#ferr").textContent="Il codice fiscale non è valido.";return}
+    if(out.cap&&!/^\d{5}$/.test(out.cap)){$("#ferr").textContent="Il CAP ha 5 cifre.";return}
+    if(out.provincia&&!/^[A-Z]{2}$/.test(out.provincia)){$("#ferr").textContent="Per la provincia usa la sigla di 2 lettere, es. MI.";return}
+    if(c==="clienti"&&out.sdi){out.sdi=out.sdi.toUpperCase(); if(!/^[A-Z0-9]{6,7}$/.test(out.sdi)){$("#ferr").textContent="Il codice destinatario ha 7 caratteri (6 per la pubblica amministrazione).";return}}
+    if(out.iban)out.iban=out.iban.replace(/\s/g,"").toUpperCase();
+  }
+  if(c==="azienda"){ const ok=await save("liste",Object.assign({},azienda(),out,{id:"azienda"})); if(ok){closeModal();toast("Dati dell'impresa salvati")} return }
   if(c==="sedi"&&!out.giorni.length){$("#ferr").textContent="Scegli almeno un giorno di servizio.";return}
   if(c==="straordinari"&&!rec)out.stato="pianificato";
   if((c==="fatture"||c==="acquisti")&&!out.righe.length){$("#ferr").textContent="Inserisci almeno una riga con descrizione e prezzo.";return}
   if(c==="fatture"){
+    if(rec&&SDI_TRASMESSA.includes(sdiStato(rec))&&!current.feOk){current.feOk=1;$("#ferr").textContent="Questa fattura è già stata trasmessa allo SdI: le modifiche restano solo nel gestionale e non cambiano il documento inviato. Per correggere gli importi emetti una nota di credito. Premi di nuovo Salva per confermare.";return}
     const cli=byId("clienti",out.clienteId); out.clienteNome=cli?cli.nome:"";
     if(out.tipo==="nc"){out.ritenuta=false;delete out.scadenza}
     if(!out.numero)out.numero=rec&&rec.numero?rec.numero:vendNum(out.tipo,out.data);
@@ -1601,6 +1631,241 @@ async function submitForm(){
   if(rt){ applyNew(rt,(rt.k==="soggetto"?(c==="clienti"?"c:":"f:"):"")+id); toast(`"${obj.nome||obj.descrizione}" aggiunto e selezionato`); return }
   toast(c==="fatture"&&!rec?`Salvata ${obj.tipo==="nc"?"nota di credito":"fattura"} ${obj.numero}`:"Salvato");
 }
+/* ---------- fattura elettronica: FatturaPA 1.2 (specifiche tecniche 1.9) ---------- */
+const azienda=()=>S.liste.find(x=>x.id==="azienda")||{};
+let lastDaInv=[];
+function fePanel(){
+  const A=azienda(), ok=A.denominazione&&pivaOk(A.piva), y=String(today().getFullYear());
+  const tri=[1,2,3,4].map(q=>{const fs=S.fatture.filter(f=>(f.data||"").startsWith(y)&&Math.ceil(+f.data.slice(5,7)/3)===q&&bolloFattura(f)); return {q,n:fs.length}});
+  const scad=["31 maggio","30 settembre","30 novembre","28 febbraio "+(+y+1)];
+  return `<section class="panel"><h2>Fattura elettronica</h2>
+    ${ok?`<p class="note"><b>${esc(A.denominazione)}</b> · P.IVA ${esc(A.piva)} · ${esc((REGIMI_FISC.find(r=>r[0]===(A.regimeFiscale||"RF01"))||["",""])[1])}<br>${esc([A.indirizzo,A.cap,A.comune,A.provincia].filter(Boolean).join(" "))}</p>`:`<p class="note"><span class="pill warn">Da compilare</span> Servono denominazione, partita IVA, regime fiscale e sede: finiscono in ogni fattura elettronica.</p>`}
+    <div class="actions"><button class="btn ${ok?"":"primary"}" data-act="azienda">Dati della tua impresa</button></div>
+    <h3 style="margin:14px 0 6px;font-size:13px">Imposta di bollo sulle fatture elettroniche ${y}</h3>
+    <table><thead><tr><th>Trimestre</th><th class="r">Fatture</th><th class="r">Bollo</th><th>Versamento</th></tr></thead><tbody>${tri.map(t=>`<tr><td>${t.q}°</td><td class="r num">${t.n}</td><td class="r num">${eur2(t.n*2)}</td><td class="small">entro il ${scad[t.q-1]} · F24 cod. ${2520+t.q}</td></tr>`).join("")}</tbody></table>
+    <p class="note">2 € per ogni fattura con più di 77,47 € di operazioni senza IVA (esenti, escluse, fuori campo). Fa fede l'importo che l'Agenzia calcola nel portale "Fatture e Corrispettivi", dove si può pagare con addebito sul conto. Se il totale del 1° trimestre è sotto i 5.000 € il versamento può slittare: verifica con il commercialista.</p></section>`;
+}
+const REGIMI_FISC=[["RF01","RF01 · Ordinario"],["RF02","RF02 · Contribuenti minimi"],["RF19","RF19 · Forfettario"],["RF04","RF04 · Agricoltura e pesca"],["RF18","RF18 · Altro"]];
+const SDI_STATI=[["","Da inviare"],["xml","XML generato, da inviare"],["inviata","Inviata allo SdI"],["consegnata","Consegnata al cliente"],["mancata","Non consegnata: nell'area riservata del cliente"],["scartata","Scartata dallo SdI"],["accettata","Accettata (PA)"],["rifiutata","Rifiutata (PA)"]];
+const SDI_TRASMESSA=["inviata","consegnata","mancata","accettata","rifiutata"];
+const sdiStato=f=>(f&&f.sdi&&f.sdi.stato)||"";
+function sdiPill(f){const s=sdiStato(f); const l=(SDI_STATI.find(x=>x[0]===s)||SDI_STATI[0])[1].split(":")[0].split(",")[0];
+  const c=s==="scartata"||s==="rifiutata"?"bad":s==="consegnata"||s==="accettata"?"ok":s==="mancata"||s==="inviata"?"acc":"warn"; return `<span class="pill ${c}">${esc(l)}</span>`}
+function pivaOk(p){p=String(p||"").replace(/\s/g,""); if(!/^\d{11}$/.test(p))return false; let s=0; for(let i=0;i<11;i++){let d=+p[i]; if(i%2===1){d*=2; if(d>9)d-=9} s+=d} return s%10===0}
+function cfOk(c){c=String(c||"").toUpperCase().replace(/\s/g,""); if(/^\d{11}$/.test(c))return pivaOk(c);
+  if(!/^[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/.test(c))return false;
+  const odd={0:1,1:0,2:5,3:7,4:9,5:13,6:15,7:17,8:19,9:21,A:1,B:0,C:5,D:7,E:9,F:13,G:15,H:17,I:19,J:21,K:2,L:4,M:18,N:20,O:11,P:3,Q:6,R:8,S:12,T:14,U:16,V:10,W:22,X:25,Y:24,Z:23};
+  let s=0; for(let i=0;i<15;i++){const ch=c[i]; s+= i%2===0?odd[ch]:(/\d/.test(ch)?+ch:ch.charCodeAt(0)-65)} return String.fromCharCode(65+s%26)===c[15]}
+function idFiscale(x){ let piva=String(x.piva||"").replace(/\s/g,"").toUpperCase(), cf=String(x.cf||"").replace(/\s/g,"").toUpperCase();
+  if(piva.startsWith("IT"))piva=piva.slice(2);
+  if(!cf&&piva&&(x.ritenuta||/^[A-Z0-9]{16}$/.test(piva)&&!/^\d+$/.test(piva))){cf=piva;piva=""} // condominio o privato: solo codice fiscale
+  return {piva,cf} }
+const feTxt=(s,max)=>{s=String(s??"").replace(/[‘’‚′]/g,"'").replace(/[“”„″]/g,'"').replace(/[–—−]/g,"-").replace(/…/g,"...").replace(/€/g,"EUR").replace(/ /g," ").replace(/[^ -~¡-ÿ]/g," ").replace(/\s+/g," ").trim(); return max?s.slice(0,max).trim():s};
+const XE=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
+const n2=v=>(Math.round((+v||0)*100)/100).toFixed(2);
+const nq=v=>{const x=Math.round((+v||0)*1e8)/1e8, d=(String(x).split(".")[1]||"").length; return x.toFixed(Math.max(2,Math.min(8,d)))};
+const T_=(n,v)=>v===undefined||v===null||v===""?"":`<${n}>${XE(v)}</${n}>`;
+const isBancario=mp=>["MP05","MP07","MP08","MP12","MP13","MP16","MP19","MP20","MP21"].includes(mp);
+// imposta di bollo: 2 € se le operazioni senza IVA (escluse, fuori campo, esenti, con dichiarazione d'intento) superano 77,47 €
+function bolloFattura(f){ if(f.tipo==="nc")return false; const s=righeOf(f).reduce((a,r)=>{const k=codOf(r.cod); const nat=k.nat||(k.t==="excl"?"N1":k.t==="ex"?"N4":""); return a+((k.t==="ex"||k.t==="excl")&&/^(N1|N2|N3\.5|N4)/.test(nat)?(+r.qta||0)*(+r.prezzo||0):0)},0); return r2(s)>77.47 }
+function sedeXml(x){ return `<Sede>${T_("Indirizzo",feTxt(x.indirizzo,60))}${T_("CAP",x.cap)}${T_("Comune",feTxt(x.comune,60))}${/^[A-Z]{2}$/.test(String(x.provincia||"").toUpperCase())?T_("Provincia",String(x.provincia).toUpperCase()):""}${T_("Nazione",(x.nazione||"IT").toUpperCase())}</Sede>` }
+function buildFE(f,progr){
+  const A=azienda(), c=byId("clienti",f.clienteId)||{}, err=[], warn=[];
+  const ap=String(A.piva||"").replace(/\s/g,"");
+  if(!A.denominazione)err.push("Dati della tua impresa: manca la denominazione (Impostazioni).");
+  if(!pivaOk(ap))err.push("Dati della tua impresa: partita IVA mancante o non valida.");
+  if(A.cf&&!cfOk(A.cf))err.push("Dati della tua impresa: codice fiscale non valido.");
+  if(!A.indirizzo||!/^\d{5}$/.test(A.cap||"")||!A.comune)err.push("Dati della tua impresa: sede incompleta (indirizzo, CAP, comune).");
+  const id=idFiscale(c);
+  if(!c.nome)err.push("Cliente non trovato.");
+  else {
+    if(!id.piva&&!id.cf)err.push(`${c.nome}: serve la partita IVA o il codice fiscale.`);
+    if(id.piva&&!pivaOk(id.piva))err.push(`${c.nome}: partita IVA non valida.`);
+    if(id.cf&&!cfOk(id.cf))err.push(`${c.nome}: codice fiscale non valido.`);
+    if(!c.indirizzo||!c.comune||((c.nazione||"IT").toUpperCase()==="IT"&&!/^\d{5}$/.test(c.cap||"")))err.push(`${c.nome}: sede incompleta (indirizzo, CAP, comune) nella scheda cliente.`);
+  }
+  let cod=String(c.sdi||"").trim().toUpperCase(); const pa=cod.length===6;
+  if(cod&&!/^[A-Z0-9]{6,7}$/.test(cod))err.push(`${c.nome||"Cliente"}: codice destinatario non valido (7 caratteri, 6 per la PA).`);
+  if(!cod){cod="0000000"; warn.push(c.pec?"Codice destinatario assente: lo SdI recapita la fattura alla PEC del cliente.":"Codice destinatario assente (0000000): la fattura sarà nell'area riservata del cliente. Mandagli la copia di cortesia.")}
+  if(pa&&!f.rifOrdine&&!f.cig)warn.push("Fattura alla pubblica amministrazione: indica ordine o contratto e CIG se previsti.");
+  if(!f.numero||!/\d/.test(f.numero)||String(f.numero).length>20)err.push("Numero del documento non valido.");
+  const righe=righeOf(f); if(!righe.length)err.push("Il documento non ha righe.");
+  const t=vTot(f);
+  const lines=righe.map((r,i)=>{const k=codOf(r.cod); const q=+r.qta||1, pu=+r.prezzo||0; const al=(k.t==="norm"||k.t==="split")?+k.al:0;
+    const nat=al?"":(k.nat||(k.t==="rc"?"N6.7":k.t==="excl"?"N1":"N2.2"));
+    return {n:i+1,descr:feTxt(r.descr,1000)||"Prestazione di servizi",q,pu,tot:r2(q*pu),al,nat,rit:!!(t.rit&&k.t!=="excl"),k}});
+  if(lines.some(l=>l.pu<0))err.push("Prezzi negativi: per stornare usa una nota di credito.");
+  const R={}; lines.forEach(l=>{const es=l.al?(l.k.t==="split"?"S":"I"):""; const key=l.al+"|"+l.nat+"|"+es; (R[key]=R[key]||{al:l.al,nat:l.nat,es,imp:0,norma:l.k.norma||""}).imp+=l.tot});
+  const riep=Object.values(R).map(x=>Object.assign(x,{imp:r2(x.imp),iva:r2(r2(x.imp)*x.al/100)}));
+  const totDoc=r2(riep.reduce((a,x)=>a+x.imp+x.iva,0));
+  if(Math.abs(totDoc-t.tot)>0.011)warn.push(`Arrotondamenti: totale XML ${eur2(totDoc)} contro ${eur2(t.tot)} in app.`);
+  const bollo=bolloFattura(f);
+  if(bollo&&!righe.some(r=>/bollo/i.test(r.descr||"")))warn.push("Imposta di bollo di 2 € dovuta (operazioni senza IVA oltre 77,47 €). Se la addebiti al cliente aggiungi una riga \"Imposta di bollo\" con codice Esclusa art. 15.");
+  if(["RF02","RF19"].includes(A.regimeFiscale)&&lines.some(l=>l.al))err.push("Nel tuo regime fiscale (minimi o forfettario) le righe vanno senza IVA: usa il codice Fuori campo IVA con la dicitura del regime.");
+  if(t.rit&&f.tipo!=="nc"&&!idFiscale(c).cf)warn.push("Ritenuta del 4%: di solito il committente è un condominio, identificato dal solo codice fiscale.");
+  const pg=pagOf(f.pagamento)||pagSogg(c)||{}; const mp=feCode(pg.strumento)||"MP05";
+  const rate=f.tipo==="nc"?[]:rateDoc("v",f);
+  const iban=String(A.iban||(conti().find(x=>x.iban)||{}).iban||"").replace(/\s/g,"").toUpperCase();
+  if(f.tipo!=="nc"&&mp==="MP05"&&!iban)warn.push("Pagamento con bonifico senza IBAN: aggiungilo nei dati della tua impresa.");
+  let coll=null; if(f.tipo==="nc"){ const m=String(f.rifDoc||"").match(/[A-Z]*\d+\/\d{4}/i); coll=m&&S.fatture.find(x=>x.tipo!=="nc"&&String(x.numero).toUpperCase()===m[0].toUpperCase());
+    if(!coll)warn.push("Nota di credito: scrivi nel campo Riferimento il numero della fattura stornata (es. 3/2026)."); }
+  const causali=[]; let nt=feTxt(f.note); while(nt){causali.push(nt.slice(0,200));nt=nt.slice(200).trim()}
+  const trasm=String(A.cf||ap).replace(/\s/g,"").toUpperCase();
+  const prog=progr||"00001";
+  const xml=`<?xml version="1.0" encoding="UTF-8"?>
+<p:FatturaElettronica versione="${pa?"FPA12":"FPR12"}" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2 http://www.fatturapa.gov.it/export/fatturazione/sdi/fatturapa/v1.2/Schema_del_file_xml_FatturaPA_versione_1.2.xsd">
+<FatturaElettronicaHeader>
+<DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese><IdCodice>${XE(trasm)}</IdCodice></IdTrasmittente><ProgressivoInvio>${XE(prog)}</ProgressivoInvio><FormatoTrasmissione>${pa?"FPA12":"FPR12"}</FormatoTrasmissione><CodiceDestinatario>${XE(cod)}</CodiceDestinatario>${cod==="0000000"&&c.pec?T_("PECDestinatario",c.pec):""}</DatiTrasmissione>
+<CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>${XE(ap)}</IdCodice></IdFiscaleIVA>${A.cf?T_("CodiceFiscale",String(A.cf).toUpperCase()):""}<Anagrafica><Denominazione>${XE(feTxt(A.denominazione,80))}</Denominazione></Anagrafica><RegimeFiscale>${XE(A.regimeFiscale||"RF01")}</RegimeFiscale></DatiAnagrafici>${sedeXml(A)}${A.reaUfficio&&A.reaNumero?`<IscrizioneREA><Ufficio>${XE(String(A.reaUfficio).toUpperCase())}</Ufficio><NumeroREA>${XE(feTxt(A.reaNumero,20))}</NumeroREA>${+A.capitaleSociale>0?T_("CapitaleSociale",n2(A.capitaleSociale)):""}${A.socioUnico?T_("SocioUnico",A.socioUnico):""}<StatoLiquidazione>LN</StatoLiquidazione></IscrizioneREA>`:""}${A.tel||A.email?`<Contatti>${T_("Telefono",feTxt(A.tel,12))}${T_("Email",A.email)}</Contatti>`:""}</CedentePrestatore>
+<CessionarioCommittente><DatiAnagrafici>${id.piva?`<IdFiscaleIVA><IdPaese>${XE((c.nazione||"IT").toUpperCase())}</IdPaese><IdCodice>${XE(id.piva)}</IdCodice></IdFiscaleIVA>`:""}${id.cf?T_("CodiceFiscale",id.cf):""}<Anagrafica><Denominazione>${XE(feTxt(c.nome,80))}</Denominazione></Anagrafica></DatiAnagrafici>${sedeXml(c)}</CessionarioCommittente>
+</FatturaElettronicaHeader>
+<FatturaElettronicaBody>
+<DatiGenerali><DatiGeneraliDocumento><TipoDocumento>${f.tipo==="nc"?"TD04":"TD01"}</TipoDocumento><Divisa>EUR</Divisa><Data>${XE(f.data)}</Data><Numero>${XE(f.numero)}</Numero>${t.rit?`<DatiRitenuta><TipoRitenuta>${XE(A.tipoRitenuta||"RT02")}</TipoRitenuta><ImportoRitenuta>${n2(t.rit)}</ImportoRitenuta><AliquotaRitenuta>4.00</AliquotaRitenuta><CausalePagamento>${XE(A.causaleRitenuta||"W")}</CausalePagamento></DatiRitenuta>`:""}${bollo?"<DatiBollo><BolloVirtuale>SI</BolloVirtuale><ImportoBollo>2.00</ImportoBollo></DatiBollo>":""}<ImportoTotaleDocumento>${n2(totDoc)}</ImportoTotaleDocumento>${causali.map(x=>T_("Causale",x)).join("")}</DatiGeneraliDocumento>${f.rifOrdine||f.cig||f.cup?`<DatiOrdineAcquisto><IdDocumento>${XE(feTxt(f.rifOrdine||"ND",20))}</IdDocumento>${T_("CodiceCUP",feTxt(f.cup,15))}${T_("CodiceCIG",feTxt(f.cig,15))}</DatiOrdineAcquisto>`:""}${coll?`<DatiFattureCollegate><IdDocumento>${XE(coll.numero)}</IdDocumento><Data>${XE(coll.data)}</Data></DatiFattureCollegate>`:""}</DatiGenerali>
+<DatiBeniServizi>${lines.map(l=>`<DettaglioLinee><NumeroLinea>${l.n}</NumeroLinea><Descrizione>${XE(l.descr)}</Descrizione><Quantita>${nq(l.q)}</Quantita><PrezzoUnitario>${nq(l.pu)}</PrezzoUnitario><PrezzoTotale>${n2(l.tot)}</PrezzoTotale><AliquotaIVA>${n2(l.al)}</AliquotaIVA>${l.rit?"<Ritenuta>SI</Ritenuta>":""}${l.nat?T_("Natura",l.nat):""}</DettaglioLinee>`).join("\n")}
+${riep.map(x=>`<DatiRiepilogo><AliquotaIVA>${n2(x.al)}</AliquotaIVA>${x.nat?T_("Natura",x.nat):""}<ImponibileImporto>${n2(x.imp)}</ImponibileImporto><Imposta>${n2(x.iva)}</Imposta>${x.es?T_("EsigibilitaIVA",x.es):""}${x.nat&&x.norma?T_("RiferimentoNormativo",feTxt(x.norma,100)):""}</DatiRiepilogo>`).join("\n")}</DatiBeniServizi>
+${rate.length?`<DatiPagamento><CondizioniPagamento>${rate.length>1?"TP01":"TP02"}</CondizioniPagamento>${rate.map(r=>`<DettaglioPagamento><ModalitaPagamento>${XE(mp)}</ModalitaPagamento><DataScadenzaPagamento>${XE(r.data)}</DataScadenzaPagamento><ImportoPagamento>${n2(r.importo)}</ImportoPagamento>${iban&&isBancario(mp)&&mp!=="MP12"?T_("IBAN",iban):""}</DettaglioPagamento>`).join("")}</DatiPagamento>`:""}
+</FatturaElettronicaBody>
+</p:FatturaElettronica>`;
+  return {xml,err,warn,filename:`IT${ap}_${prog}.xml`,bollo,totDoc,cod,pa,riep,lines,mp,rate,iban,id,c,A,t,coll};
+}
+async function nuovoProgressivo(){ const A=azienda(), n=(+A.progressivo||0)+1; await save("liste",Object.assign({},A,{id:"azienda",progressivo:n})); return n.toString(36).toUpperCase().padStart(5,"0") }
+function scarica(nome,dati,tipo){ const b=dati instanceof Blob?dati:new Blob([dati],{type:tipo||"application/xml"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=nome; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},3000) }
+async function preparaXml(f){
+  const chk=buildFE(f,"00000"); if(chk.err.length)return {err:chk.err};
+  const s=f.sdi||{}; const prog=s.progressivo&&s.stato!=="scartata"?s.progressivo:await nuovoProgressivo();
+  const r=buildFE(f,prog);
+  const storia=(s.storia||[]).concat({data:TODAY(),evento:"XML generato "+r.filename});
+  const stato=!s.stato||s.stato==="scartata"?"xml":s.stato;
+  await save("fatture",Object.assign({},f,{sdi:Object.assign({},s,{stato,progressivo:prog,file:r.filename,generato:TODAY(),storia})}));
+  r.err=null; return r;
+}
+async function scaricaXml(id){ const f=byId("fatture",id); if(!f)return; const r=await preparaXml(f); if(r.err){apriFE(id);return} scarica(r.filename,r.xml); toast("Scaricato "+r.filename) }
+async function scaricaZip(ids){
+  if(!window.JSZip){toast("Libreria zip non disponibile");return}
+  const zip=new JSZip(), errori=[]; let n=0;
+  for(const id of ids){const f=byId("fatture",id); const r=await preparaXml(f); if(r.err){errori.push(vLabel(f)+": "+r.err[0]);continue} zip.file(r.filename,r.xml); n++}
+  if(n)scarica("fatture-"+TODAY()+".zip",new Blob([await zip.generateAsync({type:"uint8array"})],{type:"application/zip"}));
+  toast(`${n} file XML nello zip${errori.length?` · ${errori.length} con errori da correggere`:""}`);
+  if(errori.length)mostraTesto("Fatture non esportate",errori.join("\n"));
+}
+function cortesiaHtml(f){
+  const r=buildFE(f,(f.sdi&&f.sdi.progressivo)||"—"), A=r.A, c=r.c, t=r.t;
+  const riga=(l)=>`<tr><td>${esc(l.descr)}</td><td class="r">${nq(l.q).replace(".",",")}</td><td class="r">${eur2(l.pu)}</td><td class="r">${l.al?l.al+"%":esc(l.nat)}</td><td class="r">${eur2(l.tot)}</td></tr>`;
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>${f.tipo==="nc"?"Nota di credito":"Fattura"} ${esc(f.numero)}</title><style>body{font:13px/1.45 system-ui,Arial,sans-serif;color:#142326;margin:32px;max-width:820px}h1{font-size:20px;margin:0}table{width:100%;border-collapse:collapse;margin:12px 0}td,th{border-bottom:1px solid #ccc;padding:6px;text-align:left;vertical-align:top}.r{text-align:right}.g{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{border:1px solid #ccc;padding:10px;border-radius:6px}.n{color:#566769;font-size:12px}.tot td{font-weight:700}@media print{button{display:none}body{margin:0}}</style></head><body>
+<p class="n"><b>Copia di cortesia.</b> Il documento originale in formato elettronico è stato trasmesso al Sistema di Interscambio ed è disponibile nell'area riservata del sito dell'Agenzia delle Entrate.</p>
+<div class="g"><div class="box"><b>${esc(A.denominazione||"")}</b><br>${esc(A.indirizzo||"")}<br>${esc(A.cap||"")} ${esc(A.comune||"")} ${esc(A.provincia||"")}<br>P.IVA ${esc(A.piva||"")}${A.cf?"<br>C.F. "+esc(A.cf):""}${A.reaUfficio?"<br>REA "+esc(A.reaUfficio)+" "+esc(A.reaNumero||""):""}${A.pec?"<br>PEC "+esc(A.pec):""}</div>
+<div class="box">Spett.le<br><b>${esc(c.nome||"")}</b><br>${esc(c.indirizzo||"")}<br>${esc(c.cap||"")} ${esc(c.comune||"")} ${esc(c.provincia||"")}<br>${r.id.piva?"P.IVA "+esc(r.id.piva)+"<br>":""}${r.id.cf?"C.F. "+esc(r.id.cf)+"<br>":""}Codice destinatario ${esc(r.cod)}${byId("amministratori",c.amministratoreId)?"<br>c/o "+esc(byId("amministratori",c.amministratoreId).nome):""}</div></div>
+<h1 style="margin-top:18px">${f.tipo==="nc"?"Nota di credito":"Fattura"} n. ${esc(f.numero)} del ${dShort(f.data)}</h1>${r.coll?`<p>Rif. fattura n. ${esc(r.coll.numero)} del ${dShort(r.coll.data)}</p>`:""}
+<table><thead><tr><th>Descrizione</th><th class="r">Q.tà</th><th class="r">Prezzo</th><th class="r">IVA</th><th class="r">Importo</th></tr></thead><tbody>${r.lines.map(riga).join("")}</tbody></table>
+<table><thead><tr><th>Riepilogo IVA</th><th class="r">Imponibile</th><th class="r">Imposta</th></tr></thead><tbody>${r.riep.map(x=>`<tr><td>${x.al?"Aliquota "+x.al+"%"+(x.es==="S"?" · scissione dei pagamenti":""):esc(x.nat+" · "+(x.norma||""))}</td><td class="r">${eur2(x.imp)}</td><td class="r">${eur2(x.iva)}</td></tr>`).join("")}
+<tr class="tot"><td>Totale documento</td><td></td><td class="r">${eur2(r.totDoc)}</td></tr>${t.rit?`<tr><td>Ritenuta d'acconto 4% (art. 25-ter DPR 600/73)</td><td></td><td class="r">− ${eur2(t.rit)}</td></tr>`:""}${t.ivaSplit?`<tr><td>IVA versata dal committente (scissione dei pagamenti)</td><td></td><td class="r">− ${eur2(t.ivaSplit)}</td></tr>`:""}${t.rit||t.ivaSplit?`<tr class="tot"><td>Netto a pagare</td><td></td><td class="r">${eur2(t.dovuto)}</td></tr>`:""}${r.bollo?`<tr><td>Imposta di bollo assolta in modo virtuale</td><td></td><td class="r">${eur2(2)}</td></tr>`:""}</tbody></table>
+${r.rate.length?`<p><b>Pagamento:</b> ${esc(strName(r.mp==="MP05"&&pagOf(f.pagamento)&&pagOf(f.pagamento).strumento==="RD"?"RD":r.mp))}${r.iban?" · IBAN "+esc(r.iban):""}<br>${r.rate.map(x=>"Scadenza "+dShort(x.data)+": "+eur2(x.importo)).join("<br>")}</p>`:""}
+${f.note?`<p>${esc(f.note)}</p>`:""}<button onclick="print()">Stampa o salva in PDF</button></body></html>`;
+}
+function apriCortesia(id){ const f=byId("fatture",id); if(!f)return; const u=URL.createObjectURL(new Blob([cortesiaHtml(f)],{type:"text/html"})); const w=window.open(u,"_blank"); if(!w)toast("Il browser ha bloccato la nuova finestra: consenti i popup per questo sito"); setTimeout(()=>URL.revokeObjectURL(u),60000) }
+function apriFE(id){
+  const f=byId("fatture",id); if(!f)return; const r=buildFE(f,(f.sdi&&f.sdi.progressivo)||"00000"), s=f.sdi||{};
+  current={c:"fe",id};
+  modalShell(`Fattura elettronica · ${esc(vLabel(f))}`,`<div class="mb wz">
+    <div class="full">${sdiPill(f)} ${s.file?`<span class="small mono">${esc(s.file)}</span>`:""}</div>
+    ${r.err.length?`<div class="full banner-err"><b>Da correggere prima di generare il file</b><ul>${r.err.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:`<p class="full ok-msg">Controlli superati: il file rispetta i dati obbligatori.</p>`}
+    ${r.warn.length?`<div class="full banner-warn"><ul>${r.warn.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}
+    <div class="full actions"><button type="button" class="btn primary" data-fexml="${f.id}" ${r.err.length?"disabled":""}>Scarica XML</button><button type="button" class="btn" data-fecort="${f.id}">Copia di cortesia</button><button type="button" class="btn" data-fevedi="${f.id}" ${r.err.length?"disabled":""}>Vedi XML</button>${r.err.length?`<button type="button" class="btn" data-edit="clienti:${f.clienteId}">Apri scheda cliente</button><button type="button" class="btn" data-act="azienda">Dati della tua impresa</button>`:""}</div>
+    <div class="fld"><label for="fe_stato">Stato presso lo SdI</label><select id="fe_stato">${SDI_STATI.map(([k,l])=>`<option value="${k}" ${sdiStato(f)===k?"selected":""}>${esc(l)}</option>`).join("")}</select></div>
+    <div class="fld"><label for="fe_data">Data</label><input type="date" id="fe_data" value="${TODAY()}"></div>
+    <div class="fld full"><label for="fe_nota">Nota (es. codice errore dello scarto, identificativo SdI)</label><input id="fe_nota"></div>
+    ${(s.storia||[]).length?`<div class="full small"><b>Storico</b><br>${s.storia.slice().reverse().map(x=>`${dShort(x.data)} · ${esc(x.evento)}`).join("<br>")}</div>`:""}
+    <p class="note full">Carica il file XML sul portale "Fatture e Corrispettivi" dell'Agenzia delle Entrate (Fatturazione elettronica → Trasmissione) o nel programma del tuo intermediario, poi aggiorna qui lo stato con l'esito ricevuto. Una fattura scartata si considera non emessa: correggila, scarica di nuovo l'XML (avrà un nuovo nome file) e reinviala entro 5 giorni dallo scarto.</p>
+    <div class="err full" id="ferr"></div></div>
+    <div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Chiudi</button><button type="button" class="btn primary" data-fesalva="${f.id}">Aggiorna stato</button></div></div>`);
+}
+async function salvaStatoFE(id){ const f=byId("fatture",id); if(!f)return; const st=$("#fe_stato").value, d=$("#fe_data").value||TODAY(), nota=$("#fe_nota").value.trim(); const s=f.sdi||{};
+  const lab=(SDI_STATI.find(x=>x[0]===st)||["",""])[1];
+  const nuovo=Object.assign({},s,{stato:st,storia:(s.storia||[]).concat({data:d,evento:lab+(nota?" · "+nota:"")})});
+  if(st==="inviata")nuovo.inviata=d; if(["consegnata","mancata","accettata"].includes(st))nuovo.consegna=d; if(st==="scartata")nuovo.scarto=d;
+  if(await save("fatture",Object.assign({},f,{sdi:nuovo}))){closeAll();toast("Stato aggiornato: "+lab.split(":")[0])} }
+async function segnaInviate(ids){ let n=0; for(const id of ids){const f=byId("fatture",id); const s=f.sdi||{}; if(s.stato!=="xml")continue; await save("fatture",Object.assign({},f,{sdi:Object.assign({},s,{stato:"inviata",inviata:TODAY(),storia:(s.storia||[]).concat({data:TODAY(),evento:"Inviata allo SdI"})})})); n++} toast(n?`${n} fatture segnate come inviate`:"Nessuna fattura con XML generato da segnare") }
+/* ---------- importazione fatture d'acquisto in XML ---------- */
+function estraiXml(buf){
+  const u8=new Uint8Array(buf); let s=""; for(let i=0;i<u8.length;i+=8192)s+=String.fromCharCode.apply(null,u8.subarray(i,i+8192));
+  const trova=str=>{const a=str.search(/<\?xml|<([\w.-]+:)?FatturaElettronica[\s>]/); if(a<0)return null; const m=str.slice(a).match(/<\/([\w.-]+:)?FatturaElettronica>/); if(!m)return null; return str.slice(a,a+m.index+m[0].length)};
+  let x=trova(s);
+  if(!x){ try{ const b=atob(s.replace(/[^A-Za-z0-9+/=]/g,"")); x=trova(b) }catch(e){} }
+  if(!x)return null;
+  const dec=t=>{const b=new Uint8Array(t.length); for(let i=0;i<t.length;i++)b[i]=t.charCodeAt(i)&255; return new TextDecoder("utf-8").decode(b)};
+  let txt=dec(x); const p=new DOMParser(); const ok=t=>!p.parseFromString(t.replace(/<(\/?)[\w.-]+:/g,"<$1"),"text/xml").getElementsByTagName("parsererror").length;
+  if(!ok(txt)){ const pulito=dec(x.replace(/\x04\x82[\s\S]{2}|\x04\x81[\s\S]/g,"")); if(ok(pulito))txt=pulito; }
+  return txt;
+}
+function leggiFE(txt){
+  const doc=new DOMParser().parseFromString(txt.replace(/<(\/?)[\w.-]+:/g,"<$1").replace(/\s[\w.-]+:[\w.-]+="[^"]*"/g,""),"text/xml");
+  if(doc.getElementsByTagName("parsererror").length)throw new Error("file XML non leggibile");
+  const q=(el,path)=>{let n=el; for(const p of path.split("/")){ if(!n)return null; n=[...n.children].find(c=>c.tagName===p)||null } return n};
+  const v=(el,path)=>{const n=q(el,path);return n?n.textContent.trim():""};
+  const H=doc.getElementsByTagName("FatturaElettronicaHeader")[0]; if(!H)throw new Error("non è una FatturaPA");
+  const ced=q(H,"CedentePrestatore"), dA=q(ced,"DatiAnagrafici"), an=q(dA,"Anagrafica");
+  const forn={piva:v(dA,"IdFiscaleIVA/IdCodice"),paese:v(dA,"IdFiscaleIVA/IdPaese"),cf:v(dA,"CodiceFiscale"),nome:v(an,"Denominazione")||(v(an,"Nome")+" "+v(an,"Cognome")).trim(),indirizzo:(v(ced,"Sede/Indirizzo")+" "+v(ced,"Sede/NumeroCivico")).trim(),cap:v(ced,"Sede/CAP"),comune:v(ced,"Sede/Comune"),provincia:v(ced,"Sede/Provincia")};
+  const cessPiva=v(H,"CessionarioCommittente/DatiAnagrafici/IdFiscaleIVA/IdCodice");
+  return [...doc.getElementsByTagName("FatturaElettronicaBody")].map(B=>{
+    const g=q(B,"DatiGenerali/DatiGeneraliDocumento");
+    const righe=[...(q(B,"DatiBeniServizi")||{children:[]}).children].filter(n=>n.tagName==="DettaglioLinee").map(l=>{
+      const al=+v(l,"AliquotaIVA")||0, nat=v(l,"Natura"), qt=+v(l,"Quantita")||1, pu=+v(l,"PrezzoUnitario")||0, pt=+v(l,"PrezzoTotale")||0;
+      const cod=al?(CODICI_BASE.some(c=>c.t==="norm"&&+c.al===al)?String(al):"22"):(/^N6/.test(nat)?"RC":/^N1/.test(nat)?"N1":/^N3/.test(nat)?"N3":/^N4/.test(nat)?"N4":"N2");
+      const usaQ=Math.abs(r2(qt*pu)-pt)<0.011;
+      return {descr:v(l,"Descrizione"),qta:usaQ?qt:1,prezzo:usaQ?pu:pt,cod,al,nat}});
+    const ritN=q(g,"DatiRitenuta");
+    const pag=[...((q(B,"DatiPagamento")||{children:[]}).children)].filter(n=>n.tagName==="DettaglioPagamento").map(d=>({mp:v(d,"ModalitaPagamento"),data:v(d,"DataScadenzaPagamento"),importo:+v(d,"ImportoPagamento")||0,iban:v(d,"IBAN")}));
+    return {forn,cessPiva,tipo:v(g,"TipoDocumento"),numero:v(g,"Numero"),data:v(g,"Data"),totale:+v(g,"ImportoTotaleDocumento")||null,righe,rit:ritN?{aliquota:+v(ritN,"AliquotaRitenuta")||0,importo:+v(ritN,"ImportoRitenuta")||0}:null,pag};
+  });
+}
+async function leggiFilesXml(files){
+  const docs=[], errori=[];
+  for(const file of files){
+    try{
+      const buf=await file.arrayBuffer();
+      if(/\.zip$/i.test(file.name)){ if(!window.JSZip)throw new Error("zip non supportato"); const z=await JSZip.loadAsync(buf);
+        for(const n of Object.keys(z.files).filter(n=>/\.(xml|p7m)$/i.test(n))){ const t=estraiXml(await z.files[n].async("arraybuffer")); if(!t){errori.push(n+": FatturaPA non trovata");continue} try{leggiFE(t).forEach(d=>docs.push(Object.assign(d,{file:n})))}catch(e){errori.push(n+": "+e.message)} } continue }
+      const t=estraiXml(buf); if(!t){errori.push(file.name+": FatturaPA non trovata (file firmato non leggibile?)");continue}
+      leggiFE(t).forEach(d=>docs.push(Object.assign(d,{file:file.name})));
+    }catch(e){errori.push(file.name+": "+e.message)}
+  }
+  const A=azienda(), mia=String(A.piva||"").replace(/\s/g,"");
+  docs.forEach(d=>{
+    d.fornEsist=S.fornitori.find(x=>{const i=idFiscale(x);return (d.forn.piva&&i.piva===d.forn.piva)||(d.forn.cf&&i.cf===d.forn.cf.toUpperCase())})||null;
+    d.dup=d.fornEsist&&S.acquisti.some(a=>a.fornitoreId===d.fornEsist.id&&String(a.numero)===d.numero&&a.data===d.data);
+    d.avvisi=[]; if(mia&&d.cessPiva&&d.cessPiva!==mia)d.avvisi.push("intestata a un'altra partita IVA ("+d.cessPiva+")");
+    if(d.righe.some(r=>/^N6/.test(r.nat)))d.avvisi.push("inversione contabile: integra l'IVA con il commercialista");
+    if(!["TD01","TD04","TD24","TD25","TD06","TD02"].includes(d.tipo))d.avvisi.push("tipo documento "+d.tipo);
+    d.sel=!d.dup&&!(mia&&d.cessPiva&&d.cessPiva!==mia);
+  });
+  current={c:"impxml",docs,errori}; renderImpXml();
+}
+function renderImpXml(){
+  const P=current, n=P.docs.filter(d=>d.sel).length;
+  modalShell("Importa fatture d'acquisto (XML)",`<div class="mb wz"><div class="full">${P.docs.length?`<div class="tablewrap"><table class="altab"><thead><tr><th></th><th>Fornitore</th><th>Documento</th><th class="r">Totale</th><th>Note</th></tr></thead><tbody>${P.docs.map((d,i)=>`<tr><td><input type="checkbox" data-impx="${i}" ${d.sel?"checked":""} aria-label="Importa"></td><td><b>${esc(d.forn.nome)}</b><div class="small muted">${d.fornEsist?"già in anagrafica":'<span class="pos">nuovo fornitore</span>'} · ${esc(d.forn.piva||d.forn.cf)}</div></td><td class="mono small">${esc(d.tipo==="TD04"?"Nota di credito":"Fattura")} ${esc(d.numero)}<div class="muted">del ${dShort(d.data)} · ${d.righe.length} righe</div></td><td class="r num">${d.totale!=null?eur2((d.tipo==="TD04"?-1:1)*d.totale):"—"}</td><td class="small">${d.dup?'<span class="pill warn">già registrata</span> ':""}${d.avvisi.map(a=>`<div class="neg">${esc(a)}</div>`).join("")}${d.pag.length?`<div class="muted">${d.pag.length} scadenz${d.pag.length>1?"e":"a"} · ${esc(strName(d.pag[0].mp))}</div>`:""}</td></tr>`).join("")}</tbody></table></div>`:"<p class='muted'>Nessuna fattura trovata nei file.</p>"}
+    ${P.errori.length?`<div class="banner-err small"><b>File non letti</b><br>${P.errori.map(esc).join("<br>")}</div>`:""}
+    <p class="note">Si importano file .xml, .xml.p7m (firmati) e .zip scaricati dal portale "Fatture e Corrispettivi" o dal tuo intermediario. Per ogni fattura vengono creati, se serve, il fornitore e la registrazione con righe, codici IVA, ritenuta e scadenze.</p></div>
+    <div class="err full" id="ferr"></div></div><div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-impxok="1" ${n?"":"disabled"}>Registra ${n} fattur${n===1?"a":"e"}</button></div></div>`);
+}
+async function importaXmlSel(){
+  const P=current, sel=P.docs.filter(d=>d.sel); let n=0; const b=$('[data-impxok]'); if(b)b.disabled=true;
+  for(const d of sel){
+    let fo=d.fornEsist||S.fornitori.find(x=>{const i=idFiscale(x);return (d.forn.piva&&i.piva===d.forn.piva)||(d.forn.cf&&i.cf===d.forn.cf.toUpperCase())});
+    if(!fo){ const iban=(d.pag.find(p=>p.iban)||{}).iban||""; const fid=await save("fornitori",{nome:feTxt(d.forn.nome,120)||"Fornitore "+(d.forn.piva||d.forn.cf),piva:d.forn.piva,cf:d.forn.cf,indirizzo:d.forn.indirizzo,cap:d.forn.cap,comune:d.forn.comune,provincia:d.forn.provincia,iban}); if(!fid)return; fo=byId("fornitori",fid) }
+    const sg=d.tipo==="TD04"?-1:1;
+    const righe=d.righe.map(r=>({descr:r.descr,qta:r.qta,prezzo:r2(sg*r.prezzo),cod:r.cod}));
+    const sc=d.pag.filter(p=>p.data).map(p=>({data:p.data,importo:r2(sg*p.importo)}));
+    const pagM=d.pag[0]?S.pagamenti.find(p=>feCode(p.strumento)===d.pag[0].mp&&String(p.rate||"").split(",").length===Math.max(1,sc.length)):null;
+    const anno=parse(TODAY()).getFullYear();
+    const rec={fornitoreId:fo.id,numero:d.numero,data:d.data,dataReg:TODAY(),protocollo:nextNumero("",anno,S.acquisti,"protocollo"),categoria:fo.categoria||"",righe,ritenutaPct:d.rit&&d.rit.aliquota||0,pagamento:pagM?pagM.id:(fo.pagamento||""),fileXml:d.file,tipoDoc:d.tipo,note:d.tipo==="TD04"?"Nota di credito del fornitore":""};
+    const t=aTot(rec);
+    if(!sc.length||Math.abs(sc.reduce((a,x)=>a+x.importo,0)-t.dovuto)>0.02){ rec.scadenze=calcScadenze(pagOf(rec.pagamento)||pagSogg(fo),d.data,t.dovuto,t.iva) } else rec.scadenze=sc;
+    rec.scadenza=(rec.scadenze[0]||{}).data||d.data;
+    if(await save("acquisti",rec))n++;
+  }
+  closeAll(); toast(`Registrate ${n} fatture d'acquisto`);
+}
+
 function fattText(f){
   const c=byId("clienti",f.clienteId), t=vTot(f);
   const nota=[...new Set(t.riep.map(x=>x.c.norma).filter(Boolean))].map(s=>"\n"+s).join("");
@@ -1701,7 +1966,7 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet]");
+  const el=e.target.closest("[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
@@ -1710,6 +1975,16 @@ document.addEventListener("click",async e=>{
   if(d.act==="export"){esporta();return}
   if(d.act==="import"){$("#impFile").value="";$("#impFile").click();return}
   if(d.act==="doImport"){importa();return}
+  if(d.fe){e.stopPropagation();apriFE(d.fe);return}
+  if(d.fexml){el.disabled=true;await scaricaXml(d.fexml);const f=byId("fatture",d.fexml);if(f&&current&&current.c==="fe")apriFE(f.id);return}
+  if(d.fecort){apriCortesia(d.fecort);return}
+  if(d.fevedi){const f=byId("fatture",d.fevedi);if(!f)return;const r=buildFE(f,(f.sdi&&f.sdi.progressivo)||"00000");mostraTesto("Anteprima XML · "+vLabel(f),r.xml);return}
+  if(d.fesalva){el.disabled=true;await salvaStatoFE(d.fesalva);el.disabled=false;return}
+  if(d.impxok){await importaXmlSel();return}
+  if(d.act==="azienda"){const A=azienda();openForm("azienda",A.id?Object.assign({},A):null);return}
+  if(d.act==="zipFE"){el.disabled=true;await scaricaZip(lastDaInv.slice());el.disabled=false;return}
+  if(d.act==="segnaInv"){el.disabled=true;await segnaInviate(lastDaInv.slice());return}
+  if(d.act==="impXml"){$("#xmlFile").value="";$("#xmlFile").click();return}
   if(d.copyurl){const v=$("#appUrl").value;try{await navigator.clipboard.writeText(v);toast("Indirizzo copiato")}catch{$("#appUrl").select();toast("Seleziona e copia l'indirizzo")}return}
   if(d.tbedit){const t=T.find(x=>x.id===d.tbedit); if(t)openForm("timbrature",Object.assign({},t),{ora:tsHM(t.ts),nota:t.nota||""}); return}
   if(d.turno){e.stopPropagation();openTurno(d.turno);return}
@@ -1771,6 +2046,7 @@ document.addEventListener("click",async e=>{
   if(d.copytxt&&current&&current.rec){const t=fattText(current.rec);try{await navigator.clipboard.writeText(t);toast("Dati copiati")}catch{modalShell("Dati della fattura",`<div class="mb"><pre class="copy full">${esc(t)}</pre></div>`);current=null;toast("Seleziona il testo e copialo")}return}
   if(d.del!==undefined&&current&&current.rec){
     const{c,rec}=current;
+    if(c==="fatture"&&SDI_TRASMESSA.includes(sdiStato(rec))){$("#ferr").textContent="Fattura già trasmessa allo SdI: non si può eliminare. Per annullarla emetti una nota di credito.";return}
     if(c==="pagamenti"){const n=S.clienti.filter(x=>x.pagamento===rec.id).length+S.fornitori.filter(x=>x.pagamento===rec.id).length; if(n){$("#ferr").textContent=`È assegnato a ${n} tra clienti e fornitori: cambia prima il loro tipo di pagamento.`;return}}
     if(!el.dataset.sure){el.dataset.sure="1";
       const linked=c==="fatture"?allocated("v:"+rec.id):c==="acquisti"?allocated("a:"+rec.id):0;
@@ -1814,6 +2090,8 @@ document.addEventListener("change",async e=>{
   if(id==="scStr"){UI.scStr=e.target.value;render();return}
   if(id==="gpsOn"){const v=e.target.checked; const {error}=await sb.from("impostazioni").update({gps_attivo:v}).eq("id",1); if(error){toast(errMsg(error));e.target.checked=!v;return} gpsOn=v; for(const k of Object.keys(AG))delete AG[k]; schedulePublish(300); toast(v?"Posizione richiesta alla timbratura":"Posizione non più richiesta"); return}
   if(id==="impFile"){leggiImport(e.target.files[0]);return}
+  if(id==="xmlFile"){const fl=[...e.target.files]; if(fl.length)leggiFilesXml(fl); return}
+  if(e.target.dataset&&e.target.dataset.impx!==undefined&&current&&current.c==="impxml"){current.docs[+e.target.dataset.impx].sel=e.target.checked; renderImpXml(); return}
   if(id==="paSel"){UI.paSel=e.target.value;render();return}
   if(id==="paTutte"){UI.paTutte=e.target.checked;render();return}
   if(!current||!e.target.closest("#frm"))return;
