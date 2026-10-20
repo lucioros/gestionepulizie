@@ -440,21 +440,273 @@ function errMsg(e){
   return"Salvataggio non riuscito: "+(m||"errore sconosciuto");
 }
 
-/* ---------- archivio dati ---------- */
+/* ---------- archivio dati: tabelle relazionali su Supabase ---------- */
+// Ogni archivio dell'app (S.clienti, S.fatture, ...) corrisponde a una tabella con colonne vere
+// e a tabelle "figlie" per righe, scadenze, squadre e abbinamenti. Tipi: d data, n numero,
+// i intero, b sì/no, ai elenco di interi, at elenco di testi, r codice di un altro record; senza tipo è testo.
+// I campi non previsti finiscono nella colonna "extra", così nessun dato va perso.
+const snake=k=>k.replace(/[A-Z]/g,m=>"_"+m.toLowerCase());
+const FKF={clienti_righe:"cliente_id",sedi_operatori:"sede_id",variazioni_operatori:"variazione_id",straordinari_operatori:"straordinario_id",ispezioni_voti:"ispezione_id",preventivi_righe:"preventivo_id",fatture_righe:"fattura_id",fatture_scadenze:"fattura_id",fatture_preventivi:"fattura_id",fatture_sdi_storia:"fattura_id",acquisti_righe:"acquisto_id",acquisti_scadenze:"acquisto_id",elenchi_voci:"elenco_id",codici_iva:"elenco_id"};
+const RIGHE=tab=>({tab,to:(v,o,k)=>righeOf(k==="righe"?o:{righe:v,regime:o.regime}).map(r=>({descr:r.descr==null?"":String(r.descr),qta:numDB(r.qta),prezzo:numDB(r.prezzo),cod:r.cod||null})),from:rs=>rs.map(r=>({descr:r.descr||"",qta:r.qta==null?1:+r.qta,prezzo:r.prezzo==null?0:+r.prezzo,cod:r.cod||"22"}))});
+const SCAD=tab=>({tab,to:v=>(Array.isArray(v)?v:[]).filter(x=>x&&dateDB(x.data)).map(x=>({data:dateDB(x.data),importo:numDB(x.importo)||0})),from:rs=>rs.map(r=>({data:r.data,importo:+r.importo}))});
+const LINK=(tab,col)=>({tab,to:v=>[...new Set((Array.isArray(v)?v:[]).filter(Boolean).map(String))].map(x=>({[col||"operatore_id"]:x})),from:rs=>rs.map(r=>r[col||"operatore_id"])});
+const ALLOC=fk=>({tab:"abbinamenti",fk,to:v=>(Array.isArray(v)?v:[]).filter(x=>x&&x.doc&&+x.importo).map(x=>{const s=String(x.doc),id=s.slice(2);return {fattura_id:s[0]==="v"?id:null,acquisto_id:s[0]==="a"?id:null,importo:r2(x.importo),rata:+x.rata||null}}),
+  from:rs=>rs.map(r=>{const o={doc:r.fattura_id?"v:"+r.fattura_id:"a:"+r.acquisto_id,importo:+r.importo}; if(r.rata)o.rata=r.rata; return o})});
+const VOTI={tab:"ispezioni_voti",to:v=>Object.entries(v||{}).filter(([,x])=>+x>=1&&+x<=5).map(([area,voto])=>({area,voto:Math.round(+voto)})),from:rs=>Object.fromEntries(rs.map(r=>[r.area,r.voto]))};
+const SDI_STORIA={tab:"fatture_sdi_storia",to:(v,o)=>((o.sdi&&o.sdi.storia)||[]).map(x=>({data:dateDB(x.data),evento:String(x.evento||"")})),from:rs=>rs.map(r=>({data:r.data||"",evento:r.evento||""}))};
+const DBS={
+  amministratori:{t:"amministratori",c:"nome referente cf tel email pec indirizzo note esempio:b"},
+  conti:{t:"conti",c:"nome iban saldoIniziale:n dataSaldo:d esempio:b"},
+  pagamenti:{t:"pagamenti",c:"descrizione strumento rate base giornoFisso:i ivaPrimaRata:b mesiEsclusi:ai slittamento:i conto:r note esempio:b"},
+  clienti:{t:"clienti",c:"nome piva cf referente amministratoreId:r tel email pec indirizzo cap comune provincia nazione sdi pagamento:r codIva ritenuta:b note esempio:b",f:{righeAbituali:RIGHE("clienti_righe")}},
+  fornitori:{t:"fornitori",c:"nome piva cf categoria tel email pec indirizzo cap comune provincia iban pagamento:r note esempio:b"},
+  operatori:{t:"operatori",c:"nome emailApp mansione tel costoOrario:n oreSettimanali:n attivo:b note esempio:b"},
+  sedi:{t:"sedi",c:"clienteId:r nome indirizzo tipo mq:n giorni:ai ora durata:n canone:n attiva:b accesso attivita:at esempio:b",f:{operatori:LINK("sedi_operatori")}},
+  registro:{t:"registro",c:"sedeId:r data:d stato esempio:b"},
+  variazioni:{t:"variazioni",c:"sedeId:r origData:d data:d ora durata:n nota esempio:b",f:{operatori:LINK("variazioni_operatori")}},
+  straordinari:{t:"straordinari",c:"sedeId:r descrizione data:d ora durata:n importo:n stato esempio:b",f:{operatori:LINK("straordinari_operatori")}},
+  assenze:{t:"assenze",c:"operatoreId:r tipo dal:d al:d dalle alle note esempio:b"},
+  ispezioni:{t:"ispezioni",c:"sedeId:r data:d ispettore note esempio:b",f:{voti:VOTI}},
+  preventivi:{t:"preventivi",c:"numero data:d clienteId:r cliente stato descrizione tipo mq:n giorni:n produttivita:n costoOrario:n materiali:n generali:n margine:n canoneOfferto:n note esempio:b",f:{righe:RIGHE("preventivi_righe")}},
+  fatture:{t:"fatture",c:"tipo numero clienteId:r clienteNome data:d mese pagamento:r ritenuta:b scadenza:d rifDoc rifOrdine cig cup note auto:b stato sdiStato sdiProgressivo sdiFile sdiGenerato:d sdiInviata:d sdiConsegna:d sdiScarto:d esempio:b",
+    f:{righe:RIGHE("fatture_righe"),scadenze:SCAD("fatture_scadenze"),preventivi:LINK("fatture_preventivi","preventivo_id"),alloc:ALLOC("nota_id"),_sdiStoria:SDI_STORIA}},
+  acquisti:{t:"acquisti",c:"fornitoreId:r numero data:d dataReg:d protocollo categoria pagamento:r ritenutaPct:n scadenza:d note fileXml tipoDoc stato esempio:b",f:{righe:RIGHE("acquisti_righe"),scadenze:SCAD("acquisti_scadenze")}},
+  movimenti:{t:"movimenti",c:"data:d tipo conto:r contoDest:r causale importo:n clienteId:r fornitoreId:r descrizione esempio:b",f:{alloc:ALLOC("movimento_id")}},
+  cu:{t:"cu",c:"clienteId:r anno:i ricevuta:b data:d"},
+  azienda:{t:"azienda",c:"denominazione piva cf regimeFiscale indirizzo cap comune provincia tel email pec iban reaUfficio reaNumero capitaleSociale:n socioUnico tipoRitenuta causaleRitenuta feDal:d progressivo:i"}
+};
+Object.values(DBS).forEach(s=>{s.cols=s.c.split(" ").map(x=>{const[k,ty]=x.split(":");return {k,s:snake(k),ty:ty||"t"}}); s.keys=new Set(s.cols.map(c=>c.k))});
+const SDI_K=[["stato","sdiStato"],["progressivo","sdiProgressivo"],["file","sdiFile"],["generato","sdiGenerato"],["inviata","sdiInviata"],["consegna","sdiConsegna"],["scarto","sdiScarto"]];
+function numDB(v){ if(v===""||v==null)return null; const n=Number(String(v).replace(",",".")); return isFinite(n)?n:null }
+function dateDB(v){ const s=String(v??"").slice(0,10); return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:null }
+function convDB(v,ty){
+  if(ty==="t")return v==null?null:(typeof v==="object"?JSON.stringify(v):String(v));
+  if(ty==="r")return v==null||v===""?null:String(v);
+  if(v===""||v==null)return null;
+  if(ty==="n")return numDB(v);
+  if(ty==="i"){const n=numDB(v);return n==null?null:Math.round(n)}
+  if(ty==="b")return v===true||v===1||v==="1"||v==="true"||v==="Sì"?true:v===false||v===0||v==="0"||v==="false"?false:!!v;
+  if(ty==="d")return dateDB(v);
+  if(ty==="ai")return (Array.isArray(v)?v:[v]).map(Number).filter(Number.isFinite).map(Math.round);
+  if(ty==="at")return (Array.isArray(v)?v:[v]).filter(x=>x!=null&&x!=="").map(String);
+  return v;
+}
+// oggetto dell'app → operazione per salva_lotto
+function opDB(c,obj){
+  if(c==="liste"){
+    if(obj.id==="azienda")return opDB("azienda",obj);
+    const val=Array.isArray(obj.valori)?obj.valori:[];
+    const figli=obj.id==="codiciIva"?{codici_iva:val.filter(v=>v&&v.id).map((v,i)=>({pos:i,id:String(v.id),descrizione:String(v.d||v.id),trattamento:["norm","split","rc","ex","excl"].includes(v.t)?v.t:"ex",aliquota:numDB(v.al),natura:v.nat||null,norma:v.norma||null}))}
+      :{elenchi_voci:val.filter(v=>v!=null&&v!=="").map((v,i)=>({pos:i,valore:String(v)}))};
+    const extra=Object.assign({},obj); delete extra.id; delete extra.valori;
+    return {tab:"elenchi",riga:{id:String(obj.id),extra},figli};
+  }
+  const S_=DBS[c]; const o=Object.assign({},obj);
+  if(c==="movimenti"){const s=String(o.soggetto||""); o.clienteId=s.startsWith("c:")?s.slice(2):null; o.fornitoreId=s.startsWith("f:")?s.slice(2):null; delete o.soggetto}
+  if(c==="fatture"){const s=o.sdi||{}; SDI_K.forEach(([a,b])=>o[b]=s[a]); const rest=Object.assign({},s); SDI_K.forEach(([a])=>delete rest[a]); delete rest.storia; o._sdiExtra=Object.keys(rest).length?rest:undefined; o._sdiStoria=s.storia}
+  const riga={id:String(o.id)}, extra={}, figli={};
+  S_.cols.forEach(col=>riga[col.s]=convDB(o[col.k],col.ty));
+  Object.entries(S_.f||{}).forEach(([k,sp])=>{figli[sp.tab]=sp.to(o[k],o,k).map((r,i)=>Object.assign({pos:i},r))});
+  Object.keys(o).forEach(k=>{ if(k==="id"||S_.keys.has(k)||(S_.f&&S_.f[k])||k==="sdi"||k==="_sdiExtra"||o[k]===undefined)return; extra[k]=o[k] });
+  if(o._sdiExtra)extra.sdi=o._sdiExtra;
+  riga.extra=extra;
+  return {tab:S_.t,riga,figli};
+}
+// righe del database → oggetto dell'app
+function objDB(c,row,kids){
+  if(c==="elenchi"){
+    const o=Object.assign({},row.extra||{},{id:row.id});
+    o.valori=row.id==="codiciIva"?(kids.codici_iva||[]).map(r=>{const x={id:r.id,d:r.descrizione,t:r.trattamento,al:r.aliquota==null?0:+r.aliquota}; if(r.natura)x.nat=r.natura; if(r.norma)x.norma=r.norma; return x}):(kids.elenchi_voci||[]).map(r=>r.valore);
+    return o;
+  }
+  const S_=DBS[c], o={};
+  Object.assign(o,row.extra||{});
+  o.id=row.id;
+  S_.cols.forEach(col=>{const v=row[col.s]; if(v===null||v===undefined)return; o[col.k]=col.ty==="n"||col.ty==="i"?+v:v});
+  Object.entries(S_.f||{}).forEach(([k,sp])=>{o[k]=sp.from(kids[sp.tab]||[],row)});
+  if(c==="movimenti"){o.soggetto=o.clienteId?"c:"+o.clienteId:o.fornitoreId?"f:"+o.fornitoreId:""; delete o.clienteId; delete o.fornitoreId}
+  if(c==="fatture"){const s=Object.assign({},(row.extra||{}).sdi||{}); let any=Object.keys(s).length>0; SDI_K.forEach(([a,b])=>{if(o[b]!=null){s[a]=o[b];any=true} delete o[b]}); const st=o._sdiStoria; delete o._sdiStoria; if(st&&st.length){s.storia=st;any=true} if(any)o.sdi=s; else delete o.sdi}
+  if(c==="azienda")o.id="azienda";
+  return o;
+}
+// come l'oggetto tornerà dal database (per tenere allineato lo stato locale)
+function roundTrip(c,obj){
+  const op=opDB(c,obj); const kids={};
+  Object.entries(op.figli||{}).forEach(([t,rs])=>kids[t]=rs.map(r=>Object.assign({},r)));
+  const row=JSON.parse(JSON.stringify(op.riga));
+  if(c==="liste")return objDB(op.tab==="azienda"?"azienda":"elenchi",row,kids);
+  return objDB(c,row,kids);
+}
+const TAB_COL={}; Object.entries(DBS).forEach(([c,s])=>{if(c!=="azienda")TAB_COL[s.t]=c}); TAB_COL.elenchi="liste"; TAB_COL.azienda="liste";
+// record collegati da ricaricare quando l'eliminazione si propaga (abbinamenti, squadre, ...)
+const DEL_RELOAD={fatture:["movimenti","fatture"],acquisti:["movimenti"],operatori:["sedi","variazioni","straordinari","assenze"],preventivi:["fatture"],sedi:["registro","variazioni"],clienti:["cu"]};
+const ORDINE_COLS=["amministratori","conti","pagamenti","liste","clienti","fornitori","operatori","sedi","registro","variazioni","straordinari","assenze","ispezioni","preventivi","fatture","acquisti","movimenti","cu"];
+function figliTabs(c){ if(c==="liste")return ["elenchi_voci","codici_iva"]; return Object.values(DBS[c].f||{}).map(sp=>sp.tab) }
+const fkDi=(c,tab)=>tab==="abbinamenti"?(c==="movimenti"?"movimento_id":"nota_id"):FKF[tab];
+async function tuttaLaTabella(tab,filtro){
+  const out=[], o1=tab==="abbinamenti"?"id":FKF[tab]||"id";
+  for(let from=0;;from+=1000){
+    let q=sb.from(tab).select("*"); if(filtro)q=filtro(q); q=q.order(o1); if(FKF[tab])q=q.order("pos");
+    const {data,error}=await q.range(from,from+999); if(error)throw error; out.push(...data); if(data.length<1000)break }
+  return out;
+}
+// carica gli archivi indicati (tutti se non indicati); con ids solo quei record di un archivio
+async function caricaDB(cols,ids){
+  cols=cols||ORDINE_COLS;
+  const padri=c=>c==="liste"?["elenchi","azienda"]:[DBS[c].t];
+  const jobs=[]; cols.forEach(c=>{ padri(c).forEach(t=>jobs.push([c,t,true])); figliTabs(c).forEach(t=>jobs.push([c,t,false])) });
+  const res=await Promise.all(jobs.map(([c,t,pad])=>tuttaLaTabella(t,ids?(q=>q.in(pad?"id":fkDi(c,t),ids)):null)));
+  const R={}; jobs.forEach(([c,t],i)=>R[c+"|"+t]=res[i]);
+  const out={};
+  cols.forEach(c=>{
+    const group=(tab,fk)=>{const m={};(R[c+"|"+tab]||[]).forEach(r=>{const k=r[fk]; if(k==null)return; (m[k]=m[k]||[]).push(r)}); Object.values(m).forEach(a=>a.sort((x,y)=>x.pos-y.pos)); return m};
+    if(c==="liste"){ const gv=group("elenchi_voci","elenco_id"), gc=group("codici_iva","elenco_id");
+      out.liste=(R["liste|elenchi"]||[]).map(r=>objDB("elenchi",r,{elenchi_voci:gv[r.id]||[],codici_iva:gc[r.id]||[]})).concat((R["liste|azienda"]||[]).map(r=>objDB("azienda",r,{}))); return }
+    const G={}; figliTabs(c).forEach(t=>G[t]=group(t,fkDi(c,t)));
+    out[c]=(R[c+"|"+DBS[c].t]||[]).map(r=>{const kids={}; figliTabs(c).forEach(t=>kids[t]=G[t][r.id]||[]); return objDB(c,r,kids)});
+  });
+  return out;
+}
+function erroreDB(e){
+  const c=e&&e.code, m=String(e&&e.message||""), d=String(e&&e.details||"");
+  const NOMI={sedi:"sedi",fatture:"fatture",acquisti:"fatture d'acquisto",movimenti:"movimenti di prima nota",clienti:"clienti",fornitori:"fornitori",pagamenti:"tipi di pagamento",preventivi:"preventivi",straordinari:"interventi straordinari",ispezioni:"ispezioni",assenze:"assenze",abbinamenti:"abbinamenti"};
+  if(c==="23503"){ const t=(d.match(/table "([^"]+)"/)||m.match(/constraint "[^"]+" on table "([^"]+)"/)||[])[1];
+    if(/still referenced|update or delete/i.test(m+d))return `Non si può eliminare: è ancora usato in ${NOMI[t]||t||"altri dati"}. Elimina o modifica prima quelli.`;
+    return "Il record fa riferimento a un dato che non esiste più (cliente, sede, conto o tipo di pagamento). Ricarica la pagina e riprova." }
+  if(c==="23505")return /fatture_tipo_numero/.test(m)?"Esiste già un documento con questo numero.":/email_app/.test(m)?"Questa email è già usata da un altro dipendente.":"Esiste già un record con questi dati.";
+  if(c==="23514"||c==="22P02"||c==="22007"||c==="22008")return "Dato non valido: controlla date, orari e numeri. ("+m+")";
+  if(c==="PGRST202"||c==="42883"||/salva_lotto/.test(m)&&/not find|does not exist/i.test(m))return "Il database non è aggiornato: esegui in Supabase lo script schema_v2.sql.";
+  return errMsg(e);
+}
+async function salvaOps(ops){ const {error}=await sb.rpc("salva_lotto",{p_ops:ops}); if(error)throw error; }
 async function save(c,obj){
-  const data=JSON.parse(JSON.stringify(obj)); const id=data.id||(rid()+rid()); delete data.id;
-  try{ const {error}=await sb.from("docs").upsert({col:c,id,data}); if(error)throw error }
-  catch(e){ toast(errMsg(e)); return false }
-  const i=S[c].findIndex(x=>x.id===id); if(i>=0)S[c][i]=Object.assign({id},data); else S[c].push(Object.assign({id},data));
-  ver++; render(); schedulePublish(); return id;
+  const o=JSON.parse(JSON.stringify(obj)); if(!o.id)o.id=rid()+rid();
+  try{ await salvaOps([opDB(c,o)]) } catch(e){ toast(erroreDB(e)); return false }
+  const loc=roundTrip(c,o);
+  const i=S[c].findIndex(x=>x.id===o.id); if(i>=0)S[c][i]=loc; else S[c].push(loc);
+  ver++; render(); schedulePublish(); return o.id;
 }
 async function del(c,id){
   try{
-    const q=c==="timbrature"?sb.from("timbrature").delete().eq("id",id):sb.from("docs").delete().match({col:c,id});
-    const {error}=await q; if(error)throw error;
-  }catch(e){ toast(errMsg(e)); return false }
+    if(c==="timbrature"){const {error}=await sb.from("timbrature").delete().eq("id",id); if(error)throw error}
+    else await salvaOps([{tab:c==="liste"?(id==="azienda"?"azienda":"elenchi"):DBS[c].t,elimina:id}]);
+  }catch(e){ toast(erroreDB(e)); const fe=$("#ferr"); if(fe)fe.textContent=erroreDB(e); return false }
   if(c==="timbrature")T=T.filter(x=>x.id!==id); else S[c]=S[c].filter(x=>x.id!==id);
+  if(DEL_RELOAD[c]){ try{ const r=await caricaDB(DEL_RELOAD[c]); Object.assign(S,r) }catch(e){} }
   ver++; render(); schedulePublish(); return true;
+}
+// salva molti record in pochi lotti; se un lotto fallisce riprova un record alla volta e raccoglie gli errori
+async function salvaMolti(items,onProg){
+  const errori=[]; let fatti=0;
+  for(let i=0;i<items.length;i+=150){
+    const part=items.slice(i,i+150);
+    try{ await salvaOps(part.map(x=>opDB(x.c,x.o))); fatti+=part.length }
+    catch(e){ for(const x of part){ try{ await salvaOps([opDB(x.c,x.o)]); fatti++ }catch(e2){ errori.push(`${x.c} ${x.o.id}: ${erroreDB(e2)}`) } } }
+    if(onProg)onProg(Math.min(i+150,items.length),items.length);
+  }
+  return {fatti,errori};
+}
+
+/* ---------- trasferimento dati (dalla vecchia tabella "docs" o da un backup) ---------- */
+// Prepara i record per le tabelle collegate: i riferimenti a dati eliminati vengono sistemati
+// creando un record "recuperato" al posto di quello mancante, così nessun documento va perso.
+function preparaTrasferimento(D,base){
+  const note=[], dati={}; base=base||{};
+  ORDINE_COLS.forEach(c=>dati[c]=(D[c]||[]).filter(x=>x&&x.id!=null&&x.id!=="").map(x=>Object.assign({},JSON.parse(JSON.stringify(x)),{id:String(x.id)})));
+  const ids={}; const idsDi=c=>ids[c]||(ids[c]=new Set([...(base[c]||[]).map(x=>x.id),...dati[c].map(x=>x.id)]));
+  ["cassa","banca"].forEach(x=>idsDi("conti").add(x));
+  const nuovo=(c,o,msg)=>{dati[c].push(o); idsDi(c).add(o.id); note.push(msg)};
+  const NOTA="Creato durante il trasferimento dei dati: il record originale era stato eliminato.";
+  const cliente=(id,nome)=>{ if(!idsDi("clienti").has(id))nuovo("clienti",{id,nome:(nome||"Cliente "+id)+" (recuperato)",note:NOTA},id==="_sedi_eliminate"?`Creato il cliente "Sedi eliminate (recuperato)" per raccogliere le sedi che non esistevano più.`:`Documenti di un cliente eliminato: conservati sotto "${(nome||"Cliente "+id)} (recuperato)".`); return id };
+  const fornitore=(id)=>{ if(!idsDi("fornitori").has(id))nuovo("fornitori",{id,nome:"Fornitore "+id+" (recuperato)",note:NOTA},`Documenti di un fornitore eliminato: conservati sotto "Fornitore ${id} (recuperato)".`); return id };
+  const operatore=(id)=>{ if(!idsDi("operatori").has(id))nuovo("operatori",{id,nome:"Dipendente "+id+" (recuperato)",attivo:false,note:NOTA},`Assenze di un dipendente eliminato: conservate sotto "Dipendente ${id} (recuperato)", non attivo.`); return id };
+  const sede=(id)=>{ if(!idsDi("sedi").has(id)){ const cid=cliente("_sedi_eliminate","Sedi eliminate"); nuovo("sedi",{id,clienteId:cid,nome:"Sede "+id+" (recuperata)",attiva:false,giorni:[],operatori:[],note:NOTA},`Turni o ispezioni di una sede eliminata (${id}): conservati sotto la sede sospesa "Sede ${id} (recuperata)".`) } return id };
+  const conto=(id)=>{ if(!idsDi("conti").has(id))nuovo("conti",{id,nome:"Conto "+id,saldoIniziale:0},`Movimenti sul conto "${id}", che non esisteva più: creato il conto "Conto ${id}" con saldo iniziale 0. Controllalo in Prima nota.`); return id };
+  const opt=(c,o,k,col,cosa)=>{ if(o[k]&&!idsDi(col).has(String(o[k]))){note.push(`${cosa} ${o.id}: ${k==="pagamento"?"tipo di pagamento":k} "${o[k]}" non esiste più, lasciato vuoto.`); o[k]=""} };
+  const ops=(o,cosa)=>{ if(!Array.isArray(o.operatori))return; const ok=o.operatori.filter(x=>idsDi("operatori").has(String(x))); const n=o.operatori.length-ok.length; if(n)note.push(`${cosa}: ${n===1?"tolto dalla squadra un dipendente eliminato":`tolti dalla squadra ${n} dipendenti eliminati`}.`); o.operatori=ok };
+  const data=(o,k,cosa,def)=>{ if(!dateDB(o[k])){ const v=def||TODAY(); note.push(`${cosa} ${o.id}: data "${o[k]||""}" non valida, impostata al ${dShort(v)}.`); o[k]=v } };
+  const allocOk=(o,cosa)=>{ if(!Array.isArray(o.alloc))return; const ok=o.alloc.filter(a=>{const s=String(a&&a.doc||""); return s.startsWith("v:")?idsDi("fatture").has(s.slice(2)):s.startsWith("a:")?idsDi("acquisti").has(s.slice(2)):false});
+    const n=o.alloc.length-ok.length; if(n)note.push(`${cosa}: ${n===1?"tolto un abbinamento":`tolti ${n} abbinamenti`} a documenti che non esistono più; la somma torna da abbinare.`); o.alloc=ok };
+  dati.pagamenti.forEach(o=>{ if(!o.descrizione)o.descrizione="Pagamento "+o.id; opt("pagamenti",o,"conto","conti","Tipo di pagamento"); if(o.base&&!["DF","FM"].includes(o.base))o.base="DF"; if(o.giornoFisso&&!(+o.giornoFisso>=1&&+o.giornoFisso<=31))o.giornoFisso="" });
+  dati.amministratori.forEach(o=>{ if(!o.nome)o.nome="Amministratore "+o.id });
+  dati.clienti.forEach(o=>{ if(!o.nome)o.nome="Cliente "+o.id; opt("clienti",o,"amministratoreId","amministratori","Cliente"); opt("clienti",o,"pagamento","pagamenti","Cliente") });
+  dati.fornitori.forEach(o=>{ if(!o.nome)o.nome="Fornitore "+o.id; opt("fornitori",o,"pagamento","pagamenti","Fornitore") });
+  const email=new Set((base.operatori||[]).filter(x=>!dati.operatori.some(y=>y.id===x.id)).map(x=>String(x.emailApp||"").toLowerCase()).filter(Boolean));
+  dati.operatori.forEach(o=>{ if(!o.nome)o.nome="Dipendente "+o.id; const e=String(o.emailApp||"").trim().toLowerCase(); if(e){ if(email.has(e)){note.push(`${o.nome}: l'email per l'app ${e} è già di un altro dipendente, tolta.`); o.emailApp=""} else {email.add(e); o.emailApp=e} } });
+  dati.sedi.slice().forEach(o=>{ if(!o.nome)o.nome="Sede "+o.id; if(!o.clienteId||!idsDi("clienti").has(String(o.clienteId))){o.clienteId=cliente(String(o.clienteId||"_sedi_eliminate"),o.clienteId?null:"Sedi eliminate")} ops(o,"Sede "+o.nome); if(o.ora&&!/^\d{1,2}:\d{2}$/.test(o.ora)){note.push(`Sede ${o.nome}: orario "${o.ora}" non valido, lasciato vuoto.`);o.ora=""} });
+  dati.registro.forEach(o=>{ const i=o.id.lastIndexOf("_"); if(!o.sedeId)o.sedeId=o.id.slice(0,i); sede(String(o.sedeId)); if(!dateDB(o.data))o.data=o.id.slice(i+1); data(o,"data","Registro"); if(!o.stato)o.stato="svolto" });
+  dati.variazioni.forEach(o=>{ sede(String(o.sedeId)); data(o,"origData","Variazione"); if(!dateDB(o.data))o.data=o.origData; ops(o,"Turno modificato del "+dShort(o.origData)) });
+  dati.straordinari.forEach(o=>{ sede(String(o.sedeId)); data(o,"data","Intervento straordinario"); ops(o,"Intervento straordinario del "+dShort(o.data)) });
+  dati.assenze.forEach(o=>{ operatore(String(o.operatoreId||"senza_codice")); o.operatoreId=String(o.operatoreId||"senza_codice"); data(o,"dal","Assenza"); if(o.al&&dateDB(o.al)&&o.al<o.dal){note.push(`Assenza dal ${dShort(o.dal)}: la data di fine era precedente all'inizio, impostata uguale all'inizio.`);o.al=o.dal} });
+  dati.ispezioni.forEach(o=>{ sede(String(o.sedeId)); data(o,"data","Ispezione") });
+  dati.preventivi.forEach(o=>{ opt("preventivi",o,"clienteId","clienti","Preventivo") });
+  const numeri=new Set((base.fatture||[]).filter(x=>!dati.fatture.some(y=>y.id===x.id)).map(x=>(x.tipo==="nc"?"nc":"f")+"|"+x.numero));
+  dati.fatture.sort((a,b)=>(a.tipo==="nc")-(b.tipo==="nc"));
+  dati.fatture.forEach(o=>{ const cosa=o.tipo==="nc"?"Nota di credito":"Fattura"; if(o.tipo!=="nc")o.tipo="fattura";
+    if(!o.clienteId||!idsDi("clienti").has(String(o.clienteId)))o.clienteId=cliente(String(o.clienteId||"senza_codice"),o.clienteNome);
+    if(!o.numero)o.numero="SN-"+o.id; data(o,"data",cosa+" "+o.numero);
+    let k=(o.tipo==="nc"?"nc":"f")+"|"+o.numero; if(numeri.has(k)){ let n=2; while(numeri.has(k+" ("+n+")"))n++; note.push(`${cosa} ${o.numero} del ${dShort(o.data)}: numero già usato da un altro documento, rinominata "${o.numero} (${n})". Controllala.`); o.numero=o.numero+" ("+n+")"; k=(o.tipo==="nc"?"nc":"f")+"|"+o.numero } numeri.add(k);
+    opt("fatture",o,"pagamento","pagamenti",cosa+" "+o.numero);
+    if(Array.isArray(o.preventivi))o.preventivi=o.preventivi.filter(x=>idsDi("preventivi").has(String(x)));
+    allocOk(o,cosa+" "+o.numero) });
+  dati.acquisti.forEach(o=>{ if(!o.fornitoreId||!idsDi("fornitori").has(String(o.fornitoreId)))o.fornitoreId=fornitore(String(o.fornitoreId||"senza_codice")); if(!o.numero)o.numero="SN-"+o.id; data(o,"data","Fattura d'acquisto "+o.numero); opt("acquisti",o,"pagamento","pagamenti","Fattura d'acquisto "+o.numero) });
+  dati.movimenti.forEach(o=>{ const cosa="Movimento del "+dShort(o.data)+(o.descrizione?` (${o.descrizione})`:"");
+    if(!["entrata","uscita","giroconto"].includes(o.tipo)){note.push(`${cosa}: tipo "${o.tipo||""}" non valido, considerato uscita.`);o.tipo="uscita"}
+    data(o,"data","Movimento"); o.conto=conto(String(o.conto||"banca"));
+    if(o.tipo==="giroconto"){ o.contoDest=conto(String(o.contoDest||(o.conto==="cassa"?"banca":"cassa"))); o.soggetto="" } else o.contoDest="";
+    const s=String(o.soggetto||""); if(s.startsWith("c:"))cliente(s.slice(2)); else if(s.startsWith("f:"))fornitore(s.slice(2)); else o.soggetto="";
+    if(numDB(o.importo)==null){note.push(`${cosa}: importo non valido, impostato a 0.`);o.importo=0}
+    allocOk(o,cosa) });
+  dati.cu=dati.cu.filter(o=>{ if(!o.clienteId)o.clienteId=o.id.split("_")[0]; if(!o.anno)o.anno=o.id.split("_").pop(); if(!idsDi("clienti").has(String(o.clienteId))){note.push(`Certificazione unica ${o.id}: il condominio non esiste più, non trasferita.`);return false} return true });
+  const lc=dati.liste.find(x=>x.id==="codiciIva"); if(lc&&Array.isArray(lc.valori)){const v=new Set(); lc.valori=lc.valori.filter(x=>x&&x.id&&!v.has(x.id)&&v.add(x.id))}
+  const items=[]; ORDINE_COLS.forEach(c=>dati[c].forEach(o=>items.push({c,o})));
+  return {items,note};
+}
+async function trasferisci(D,base,onProg){
+  const {items,note}=preparaTrasferimento(D,base);
+  const r=await salvaMolti(items,onProg);
+  const attesi={}; items.forEach(x=>attesi[x.c]=(attesi[x.c]||0)+1);
+  return {attesi,note,errori:r.errori,fatti:r.fatti,totale:items.length};
+}
+let migra=null; // stato della schermata di trasferimento
+const NOMI_COL={clienti:"Clienti",sedi:"Sedi",operatori:"Dipendenti",registro:"Turni segnati (svolti o saltati)",straordinari:"Interventi straordinari",preventivi:"Preventivi",ispezioni:"Ispezioni",fatture:"Fatture e note di credito",fornitori:"Fornitori",acquisti:"Fatture d'acquisto",movimenti:"Movimenti di prima nota",conti:"Conti di cassa e banca",liste:"Elenchi, codici IVA e dati impresa",variazioni:"Turni modificati",assenze:"Assenze",pagamenti:"Tipi di pagamento",amministratori:"Amministratori",cu:"Certificazioni uniche"};
+async function contaDocs(){
+  try{ const {count,error}=await sb.from("docs").select("col",{count:"exact",head:true}).neq("col","agenda"); return error?null:(count||0) }catch(e){return null}
+}
+async function leggiDocs(){
+  const all=[];
+  for(let from=0;;from+=1000){ const {data,error}=await sb.from("docs").select("col,id,data").order("col").order("id").range(from,from+999); if(error)throw error; all.push(...data); if(data.length<1000)break }
+  const D={}; all.forEach(r=>{ if(r.col==="agenda"||!COLS.includes(r.col))return; (D[r.col]=D[r.col]||[]).push(Object.assign({},r.data,{id:r.id})) });
+  return D;
+}
+function migraView(){
+  const m=migra||{};
+  if(m.esito){ const e=m.esito, ok=!e.errori.length;
+    return `<div class="authbox panel" style="max-width:760px"><h1>${ok?"Trasferimento completato":"Trasferimento completato con errori"}</h1>
+      <div class="tablewrap"><table><thead><tr><th>Archivio</th><th class="r">Nella vecchia tabella</th><th class="r">Nelle nuove tabelle</th></tr></thead><tbody>${COLS.filter(c=>(m.conteggi[c]||0)||(e.attesi[c]||0)).map(c=>`<tr><td>${esc(NOMI_COL[c]||c)}</td><td class="r num">${m.conteggi[c]||0}</td><td class="r num">${(S[c]||[]).length}</td></tr>`).join("")}</tbody></table></div>
+      ${e.note.length?`<h2 style="font-size:15px;margin-top:16px">Sistemazioni fatte (${e.note.length})</h2><pre class="copy" style="max-height:220px;overflow:auto;white-space:pre-wrap">${esc(e.note.join("\n"))}</pre>`:""}
+      ${e.errori.length?`<h2 style="font-size:15px;margin-top:16px" class="neg">Record non trasferiti (${e.errori.length})</h2><pre class="copy" style="max-height:220px;overflow:auto;white-space:pre-wrap">${esc(e.errori.join("\n"))}</pre><p class="note">Questi record restano nella vecchia tabella. Puoi correggerli e ripetere il trasferimento da Impostazioni.</p>`:""}
+      <p class="note">La vecchia tabella <b>docs</b> resta in Supabase come copia: non la usa più nessuno. Quando avrai verificato i dati per qualche settimana potrai eliminarla.</p>
+      <div class="actions"><button class="btn primary" data-act="migraFine">Apri il gestionale</button></div></div>` }
+  return `<div class="authbox panel" style="max-width:640px"><h1>Nuove tabelle pronte</h1>
+    <p>Il database ora ha una tabella per ogni archivio, collegate tra loro. I tuoi dati sono ancora nella vecchia tabella <b>docs</b>: trasferiscili con il pulsante qui sotto. La vecchia tabella non viene toccata e resta come copia.</p>
+    ${m.conteggi?`<p class="small muted">${Object.entries(m.conteggi).map(([k,v])=>esc(NOMI_COL[k]||k)+" "+v).join(" · ")}</p>`:""}
+    <p class="note">Prima di iniziare puoi scaricare un backup completo con "Esporta dati" (lo trovi anche dopo, in Impostazioni). Se qualche documento fa riferimento a dati eliminati (per esempio una fattura di un cliente cancellato), viene creato un record "recuperato" al suo posto: nessun documento va perso, e alla fine vedi l'elenco delle sistemazioni.</p>
+    <p id="migraStato" class="ok-msg" role="status">${esc(m.stato||"")}</p>
+    <div class="actions"><button class="btn primary" data-act="migra" ${m.inCorso?"disabled":""}>Trasferisci i dati</button><button class="btn" data-act="migraExport" ${m.inCorso?"disabled":""}>Scarica prima un backup</button><button class="btn ghost" data-act="logout">Esci</button></div></div>`;
+}
+async function eseguiMigrazione(){
+  if(migra&&migra.inCorso)return;
+  migra=Object.assign(migra||{},{inCorso:true,stato:"Lettura della vecchia tabella…"}); render();
+  try{
+    const D=await leggiDocs(); migra.conteggi={}; Object.entries(D).forEach(([k,v])=>migra.conteggi[k]=v.length);
+    const base=await caricaDB();
+    // ripetendo il trasferimento si aggiungono solo i record che mancano, senza toccare quelli già nelle nuove tabelle
+    if(migra.soloMancanti)Object.keys(D).forEach(c=>{const ex=new Set((base[c]||[]).map(x=>x.id)); D[c]=D[c].filter(x=>!ex.has(String(x.id)))});
+    const e=await trasferisci(D,base,(n,t)=>{const el=$("#migraStato"); if(el)el.textContent=`Trasferiti ${n} record su ${t}…`});
+    await loadAll(); migra.esito=e; migra.inCorso=false; migra.stato="";
+  }catch(err){ migra.inCorso=false; migra.stato=""; toast(erroreDB(err)); }
+  render();
 }
 
 /* ---------- operatività: calcoli ---------- */
@@ -866,11 +1118,11 @@ document.addEventListener("input",e=>{
 });
 async function seedPagamenti(forza){
   if(!forza&&(S.pagamenti.length||S.liste.some(x=>x.id==="pagamentiInit")))return;
-  const rows=PAG_DEFAULT.filter(p=>!S.pagamenti.some(x=>x.id===p.id)).map(p=>{const d=Object.assign({},p);delete d.id;return {col:"pagamenti",id:p.id,data:d}});
-  rows.push({col:"liste",id:"pagamentiInit",data:{valori:[]}});
-  const {error}=await sb.from("docs").upsert(rows); if(error){toast(errMsg(error));return}
-  rows.forEach(r=>{if(!S[r.col].some(x=>x.id===r.id))S[r.col].push(Object.assign({id:r.id},r.data))}); ver++; render();
-  if(forza)toast(`Caricati ${rows.length-1} tipi di pagamento`);
+  const items=PAG_DEFAULT.filter(p=>!S.pagamenti.some(x=>x.id===p.id)).map(p=>({c:"pagamenti",o:Object.assign({},p)}));
+  if(!S.liste.some(x=>x.id==="pagamentiInit"))items.push({c:"liste",o:{id:"pagamentiInit",valori:[]}});
+  const r=await salvaMolti(items); if(r.errori.length){toast(r.errori[0]);return}
+  items.forEach(({c,o})=>{if(!S[c].some(x=>x.id===o.id))S[c].push(roundTrip(c,o))}); ver++; render();
+  if(forza)toast(`Caricati ${items.filter(x=>x.c==="pagamenti").length} tipi di pagamento`);
 }
 function vPagamenti(){
   const uso=id=>S.clienti.filter(x=>x.pagamento===id).length+S.fornitori.filter(x=>x.pagamento===id).length;
@@ -930,6 +1182,7 @@ function vImpostazioni(){
     <p class="note">"Importa dati" carica il file esportato dall'app su Claude (o un backup di questa app). I record con lo stesso codice vengono sovrascritti. "Esporta dati" salva una copia completa sul tuo computer: fallo ogni tanto come backup.</p>
     <div class="actions">${hasExamples()?'<button class="btn" data-act="rmEx">Rimuovi dati di esempio</button>':'<button class="btn" data-act="loadEx">Carica dati di esempio</button>'}</div></section>
     ${fePanel()}
+    ${docsN>0?`<section class="panel"><h2>Vecchia tabella "docs"</h2><p class="note">Contiene ancora ${docsN} record del vecchio formato, già trasferiti nelle nuove tabelle. Non viene più usata. Se qualche record non era stato trasferito puoi ripetere il trasferimento: vengono aggiunti solo i record che mancano, quelli già nelle nuove tabelle non vengono toccati.</p><div class="actions"><button class="btn" data-act="rimigra">Ripeti il trasferimento</button></div></section>`:""}
     <section class="panel"><h2>Account</h2><p class="note">Sei entrato come <b>${esc(me&&me.email||"")}</b>, titolare. Per cambiare password usa "Password dimenticata" nella pagina di accesso.</p></section></div></div>`;
 }
 function vAgenda(){
@@ -1952,15 +2205,25 @@ async function loadExamples(){
   w.push(["movimenti",{id:"mv5",data:D(-1),tipo:"uscita",conto:"cassa",causale:"Carburante",importo:45,soggetto:"",descrizione:"Rifornimento furgone",alloc:[],esempio:true}]);
   w.push(["movimenti",{id:"mv6",data:D(-1),tipo:"giroconto",conto:"cassa",contoDest:"banca",causale:"Giroconto tra conti",importo:200,soggetto:"",descrizione:"Versamento contanti",alloc:[],esempio:true}]);
   toast("Carico i dati di esempio…");
-  for(const [c,o] of w){ if(!(await save(c,o)))return }
+  PAG_DEFAULT.filter(p=>!S.pagamenti.some(x=>x.id===p.id)).forEach(p=>w.push(["pagamenti",Object.assign({},p)]));
+  const ord=c=>ORDINE_COLS.indexOf(c);
+  w.sort((a,b)=>ord(a[0])-ord(b[0])||((a[1].tipo==="nc")-(b[1].tipo==="nc")));
+  const r=await salvaMolti(w.map(([c,o])=>({c,o})));
+  if(r.errori.length){toast("Dati di esempio non caricati: "+r.errori[0]);return}
+  await loadAll(); ver++; render(); schedulePublish();
   toast("Dati di esempio caricati");
 }
 async function removeExamples(btn){
   if(!btn.dataset.sure){btn.dataset.sure="1";btn.textContent="Conferma: elimina gli esempi";return}
-  const exSedi=new Set(S.sedi.filter(x=>x.esempio).map(x=>x.id));
-  for(const x of S.registro.filter(r=>exSedi.has(r.sedeId))) await del("registro",x.id);
-  for(const c of COLS) for(const x of S[c].filter(x=>x.esempio)) await del(c,x.id);
-  toast("Dati di esempio rimossi");
+  btn.disabled=true;
+  const exSedi=new Set(S.sedi.filter(x=>x.esempio).map(x=>x.id)); let ko=0;
+  const ops=S.registro.filter(r=>exSedi.has(r.sedeId)).map(x=>({tab:"registro",elimina:x.id}));
+  ORDINE_COLS.slice().reverse().forEach(c=>{ if(c==="liste")return; S[c].filter(x=>x.esempio).sort((a,b)=>(b.tipo==="nc")-(a.tipo==="nc")).forEach(x=>{ if(c==="conti"&&DEF_CONTI.some(d=>d.id===x.id))return; ops.push({tab:DBS[c].t,elimina:x.id}) }) });
+  try{ await salvaOps(ops) }catch(e){ for(const o of ops){ try{await salvaOps([o])}catch(e2){ko++} } }
+  // i due conti predefiniti tornano ai valori iniziali
+  const reset=DEF_CONTI.filter(d=>{const x=byId("conti",d.id); return x&&x.esempio}).map(d=>({c:"conti",o:Object.assign({},d)})); if(reset.length)await salvaMolti(reset);
+  await loadAll(); ver++; render(); schedulePublish();
+  toast(ko?`Dati di esempio rimossi, tranne ${ko} collegati a dati tuoi`:"Dati di esempio rimossi");
 }
 
 /* ---------- eventi ---------- */
@@ -1972,6 +2235,10 @@ document.addEventListener("click",async e=>{
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
   if(d.auth){authAction(d.auth);return}
   if(d.act==="logout"){await sb.auth.signOut(); location.reload(); return}
+  if(d.act==="migra"){eseguiMigrazione();return}
+  if(d.act==="migraExport"){const D=await leggiDocs(); const blob=new Blob([JSON.stringify({app:"registro-pulizie",versione:1,esportato:new Date().toISOString(),dati:D},null,1)],{type:"application/json"}); scarica("registro-pulizie-backup-"+TODAY()+".json",blob); toast("Backup scaricato");return}
+  if(d.act==="migraFine"){migra=null; docsN=await contaDocs(); avviaDb(); return}
+  if(d.act==="rimigra"){ if(!el.dataset.sure){el.dataset.sure="1";el.textContent="Conferma: ripeti il trasferimento";return} mode="migra"; migra={conteggi:null,soloMancanti:true}; render(); eseguiMigrazione(); return}
   if(d.act==="export"){esporta();return}
   if(d.act==="import"){$("#impFile").value="";$("#impFile").click();return}
   if(d.act==="doImport"){importa();return}
@@ -2051,7 +2318,7 @@ document.addEventListener("click",async e=>{
     if(!el.dataset.sure){el.dataset.sure="1";
       const linked=c==="fatture"?allocated("v:"+rec.id):c==="acquisti"?allocated("a:"+rec.id):0;
       el.textContent=c==="variazioni"?"Conferma: torna al turno originale":linked?"Conferma: gli abbinamenti resteranno da riassegnare":"Conferma eliminazione";return}
-    if(c==="conti"&&DEF_CONTI.some(x=>x.id===rec.id)&&!S.conti.some(x=>x.id===rec.id)){closeModal();return}
+    if(c==="conti"&&DEF_CONTI.some(x=>x.id===rec.id)){$("#ferr").textContent="È uno dei due conti predefiniti (cassa e banca): non si elimina, ma puoi cambiargli nome e saldo.";return}
     if(await del(c,rec.id)){closeModal();toast(c==="variazioni"?"Turno riportato all'originale":"Eliminato")}
   }
 });
@@ -2118,12 +2385,13 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&current)closeModal(
 const CFG=window.RP_CONFIG||{};
 let T=[];                 // timbrature caricate (ultimi 62 giorni)
 const AG={};              // agende pubblicate per dipendente (per non riscriverle se uguali)
-let me=null, gpsOn=false, recovery=false, authMsg="", authOk="", importBuf=null;
+let me=null, gpsOn=false, recovery=false, authMsg="", authOk="", importBuf=null, docsN=null;
 function scheduleRender(){clearTimeout(scheduleRender._t);scheduleRender._t=setTimeout(()=>{ver++;render()},150)}
 const stripGen=d=>{const x=Object.assign({},d);delete x.generato;return x};
 
 function authView(){
   if(mode==="loading")return `<div class="authbox"><h1>Registro Pulizie</h1><p class="muted">Caricamento dei dati…</p></div>`;
+  if(mode==="migra")return migraView();
   if(mode==="notowner")return `<div class="authbox panel"><h1>Accesso riservato</h1><p>Sei entrato come <b>${esc(me&&me.email||"")}</b>, che non è l'account del titolare.</p><p class="note">Se sei un dipendente usa l'app dipendenti: <a href="dipendenti/">apri l'app dipendenti</a>.</p><div class="actions"><button class="btn" data-act="logout">Esci</button></div></div>`;
   const msg=(authMsg?`<p class="err" role="alert">${esc(authMsg)}</p>`:"")+(authOk?`<p class="ok-msg" role="status">${esc(authOk)}</p>`:"");
   if(recovery)return `<div class="authbox panel"><h1>Nuova password</h1><form id="authForm" data-def="newpw" novalidate>
@@ -2162,10 +2430,10 @@ async function authAction(kind){
   }catch(e){ authMsg=traduci(e.message); render() }
 }
 async function loadAll(){
-  const all=[];
-  for(let from=0;;from+=1000){ const {data,error}=await sb.from("docs").select("col,id,data").order("col").order("id").range(from,from+999); if(error)throw error; all.push(...data); if(data.length<1000)break }
-  COLS.forEach(c=>S[c]=[]);
-  all.forEach(r=>{ if(r.col==="agenda"){AG[r.id]=JSON.stringify(stripGen(r.data));return} if(S[r.col])S[r.col].push(Object.assign({id:r.id},r.data)) });
+  const r=await caricaDB(); COLS.forEach(c=>S[c]=r[c]||[]);
+  const {data,error}=await sb.from("agenda").select("operatore_id,data"); if(error)throw error;
+  for(const k of Object.keys(AG))delete AG[k];
+  (data||[]).forEach(x=>AG[x.operatore_id]=JSON.stringify(stripGen(x.data)));
 }
 async function loadTimb(){
   const out=[];
@@ -2173,14 +2441,13 @@ async function loadTimb(){
   T=out;
 }
 function subscribe(){
-  sb.channel("registro")
-   .on("postgres_changes",{event:"*",schema:"public",table:"docs"},p=>{
-     const r=p.eventType==="DELETE"?p.old:p.new; if(!r||!r.col)return;
-     if(r.col==="agenda"){ if(p.eventType==="DELETE")delete AG[r.id]; else AG[r.id]=JSON.stringify(stripGen(r.data)); return }
-     if(!S[r.col])return;
-     S[r.col]=S[r.col].filter(x=>x.id!==r.id); if(p.eventType!=="DELETE")S[r.col].push(Object.assign({id:r.id},r.data));
-     scheduleRender(); schedulePublish();
-   })
+  let ch=sb.channel("registro");
+  Object.keys(TAB_COL).forEach(t=>{ ch=ch.on("postgres_changes",{event:"*",schema:"public",table:t},p=>{
+     const r=p.eventType==="DELETE"?p.old:p.new; if(!r||!r.id)return; const c=TAB_COL[t];
+     if(p.eventType==="DELETE"){ S[c]=S[c].filter(x=>x.id!==r.id); if(DEL_RELOAD[c])accoda(DEL_RELOAD[c]); scheduleRender(); schedulePublish(); return }
+     accoda([c],r.id);
+   }) });
+  ch=ch
    .on("postgres_changes",{event:"*",schema:"public",table:"timbrature"},p=>{
      const r=p.eventType==="DELETE"?p.old:p.new; if(!r||!r.id)return;
      const nuova=p.eventType==="INSERT"&&!T.some(x=>x.id===r.id);
@@ -2189,6 +2456,21 @@ function subscribe(){
      if(nuova){const op=byId("operatori",r.operatore_id); toast(`${op?op.nome:"Un dipendente"}: ${r.tipo==="inizio"?"ha iniziato":"ha finito"} il lavoro alle ${tsHM(r.ts)}`)}
    })
    .subscribe();
+}
+// modifiche arrivate da un altro dispositivo: si ricaricano i record interessati, a gruppi
+const coda={}; let codaT=null;
+function accoda(cols,id){ cols.forEach(c=>{ const q=coda[c]=coda[c]||{tutti:false,ids:new Set()}; if(id==null)q.tutti=true; else q.ids.add(id) }); clearTimeout(codaT); codaT=setTimeout(svuotaCoda,300) }
+async function svuotaCoda(){
+  const job=Object.assign({},coda); for(const k of Object.keys(coda))delete coda[k];
+  for(const [c,q] of Object.entries(job)){
+    try{
+      if(q.tutti){ const r=await caricaDB([c]); S[c]=r[c] }
+      else { const ids=[...q.ids]; const r=await caricaDB([c],ids); const nuovi=r[c]||[];
+        S[c]=S[c].filter(x=>!ids.includes(x.id)||nuovi.some(y=>y.id===x.id)).map(x=>nuovi.find(y=>y.id===x.id)||x);
+        nuovi.forEach(y=>{ if(!S[c].some(x=>x.id===y.id))S[c].push(y) }) }
+    }catch(e){ console.warn("aggiornamento",c,e) }
+  }
+  scheduleRender(); schedulePublish();
 }
 // agenda di ogni dipendente con email: da ieri ai prossimi 14 giorni
 let pubT=null;
@@ -2206,10 +2488,10 @@ async function pubblicaAgende(){
       return {data:d,assenza:a?{tipo:a.tipo,dalle:a.dalle||"",alle:a.alle||""}:null,turni}});
     const doc={operatoreId:op.id,nome:op.nome,gps:gpsOn,giorni}, js=JSON.stringify(doc);
     if(AG[op.id]===js)continue;
-    const {error}=await sb.from("docs").upsert({col:"agenda",id:op.id,data:Object.assign({generato:new Date().toISOString()},doc)});
+    const {error}=await sb.from("agenda").upsert({operatore_id:op.id,data:Object.assign({generato:new Date().toISOString()},doc)});
     if(error){console.warn("agenda",op.nome,error);continue} AG[op.id]=js;
   }
-  for(const id of Object.keys(AG)) if(!ops.some(o=>o.id===id)){ const {error}=await sb.from("docs").delete().match({col:"agenda",id}); if(!error)delete AG[id] }
+  for(const id of Object.keys(AG)) if(!ops.some(o=>o.id===id)){ const {error}=await sb.from("agenda").delete().eq("operatore_id",id); if(!error)delete AG[id] }
   if(tab==="impostazioni")render();
 }
 // esportazione e importazione
@@ -2223,7 +2505,7 @@ async function leggiImport(file){
   if(!file)return;
   let j; try{ j=JSON.parse(await file.text()) }catch{ toast("Il file non è un backup valido (JSON non leggibile)."); return }
   const dati=j&&j.dati?j.dati:j; const rows=[];
-  COLS.forEach(c=>(Array.isArray(dati&&dati[c])?dati[c]:[]).forEach(x=>{ if(!x||!x.id)return; const d=Object.assign({},x); delete d.id; rows.push({col:c,id:String(x.id),data:d}) }));
+  COLS.forEach(c=>(Array.isArray(dati&&dati[c])?dati[c]:[]).forEach(x=>{ if(!x||!x.id)return; rows.push({col:c,id:String(x.id),data:x}) }));
   if(!rows.length){toast("Nel file non ci sono dati del Registro Pulizie.");return}
   importBuf=rows;
   const cnt={}; rows.forEach(r=>cnt[r.col]=(cnt[r.col]||0)+1);
@@ -2233,8 +2515,11 @@ async function leggiImport(file){
 async function importa(){
   const rows=importBuf||[]; if(!rows.length)return;
   const btn=$('[data-act="doImport"]'); if(btn){btn.disabled=true;btn.textContent="Importazione in corso…"}
-  for(let i=0;i<rows.length;i+=400){ const {error}=await sb.from("docs").upsert(rows.slice(i,i+400)); if(error){$("#ferr").textContent=errMsg(error); if(btn){btn.disabled=false;btn.textContent="Riprova"} return} }
-  importBuf=null; closeAll(); await loadAll(); ver++; render(); schedulePublish(500); toast(`Importati ${rows.length} record`);
+  const D={}; rows.forEach(r=>(D[r.col]=D[r.col]||[]).push(r.data));
+  let e; try{ e=await trasferisci(D,S,(n,t)=>{if(btn)btn.textContent=`Importazione: ${n} di ${t}…`}) }catch(err){ $("#ferr").textContent=erroreDB(err); if(btn){btn.disabled=false;btn.textContent="Riprova"} return }
+  importBuf=null; closeAll(); await loadAll(); ver++; render(); schedulePublish(500);
+  toast(`Importati ${e.fatti} record`+(e.errori.length?`, ${e.errori.length} con errori`:""));
+  if(e.note.length||e.errori.length)mostraTesto("Esito dell'importazione",[...(e.errori.length?["Record non importati:",...e.errori,""]:[]),...(e.note.length?["Sistemazioni fatte:",...e.note]:[])].join("\n"));
 }
 async function enter(session){
   me=session.user; mode="loading"; authMsg=""; render();
@@ -2242,7 +2527,13 @@ async function enter(session){
   if(error){ mode="login"; authMsg="Il database non è pronto: hai eseguito lo script schema.sql in Supabase? ("+error.message+")"; return render() }
   if(!tit){ mode="notowner"; return render() }
   try{ await loadAll(); await loadTimb(); const {data:imp}=await sb.from("impostazioni").select("gps_attivo").eq("id",1).maybeSingle(); gpsOn=!!(imp&&imp.gps_attivo) }
-  catch(e){ mode="login"; authMsg="Caricamento non riuscito: "+traduci(e.message); return render() }
+  catch(e){ mode="login"; authMsg=/PGRST205|42P01/.test(e&&e.code||"")||/does not exist|Could not find the table/i.test(e&&e.message||"")?"Il database va aggiornato: in Supabase apri SQL Editor, incolla lo script supabase/schema_v2.sql del repository e premi Run. Poi ricarica questa pagina.":"Caricamento non riuscito: "+traduci(e.message); return render() }
+  docsN=await contaDocs();
+  const vuoto=["clienti","operatori","fornitori","fatture","movimenti","sedi","acquisti","preventivi"].every(c=>!S[c].length);
+  if(vuoto&&docsN>0){ mode="migra"; migra={conteggi:null}; render(); return }
+  avviaDb();
+}
+function avviaDb(){
   mode="db"; ver++; render(); subscribe(); schedulePublish(800); seedPagamenti(false);
   setInterval(()=>{ver++;render();schedulePublish()},15*60*1000);
 }

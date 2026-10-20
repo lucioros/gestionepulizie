@@ -13,7 +13,8 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 |---|---|
 | `index.html` | Gestionale del titolare: turni, agenda, clienti, personale, preventivi, qualità, fatture, prima nota, partite aperte, mastrini, timbrature |
 | `dipendenti/` | App dipendenti: turni di oggi e dei prossimi giorni, timbratura di inizio e fine lavoro, ore del mese |
-| `supabase/schema.sql` | Tabelle e permessi del database, da eseguire una volta in Supabase |
+| `supabase/schema.sql` | Impostazioni, timbrature e permessi di base (da eseguire per primo) |
+| `supabase/schema_v2.sql` | Tabelle collegate di tutti gli archivi, funzioni di salvataggio e permessi (da eseguire dopo) |
 | `config.js` | Indirizzo del progetto Supabase e chiave pubblica (anon) |
 | `vendor/` | Librerie Supabase e JSZip (MIT), incluse per non dipendere da CDN esterni |
 
@@ -21,8 +22,10 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 
 ### 1. Database
 1. Supabase → **SQL Editor** → **New query**.
-2. Incolla tutto il contenuto di `supabase/schema.sql` e premi **Run**.
-3. L'ultima riga mostra l'email del titolare (`luciorosalba@gmail.com`). Se vuoi usarne un'altra, cambiala nello script (sezione 1) e rilancialo.
+2. Incolla tutto il contenuto di `supabase/schema.sql` e premi **Run**. L'ultima riga mostra l'email del titolare (`luciorosalba@gmail.com`). Se vuoi usarne un'altra, cambiala nello script (sezione 1) e rilancialo.
+3. Nuova query: incolla tutto il contenuto di `supabase/schema_v2.sql` e premi **Run**. Crea le tabelle collegate e le funzioni che usa il gestionale.
+
+Entrambi gli script si possono rilanciare senza perdere dati.
 
 ### 2. Accesso con email
 1. Supabase → **Authentication → URL Configuration**:
@@ -42,6 +45,37 @@ GitHub → repository → **Settings → Pages** → *Build and deployment*: **D
 1. Nella scheda di ogni dipendente compila **Email per l'app dipendenti**.
 2. Manda al dipendente il link dell'app dipendenti. Lui sceglie **Prima volta? Crea account** con quella email, conferma l'email ed entra.
 3. Sul telefono: Android/Chrome → **Installa app**; iPhone/Safari → **Condividi → Aggiungi alla schermata Home**.
+
+## Il database
+
+Ogni archivio ha la sua tabella, collegata alle altre con chiavi esterne:
+
+- **Anagrafiche**: `clienti` (con `clienti_righe`, le righe abituali in fattura), `amministratori`, `fornitori`, `operatori`, `conti`, `pagamenti`, `azienda`, `elenchi` (con `elenchi_voci` e `codici_iva`).
+- **Operatività**: `sedi` (con `sedi_operatori`, la squadra), `registro` (turni svolti o saltati), `variazioni` e `straordinari` (con le rispettive squadre), `assenze`, `ispezioni` (con `ispezioni_voti`), `preventivi` (con `preventivi_righe`).
+- **Contabilità**: `fatture` (con `fatture_righe`, `fatture_scadenze`, `fatture_preventivi` e `fatture_sdi_storia`), `acquisti` (con `acquisti_righe` e `acquisti_scadenze`), `movimenti` di prima nota, `abbinamenti` (quale incasso, pagamento o nota di credito salda quale fattura e quale rata), `cu`.
+- **App dipendenti**: `agenda` (turni pubblicati per ogni dipendente) e `timbrature`.
+
+Il database stesso impedisce i dati incoerenti. Non si può eliminare un cliente che ha sedi o fatture, né registrare una fattura per un cliente che non esiste. Ogni salvataggio passa dalla funzione `salva_lotto`, che scrive il record e tutte le sue righe in un'unica transazione: o va a buon fine tutto o niente. Gli eventuali campi che l'app aggiungerà in futuro finiscono nella colonna `extra` (JSON) finché non avranno una colonna propria.
+
+Per interrogare i dati usa le tabelle direttamente da Supabase (Table Editor o SQL Editor), ad esempio:
+
+```sql
+select f.numero, f.data, c.nome, sum(r.qta * r.prezzo) as imponibile
+from fatture f
+join clienti c on c.id = f.cliente_id
+join fatture_righe r on r.fattura_id = f.id
+group by f.id, c.nome
+order by f.data desc;
+```
+
+### Passaggio dalla vecchia tabella `docs`
+
+Fino a ottobre 2026 tutti i dati stavano nella tabella `docs` (un record JSON per riga). Dopo aver eseguito `schema_v2.sql`, alla prima apertura il gestionale propone **Trasferisci i dati**. Il trasferimento:
+- copia tutto nelle nuove tabelle senza toccare `docs`, che resta come copia di sicurezza;
+- quando un documento fa riferimento a un dato eliminato (per esempio una fattura di un cliente cancellato), crea un record "recuperato" al suo posto, così nessun documento va perso;
+- alla fine mostra quanti record sono stati trasferiti per archivio e l'elenco delle sistemazioni fatte.
+
+Da **Impostazioni → Ripeti il trasferimento** si possono aggiungere i record che mancassero, senza toccare quelli già presenti. Quando avrai verificato i dati per qualche settimana potrai eliminare la vecchia tabella con `drop table public.docs;`.
 
 ## Come funziona
 

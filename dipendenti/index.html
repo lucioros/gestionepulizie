@@ -175,7 +175,7 @@ async function authAction(kind){
 
 /* ---------- dati ---------- */
 async function caricaAgenda(){
-  const {data,error}=await sb.from("docs").select("data").eq("col","agenda").eq("id",op).maybeSingle();
+  const {data,error}=await sb.from("agenda").select("data").eq("operatore_id",op).maybeSingle();
   if(error)throw error; agenda=data?data.data:null;
 }
 async function caricaTimbrature(){
@@ -194,7 +194,7 @@ async function enter(session){
   if(error){ mode="login"; authMsg="Il servizio non è pronto: avvisa l'ufficio. ("+error.message+")"; return render() }
   if(!data){ mode="nolink"; return render() }
   op=data; await ricarica(true); mode="app"; render();
-  sb.channel("turni").on("postgres_changes",{event:"*",schema:"public",table:"docs",filter:"id=eq."+op},()=>ricarica(true))
+  sb.channel("turni").on("postgres_changes",{event:"*",schema:"public",table:"agenda",filter:"operatore_id=eq."+op},()=>ricarica(true))
     .on("postgres_changes",{event:"*",schema:"public",table:"timbrature"},()=>caricaTimbrature().then(render)).subscribe();
 }
 
