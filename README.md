@@ -25,7 +25,7 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 2. Incolla tutto il contenuto di `supabase/schema.sql` e premi **Run**. L'ultima riga mostra l'email del titolare (`luciorosalba@gmail.com`). Se vuoi usarne un'altra, cambiala nello script (sezione 1) e rilancialo.
 3. Nuova query: incolla tutto il contenuto di `supabase/schema_v2.sql` e premi **Run**. Crea le tabelle collegate e le funzioni che usa il gestionale.
 
-Entrambi gli script si possono rilanciare senza perdere dati.
+Entrambi gli script si possono rilanciare senza perdere dati. Se rilanci `schema.sql`, rilancia sempre anche `schema_v2.sql` subito dopo: il secondo aggiorna alcune funzioni del primo per farle lavorare sulle nuove tabelle.
 
 ### 2. Accesso con email
 1. Supabase → **Authentication → URL Configuration**:
