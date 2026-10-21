@@ -178,6 +178,11 @@ grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.docs, public.timbrature, public.impostazioni to authenticated;
 revoke all on public.docs, public.timbrature, public.impostazioni from anon;
 grant execute on function public.is_titolare(), public.mio_operatore(), public.gps_attivo() to authenticated;
+-- nessuna funzione si può chiamare senza login
+alter function public.tocca_updated_at() set search_path = public;
+revoke execute on function public.is_titolare(), public.mio_operatore(), public.gps_attivo(),
+  public.controlla_timbratura() from public, anon;
+revoke execute on function public.controlla_timbratura() from authenticated;
 
 -- ---------------------------------------------------------------------
 -- 7. Aggiornamenti in tempo reale (gestionale aperto su più dispositivi,

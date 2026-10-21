@@ -750,6 +750,20 @@ begin
   end if;
 end $$;
 
+-- ---------------------------------------------------------------------
+-- 9. Protezione delle funzioni
+--    Nessuna funzione si può chiamare senza login; la funzione di
+--    controllo delle timbrature la usa solo il trigger.
+-- ---------------------------------------------------------------------
+alter function public.tocca_updated_at() set search_path = public;
+alter function public.tocca_aggiornato() set search_path = public;
+alter function public.figlio_fk(text, text) set search_path = public;
+revoke execute on function public.is_titolare(), public.mio_operatore(), public.gps_attivo(),
+  public.controlla_timbratura(), public.figlio_fk(text, text), public.salva_lotto(jsonb) from public, anon;
+revoke execute on function public.controlla_timbratura() from authenticated;
+grant execute on function public.is_titolare(), public.mio_operatore(), public.gps_attivo(),
+  public.figlio_fk(text, text), public.salva_lotto(jsonb) to authenticated;
+
 -- Fatto. Verifica: deve restituire la tua email e il numero di record
 -- ancora da trasferire dalla vecchia tabella.
 select (select email_titolare from public.impostazioni) as titolare,
