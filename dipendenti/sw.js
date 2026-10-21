@@ -1,7 +1,7 @@
 // App dipendenti: funziona anche con rete debole.
 // I file dell'app arrivano prima dalla rete (così gli aggiornamenti sono subito visibili)
 // e, se la rete manca, dalla copia salvata. I dati di Supabase non vengono mai salvati qui.
-const CACHE = "turni-v1";
+const CACHE = "turni-v2";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "../vendor/supabase.js", "../config.js"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(n => n !== CACHE).map(n => caches.delete(n)))).then(() => self.clients.claim())); });

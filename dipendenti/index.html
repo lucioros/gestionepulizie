@@ -9,7 +9,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Turni">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>Turni · Registro Pulizie</title>
+<title>Turni · Gestione impresa pulizie</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -104,7 +104,7 @@ td.r{text-align:right;font-family:var(--f-mono);white-space:nowrap}
 </style>
 </head>
 <body>
-<div class="wrap" id="app"><div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">Turni</h1><p class="sub">Caricamento…</p></div></div>
+<div class="wrap" id="app"><div class="auth"><p class="brand">Gestione impresa pulizie</p><h1 class="hello">Turni</h1><p class="sub">Caricamento…</p></div></div>
 <nav class="tabs" id="tabs" hidden aria-label="Sezioni"></nav>
 <div class="toast" id="toast" hidden role="status"></div>
 <script src="../vendor/supabase.js"></script>
@@ -145,10 +145,10 @@ function traduci(m){
 }
 function authView(){
   const msg=(authMsg?`<p class="err" role="alert">${esc(authMsg)}</p>`:"")+(authOk?`<p class="okmsg" role="status">${esc(authOk)}</p>`:"");
-  if(recovery)return `<div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">Nuova password</h1><form id="authForm" data-def="newpw" novalidate>
+  if(recovery)return `<div class="auth"><p class="brand">Gestione impresa pulizie</p><h1 class="hello">Nuova password</h1><form id="authForm" data-def="newpw" novalidate>
     <div class="fld"><label for="a_pw">Nuova password (almeno 8 caratteri)</label><input id="a_pw" type="password" autocomplete="new-password"></div>${msg}
     <button class="btn primary big" type="submit">Salva la password</button></form></div>`;
-  return `<div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">I miei turni</h1><p class="sub">Entra con l'email che hai comunicato all'ufficio.</p>
+  return `<div class="auth"><p class="brand">Gestione impresa pulizie</p><h1 class="hello">I miei turni</h1><p class="sub">Entra con l'email che hai comunicato all'ufficio.</p>
   <form id="authForm" data-def="login" novalidate style="margin-top:18px">
     <div class="fld"><label for="a_email">Email</label><input id="a_email" type="email" autocomplete="username" inputmode="email" autocapitalize="off"></div>
     <div class="fld"><label for="a_pw">Password</label><input id="a_pw" type="password" autocomplete="current-password"></div>${msg}
@@ -282,15 +282,15 @@ function vOre(){
 function render(){
   const app=$("#app"), tabs=$("#tabs");
   if(mode==="login"){tabs.hidden=true; app.innerHTML=authView(); return}
-  if(mode==="loading"){tabs.hidden=true; app.innerHTML=`<div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">I miei turni</h1><p class="sub">Caricamento…</p></div>`; return}
-  if(mode==="nolink"){tabs.hidden=true; app.innerHTML=`<div class="auth"><p class="brand">Registro Pulizie</p><h1 class="hello">Account non ancora collegato</h1>
+  if(mode==="loading"){tabs.hidden=true; app.innerHTML=`<div class="auth"><p class="brand">Gestione impresa pulizie</p><h1 class="hello">I miei turni</h1><p class="sub">Caricamento…</p></div>`; return}
+  if(mode==="nolink"){tabs.hidden=true; app.innerHTML=`<div class="auth"><p class="brand">Gestione impresa pulizie</p><h1 class="hello">Account non ancora collegato</h1>
     <p>Sei entrato come <b>${esc(me.email)}</b>, ma questa email non è ancora collegata a un dipendente.</p><p class="sub">Chiedi all'ufficio di inserirla nella tua scheda, nel campo "Email per l'app dipendenti", poi tocca "Riprova".</p>
     <div class="row"><button class="btn primary" data-act="retry">Riprova</button><button class="btn" data-act="logout">Esci</button></div></div>`; return}
   const nome=(agenda&&agenda.nome||"").split(" ")[0];
   const off=!navigator.onLine?`<div class="banner warn">Sei offline: le timbrature funzionano solo con la connessione.</div>`:"";
   const inst=installEvt?`<button class="btn small" data-act="install">Installa app</button>`:"";
   const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)&&!window.navigator.standalone&&!localGet("iosHint")?`<div class="banner info">Per averla come app: tocca <b>Condividi</b> in Safari e poi <b>Aggiungi alla schermata Home</b>. <button class="btn small ghost" data-act="iosok">Ok</button></div>`:"";
-  app.innerHTML=`<header class="top"><div class="toprow"><span class="brand">Registro Pulizie</span><div class="row">${inst}<button class="btn small ghost" data-act="refresh" aria-label="Aggiorna">Aggiorna</button><button class="btn small ghost" data-act="logout">Esci</button></div></div>
+  app.innerHTML=`<header class="top"><div class="toprow"><span class="brand">Gestione impresa pulizie</span><div class="row">${inst}<button class="btn small ghost" data-act="refresh" aria-label="Aggiorna">Aggiorna</button><button class="btn small ghost" data-act="logout">Esci</button></div></div>
     <div class="hello">${tab==="oggi"?"Ciao"+(nome?" "+esc(nome):""):tab==="prossimi"?"Prossimi giorni":"Le mie ore"}</div><div class="sub">${tab==="oggi"?esc(cap(dLong(TODAY()))):tab==="prossimi"?"Fino a due settimane":"Riepilogo delle timbrature"}</div></header>
     ${off}${ios}${tab==="oggi"?vOggi():tab==="prossimi"?vProssimi():vOre()}`;
   tabs.hidden=false;
