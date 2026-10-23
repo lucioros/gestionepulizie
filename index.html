@@ -73,6 +73,7 @@ select.btn,input.btn{padding:6px 8px}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0;display:flex;flex-direction:column;gap:12px}
 .panel h2{font-size:17px;font-weight:700}
 .panel .ph{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.panel .ph>*{min-width:0;max-width:100%}
 .label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
 .kpi{padding:14px 16px;display:flex;flex-direction:column;gap:4px;border-left:1px solid var(--line);min-width:0}
@@ -141,8 +142,9 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);border-bottom:0}
 .client .ch b:hover{color:var(--accent)}
 .note{font-size:12px;color:var(--muted);max-width:80ch;margin:0}
 .note b{color:var(--ink)}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
-.seg button{all:unset;cursor:pointer;padding:6px 12px;font-weight:500;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface);max-width:100%;overflow-x:auto;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.seg button{all:unset;cursor:pointer;padding:6px 12px;font-weight:500;color:var(--muted);white-space:nowrap;flex-shrink:0}
 .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .saldi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
@@ -254,6 +256,57 @@ pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:
 }
 @media (prefers-reduced-motion:no-preference){.btn,.nav button{transition:background .12s,border-color .12s}}
 .banner-err{background:var(--bad-soft);color:var(--bad);border-radius:var(--r);padding:10px 12px}.banner-warn{background:var(--warn-soft);color:var(--ink);border-radius:var(--r);padding:10px 12px}.banner-err ul,.banner-warn ul{margin:4px 0 0;padding-left:18px}.ok-msg{color:var(--ok);margin:0}
+
+/* ---------- telefono e tablet ---------- */
+td>.cv{display:contents}
+.scrim{overscroll-behavior:contain}
+body:has(#modalRoot .scrim){overflow:hidden}
+.modal .mf{position:sticky;bottom:0;background:var(--surface);border-radius:0 0 10px 10px;z-index:2}
+@media (max-width:900px){
+  .nav,.subnav{-webkit-mask-image:linear-gradient(to right,#000 88%,transparent);mask-image:linear-gradient(to right,#000 88%,transparent);padding-right:24px}
+  .nav::-webkit-scrollbar,.subnav::-webkit-scrollbar{display:none}
+}
+@media (max-width:640px){
+  .scrim{padding:0}
+  .modal{width:100%;min-height:100%;border:0;border-radius:0}
+  .modal .mh{position:sticky;top:0;background:var(--surface);z-index:2;padding-top:max(14px,env(safe-area-inset-top,0px))}
+  .modal .mf{border-radius:0;padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}
+  .modal .mf .actions{flex:1;justify-content:flex-end}
+  /* elenchi come schede: ogni riga diventa un riquadro con etichetta e valore */
+  table.tc{font-size:13.5px}
+  table.tc thead{display:none}
+  table.tc,table.tc tbody,table.tc tfoot,table.tc tr,table.tc td{display:block;width:auto}
+  table.tc tr{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:0 0 10px;background:var(--surface)}
+  table.tc tfoot tr{background:var(--sunk);font-weight:600}
+  table.tc td{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border:0;padding:3px 0;text-align:right;white-space:normal}
+  table.tc td::before{content:attr(data-label);flex-shrink:0;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;font-family:var(--f-body)}
+  table.tc td[data-label=""]::before{content:none}
+  table.tc td:first-child{display:block;text-align:left;font-weight:600;font-size:14.5px;padding-bottom:6px;margin-bottom:2px;border-bottom:1px solid var(--line)}
+  table.tc td:first-child::before{content:none}
+  table.tc td.vuota{display:none}
+  table.tc td[data-label=""]{justify-content:flex-end}
+  table.tc td>.cv{display:block;min-width:0;text-align:right;overflow-wrap:anywhere}
+  table.tc td[data-label=""]>.cv{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+  .tablewrap{margin-inline:0}
+  table.tc tr.click:hover td,table.tc tr td{background-color:transparent}
+  table.tc tr.click:hover{background:var(--sunk)}
+  table.tc tr.sel{background:var(--accent-soft)}
+  table.altab td,table.altab td.r{white-space:normal;padding:6px 4px}
+  table.altab input[type=number]{width:88px}
+  table.altab tr:not(.grp) td:nth-child(2){padding-left:6px}
+}
+@media (pointer:coarse){
+  input:not([type=checkbox]):not([type=radio]),select,textarea{font-size:16px!important}
+  .btn{min-height:40px}
+  .btn.small{min-height:34px;padding:6px 10px;font-size:13px}
+  .occ .a{gap:6px}
+  .occ .a button{display:inline-flex;align-items:center;min-height:34px;padding:0 12px;font-size:13px}
+  .seg button{padding:9px 14px}
+  .nav button{padding:10px 12px}
+  .subnav button{padding:11px 14px}
+  input[type=checkbox],input[type=radio]{width:20px;height:20px}
+  .rg .x{min-width:36px;min-height:36px;display:grid;place-items:center}
+}
 </style>
 </head>
 <body>
@@ -971,6 +1024,19 @@ function render(){
   const V={amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
   const sub=G[2].length>1?`<div class="subnav" role="navigation" aria-label="${esc(G[1])}">${G[2].map(([k,l])=>`<button data-tab="${k}" ${tab===k?'aria-current="page"':""}>${esc(l)}</button>`).join("")}</div>`:"";
   m.innerHTML=sub+V[tab](al);
+  schedeTabelle(m);
+  const att=$("#nav [aria-current=page]"); if(att&&att.scrollIntoView&&innerWidth<=900)att.scrollIntoView({block:"nearest",inline:"nearest"});
+}
+// su telefono le tabelle diventano schede: ogni cella riceve l'etichetta della sua colonna
+function schedeTabelle(root){
+  root.querySelectorAll("table").forEach(t=>{
+    if(t.classList.contains("altab")||t.classList.contains("nocards"))return;
+    const hr=t.tHead&&t.tHead.rows[0]; if(!hr)return;
+    const lab=[]; [...hr.cells].forEach(c=>{for(let i=0;i<(c.colSpan||1);i++)lab.push(c.textContent.trim())});
+    [...t.tBodies,...(t.tFoot?[t.tFoot]:[])].forEach(b=>[...b.rows].forEach(r=>{let i=0; [...r.cells].forEach((c,k)=>{c.dataset.label=(c.colSpan>1?"":lab[i]||""); if(!c.textContent.trim()&&!c.querySelector("button,input,select"))c.classList.add("vuota");
+      else if(k>0&&!(c.childNodes.length===1&&c.firstElementChild&&c.firstElementChild.classList.contains("cv"))){const w=document.createElement("span"); w.className="cv"; while(c.firstChild)w.appendChild(c.firstChild); c.appendChild(w)} i+=c.colSpan||1})}));
+    t.classList.add("tc");
+  });
 }
 function hasExamples(){return COLS.some(c=>S[c].some(x=>x.esempio))}
 function emptyView(){
