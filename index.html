@@ -2837,9 +2837,9 @@ function esempiGare(){
       personale:[["Addetta 1","2",20],["Addetta 2","2",20],["Addetto 3","2",20],["Caposquadra uscente","3",25]].map(([nome,livello,oreSett])=>({nome,livello,oreSett})),
       documenti:docs("pubblica",4),garProvImporto:9300,garProvEmittente:"Compagnia assicurativa",garProvScadenza:D(190),esempio:true}]);
     w.push(["gare",{id:"ga2",oggetto:"Pulizia uffici distretto sanitario Nord",tipo:"pubblica",ente:"Azienda sanitaria di esempio",enteCf:"01234567897",enteCodice:"UFQ7LM",cig:"B7654321CD",procedura:"negoziata",criterio:"oepv",puntiTecnici:70,puntiEconomici:30,formula:"lineare",piattaforma:"MePA",
-      importoBase:210000,manodoperaSa:158000,oneriSicurezza:2000,durataMesi:24,dataPubblicazione:D(-95),scadOfferta:D(-60),dataEsito:D(-25),stato:"aggiudicata",costiLavoroId:"tl_es",livelloBase:"2",materialiPct:6,generaliPct:9,utilePct:5,
-      voci:[{lotto:"Sede distretto Nord",descr:"Uffici e ambulatori",mq:1600,passaggi:250,resa:190},{lotto:"Sede distretto Nord",descr:"Bagni e spogliatoi",mq:180,passaggi:250,resa:60}],
-      importoOfferto:186500,ribassoOfferto:14.2,posizione:1,punteggioTecnico:61.5,punteggioEconomico:28.7,aggiudicatario:"La nostra impresa",ribassoAggiudicazione:14.2,
+      importoBase:202000,manodoperaSa:158000,oneriSicurezza:2000,durataMesi:24,dataPubblicazione:D(-95),scadOfferta:D(-60),dataEsito:D(-25),stato:"aggiudicata",costiLavoroId:"tl_es",livelloBase:"2",materialiPct:6,generaliPct:9,utilePct:6,
+      voci:[{lotto:"Sede distretto Nord",descr:"Uffici e ambulatori",mq:1600,passaggi:312,resa:150},{lotto:"Sede distretto Nord",descr:"Bagni e spogliatoi",mq:180,passaggi:312,resa:55}],
+      importoOfferto:195882,ribassoOfferto:14.57,tecnicoStimato:60,posizione:1,punteggioTecnico:61.5,punteggioEconomico:28.7,aggiudicatario:"La nostra impresa",ribassoAggiudicazione:14.57,
       concorrenti:[{nome:"Alfa Pulizie Srl",ribasso:16.1,puntiTecnici:54,puntiTotali:84.2},{nome:"Beta Servizi Integrati",ribasso:9.8,puntiTecnici:58,puntiTotali:78.3}],
       garProvImporto:4200,garProvScadenza:D(60),cauzDefImporto:18650,cauzDefEmittente:"Banca di esempio",cauzDefScadenza:D(700),documenti:docs("pubblica",20).map(d=>d.stato==="pronto"?Object.assign({},d,{stato:"caricato"}):d),esempio:true}]);
     w.push(["gare",{id:"ga3",oggetto:"Pulizia biblioteca civica e archivio",tipo:"pubblica",ente:"Comune di Esempio",cig:"A9988776EF",procedura:"mepa",criterio:"prezzo",importoBase:64000,manodoperaSa:47000,oneriSicurezza:600,durataMesi:24,scadOfferta:D(-120),dataEsito:D(-90),stato:"persa",
