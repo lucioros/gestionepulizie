@@ -190,11 +190,29 @@ create table if not exists public.gare_concorrenti (
   primary key (gara_id, pos)
 );
 
+-- ---------------------------------------------------------------------
+-- 3b. Modelli Word dell'impresa (domande, dichiarazioni, relazioni)
+--     Il file sta nello spazio "allegati"; qui nome, categoria e percorso.
+-- ---------------------------------------------------------------------
+create table if not exists public.modelli_gara (
+  id            text primary key,
+  nome          text not null,
+  categoria     text,
+  descrizione   text,
+  file          text,
+  nome_file     text,
+  note          text,
+  esempio       boolean,
+  extra         jsonb not null default '{}'::jsonb,
+  creato_il     timestamptz not null default now(),
+  aggiornato_il timestamptz not null default now()
+);
+
 -- data di aggiornamento automatica
 do $$
 declare t text;
 begin
-  foreach t in array array['costi_lavoro','documenti_impresa','gare'] loop
+  foreach t in array array['costi_lavoro','documenti_impresa','gare','modelli_gara'] loop
     execute format('drop trigger if exists %I on public.%I', t || '_aggiornato', t);
     execute format('create trigger %I before update on public.%I for each row execute function public.tocca_aggiornato()', t || '_aggiornato', t);
   end loop;
@@ -204,7 +222,7 @@ end $$;
 -- 4. Registro degli archivi del modulo (per la funzione salva_lotto)
 -- ---------------------------------------------------------------------
 insert into public.archivi (tab, modulo) values
-  ('costi_lavoro', 'gare'), ('documenti_impresa', 'gare'), ('gare', 'gare')
+  ('costi_lavoro', 'gare'), ('documenti_impresa', 'gare'), ('gare', 'gare'), ('modelli_gara', 'gare')
 on conflict (tab) do update set modulo = excluded.modulo;
 insert into public.archivi_figli (padre, figlio, fk) values
   ('costi_lavoro', 'costi_lavoro_livelli', 'tabella_id'),
@@ -221,7 +239,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['costi_lavoro','costi_lavoro_livelli','documenti_impresa','gare','gare_voci',
-    'gare_personale','gare_documenti','gare_concorrenti'] loop
+    'gare_personale','gare_documenti','gare_concorrenti','modelli_gara'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists titolare on public.%I', t);
     execute format('create policy titolare on public.%I for all to authenticated using (is_titolare() and modulo_attivo(''gare'')) with check (is_titolare() and modulo_attivo(''gare''))', t);
@@ -255,7 +273,7 @@ do $$
 declare t text;
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    foreach t in array array['costi_lavoro','documenti_impresa','gare'] loop
+    foreach t in array array['costi_lavoro','documenti_impresa','gare','modelli_gara'] loop
       if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = t) then
         execute format('alter publication supabase_realtime add table public.%I', t);
       end if;

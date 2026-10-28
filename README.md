@@ -1,4 +1,4 @@
-# Registro Pulizie
+# Gestione impresa pulizie
 
 Gestionale per imprese di pulizia di uffici e condomini, con app per i dipendenti.
 
@@ -17,7 +17,8 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 | `supabase/schema_v2.sql` | Tabelle collegate di tutti gli archivi, funzioni di salvataggio, registro dei moduli e permessi (da eseguire dopo) |
 | `supabase/modulo_gare.sql` | Modulo facoltativo Gare d'appalto: tabelle, permessi legati al modulo, spazio file per gli allegati |
 | `config.js` | Indirizzo del progetto Supabase e chiave pubblica (anon) |
-| `vendor/` | Librerie Supabase e JSZip (MIT), incluse per non dipendere da CDN esterni |
+| `modelli/` | Modelli Word di base del modulo Gare (giustificazioni dell'offerta, domanda di partecipazione, clausola sociale, CAM, relazione tecnica) |
+| `vendor/` | Librerie Supabase, JSZip, PizZip e docxtemplater (tutte MIT), incluse per non dipendere da CDN esterni |
 
 ## Messa in funzione (una volta sola)
 
@@ -99,6 +100,9 @@ Alcune funzioni sono **moduli** che si attivano per azienda, per poterle include
 - Dalla gara vinta si crea **cliente e sedi** con un clic: codice ufficio PA, scissione dei pagamenti e CIG riportato nelle fatture.
 - **Statistiche**: tasso di vittoria, ribassi vincenti per ente, concorrenti più frequenti, motivi delle sconfitte.
 - **Avvisi** in Oggi per scadenze di offerte, sopralluoghi, chiarimenti, documenti, garanzie e contratti.
+- **Modelli Word**: dalla scheda di una gara si genera un documento Word già compilato con i dati dell'impresa, della gara e del calcolo dell'offerta (importi anche in lettere). Ci sono cinque modelli di base nella cartella `modelli/`; l'impresa può caricare i propri (tabella `modelli_gara`, file nello spazio `allegati`). Nei modelli i dati si indicano con segnaposto tra graffe, ad esempio `{impresa.denominazione}`, `{gara.cig}`, `{offerta.totale}`; le righe ripetute con `{#voci}…{/voci}`. L'elenco completo è in Gare → Modelli. La compilazione avviene nel browser, senza server aggiuntivi.
+
+Chi aveva già installato il modulo prima dei modelli Word deve rilanciare `supabase/modulo_gare.sql` (si può rieseguire senza perdere dati): finché non lo fa, il resto del modulo funziona e la pagina Modelli spiega cosa fare.
 
 I valori del costo del lavoro nei dati di esempio sono dimostrativi: vanno sostituiti con le tabelle del Ministero del Lavoro in vigore.
 
