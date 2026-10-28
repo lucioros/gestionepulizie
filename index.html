@@ -2109,7 +2109,8 @@ function vGare(){
   const corso=S.gare.filter(g=>GARA_APERTA.includes(g.stato)||g.stato==="presentata");
   const y=String(today().getFullYear()), pres=S.gare.filter(g=>GARA_PRESENTATA.includes(g.stato)&&(g.dataEsito||g.scadOfferta||"").startsWith(y)), vinte=pres.filter(g=>GARA_VINTA.includes(g.stato));
   const sett=S.gare.filter(g=>GARA_APERTA.includes(g.stato)&&g.scadOfferta&&giorniA(g.scadOfferta)>=0&&giorniA(g.scadOfferta)<=7).length;
-  return head("Gare d'appalto",`${corso.length} in corso · ${eur(corso.reduce((a,g)=>a+(+g.importoBase||0),0))} a base di gara`,`<button class="btn primary" data-new="gare">Nuova gara</button>`)+
+  const esGare=S.gare.some(g=>g.esempio);
+  return head("Gare d'appalto",`${corso.length} in corso · ${eur(corso.reduce((a,g)=>a+(+g.importoBase||0),0))} a base di gara`,`${esGare?"":`<button class="btn" data-act="loadExGare">Carica gare di esempio</button>`}<button class="btn primary" data-new="gare">Nuova gara</button>`)+
   `<div class="kpis"><div class="kpi"><span class="label">In corso</span><span class="v">${corso.length}</span><span class="n">da preparare o in attesa di esito</span></div>
    <div class="kpi"><span class="label">Scadenze 7 giorni</span><span class="v ${sett?"neg":""}">${sett}</span><span class="n">offerte da presentare</span></div>
    <div class="kpi"><span class="label">Vinte ${y}</span><span class="v">${vinte.length}/${pres.length}</span><span class="n">${pres.length?Math.round(vinte.length/pres.length*100)+"% delle offerte presentate":"nessuna offerta presentata"}</span></div>
@@ -2638,6 +2639,42 @@ async function mark(kind,id,stato){
 }
 
 /* ---------- dati di esempio ---------- */
+// esempi del modulo Gare (usati da "Carica dati di esempio" e dal pulsante nella pagina Gare)
+function esempiGare(){
+  const t=today(), y=t.getFullYear(), D=k=>iso(addDays(t,k)), w=[];
+    w.push(["costilavoro",{id:"tl_es",nome:"Multiservizi – valori di esempio",ccnl:"CCNL Multiservizi (servizi di pulizia)",ambito:"Provincia di esempio",decorrenza:y+"-01-01",fonte:"Valori dimostrativi, non ufficiali: sostituiscili con la tabella del Ministero del Lavoro",
+      livelli:[["1","Operaio comune",17.4],["2","Addetto alle pulizie",18.2],["3","Addetto qualificato",19.1],["4","Operaio specializzato",20.3],["5","Caposquadra",21.6],["6","Capo cantiere",23.4]].map(([livello,descrizione,costoOrario])=>({livello,descrizione,costoOrario})),esempio:true}]);
+    [["di1","DURC","Regolarità contributiva",D(-100),D(18)],["di2","Visura camerale","Registro imprese",D(-60),""],["di3","Iscrizione fascia di classificazione (DM 274/1997)","Fascia per volume d'affari",D(-400),""],
+     ["di4","Certificazione ISO 9001","Sistema di gestione qualità",D(-300),D(430)],["di5","Certificazione ISO 14001","Sistema di gestione ambientale",D(-700),D(-10)],["di6","Polizza RCT/RCO","Massimale 3.000.000 €",D(-150),D(215)]]
+     .forEach(([id,tipo,descrizione,rilascio,scadenza])=>w.push(["docimpresa",{id,tipo,descrizione,rilascio,scadenza,esempio:true}]));
+    const docs=(tipo,pronti)=>docGaraDefault(tipo).map((d,i)=>i<pronti&&d.stato==="da fare"?Object.assign({},d,{stato:"pronto"}):d);
+    w.push(["gare",{id:"ga1",oggetto:"Pulizia plessi scolastici – lotto 2",tipo:"pubblica",ente:"Comune di Esempio",enteCf:"80012345678",enteCodice:"UF3K2Z",cig:"B1234567AB",procedura:"aperta",criterio:"oepv",puntiTecnici:70,puntiEconomici:30,formula:"bilineare",coeffX:0.85,piattaforma:"Piattaforma telematica del Comune",
+      importoBase:465000,manodoperaSa:352000,oneriSicurezza:4500,durataMesi:36,rinnovoMesi:12,dataPubblicazione:D(-20),sopralluogo:D(3),sopralluogoObbl:true,scadChiarimenti:D(5),scadOfferta:D(9),oraOfferta:"12:00",aperturaBuste:D(12),cam:true,clausolaSociale:true,
+      requisiti:["DURC","Certificazione ISO 9001","Certificazione ISO 14001","Iscrizione fascia di classificazione (DM 274/1997)"],stato:"preparazione",costiLavoroId:"tl_es",livelloBase:"2",materialiPct:7,attrezzatureAnno:3500,sicurezzaAnno:1200,generaliPct:9,utilePct:5,ribassoMaxAtteso:18,ribassoMedioAtteso:11,tecnicoStimato:52,
+      voci:[["Scuola primaria Via Roma","Aule",1800,200,180],["Scuola primaria Via Roma","Corridoi e scale",600,200,220],["Scuola primaria Via Roma","Bagni",220,400,60],["Scuola primaria Via Roma","Palestra",500,100,300],["Scuola dell'infanzia Via Verdi","Aule e dormitori",900,200,160],["Scuola dell'infanzia Via Verdi","Bagni",120,400,55]]
+        .map(([lotto,descr,mq,passaggi,resa])=>({lotto,descr,mq,passaggi,resa})).concat({lotto:"Scuola primaria Via Roma",descr:"Pulizie di fondo estive",oreExtra:120,livello:"3"}),
+      personale:[["Addetta 1","2",20],["Addetta 2","2",20],["Addetto 3","2",20],["Caposquadra uscente","3",25]].map(([nome,livello,oreSett])=>({nome,livello,oreSett})),
+      documenti:docs("pubblica",4),garProvImporto:9300,garProvEmittente:"Compagnia assicurativa",garProvScadenza:D(190),esempio:true}]);
+    w.push(["gare",{id:"ga2",oggetto:"Pulizia uffici distretto sanitario Nord",tipo:"pubblica",ente:"Azienda sanitaria di esempio",enteCf:"01234567897",enteCodice:"UFQ7LM",cig:"B7654321CD",procedura:"negoziata",criterio:"oepv",puntiTecnici:70,puntiEconomici:30,formula:"lineare",piattaforma:"MePA",
+      importoBase:210000,manodoperaSa:158000,oneriSicurezza:2000,durataMesi:24,dataPubblicazione:D(-95),scadOfferta:D(-60),dataEsito:D(-25),stato:"aggiudicata",costiLavoroId:"tl_es",livelloBase:"2",materialiPct:6,generaliPct:9,utilePct:5,
+      voci:[{lotto:"Sede distretto Nord",descr:"Uffici e ambulatori",mq:1600,passaggi:250,resa:190},{lotto:"Sede distretto Nord",descr:"Bagni e spogliatoi",mq:180,passaggi:250,resa:60}],
+      importoOfferto:186500,ribassoOfferto:14.2,posizione:1,punteggioTecnico:61.5,punteggioEconomico:28.7,aggiudicatario:"La nostra impresa",ribassoAggiudicazione:14.2,
+      concorrenti:[{nome:"Alfa Pulizie Srl",ribasso:16.1,puntiTecnici:54,puntiTotali:84.2},{nome:"Beta Servizi Integrati",ribasso:9.8,puntiTecnici:58,puntiTotali:78.3}],
+      garProvImporto:4200,garProvScadenza:D(60),cauzDefImporto:18650,cauzDefEmittente:"Banca di esempio",cauzDefScadenza:D(700),documenti:docs("pubblica",20).map(d=>d.stato==="pronto"?Object.assign({},d,{stato:"caricato"}):d),esempio:true}]);
+    w.push(["gare",{id:"ga3",oggetto:"Pulizia biblioteca civica e archivio",tipo:"pubblica",ente:"Comune di Esempio",cig:"A9988776EF",procedura:"mepa",criterio:"prezzo",importoBase:64000,manodoperaSa:47000,oneriSicurezza:600,durataMesi:24,scadOfferta:D(-120),dataEsito:D(-90),stato:"persa",
+      motivo:"Il ribasso vincente (21%) era molto più alto del nostro: sotto il 15% il margine non era sostenibile.",importoOfferto:58000,ribassoOfferto:8.5,posizione:3,aggiudicatario:"Alfa Pulizie Srl",ribassoAggiudicazione:21.3,
+      concorrenti:[{nome:"Alfa Pulizie Srl",ribasso:21.3,aggiudicatario:true},{nome:"Gamma Multiservizi",ribasso:12.4}],documenti:docs("pubblica",20).map(d=>d.stato==="pronto"?Object.assign({},d,{stato:"caricato"}):d),esempio:true}]);
+    w.push(["gare",{id:"ga4",oggetto:"Condominio Parco dei Tigli – richiesta di offerta",tipo:"privata",procedura:"privata",criterio:"prezzo",ente:"Studio Bianchi Amministrazioni",scadOfferta:D(14),sopralluogo:D(6),stato:"individuata",requisiti:["DURC","Polizza RCT/RCO"],
+      costiLavoroId:"tl_es",livelloBase:"2",durataMesi:12,documenti:docGaraDefault("privata"),note:"Tre scale da 8 piani, box e cortile. L'amministratore vuole l'offerta prima dell'assemblea.",esempio:true}]);
+  return w;
+}
+async function caricaEsempiGare(btn){
+  if(btn)btn.disabled=true;
+  const w=esempiGare().filter(([c,o])=>!byId(c,o.id));
+  const r=await salvaMolti(w.map(([c,o])=>({c,o})));
+  if(r.errori.length){toast("Gare di esempio non caricate: "+r.errori[0]); if(btn)btn.disabled=false; return}
+  await loadAll(); ver++; render(); toast("Gare di esempio caricate");
+}
 async function loadExamples(){
   const t=today(), ws=monday(t), y=t.getFullYear(), D=k=>iso(addDays(t,k));
   const pm=new Date(y,t.getMonth()-1,1), pk=monthKey(pm), pmEnd=iso(new Date(pm.getFullYear(),pm.getMonth()+1,0)), py=pm.getFullYear();
@@ -2685,32 +2722,7 @@ async function loadExamples(){
   w.push(["movimenti",{id:"mv4",data:D(-8),tipo:"uscita",conto:"banca",causale:"Stipendi",importo:5200,soggetto:"",descrizione:"Stipendi del mese",alloc:[],esempio:true}]);
   w.push(["movimenti",{id:"mv5",data:D(-1),tipo:"uscita",conto:"cassa",causale:"Carburante",importo:45,soggetto:"",descrizione:"Rifornimento furgone",alloc:[],esempio:true}]);
   w.push(["movimenti",{id:"mv6",data:D(-1),tipo:"giroconto",conto:"cassa",contoDest:"banca",causale:"Giroconto tra conti",importo:200,soggetto:"",descrizione:"Versamento contanti",alloc:[],esempio:true}]);
-  if(moduloOn("gare")){
-    w.push(["costilavoro",{id:"tl_es",nome:"Multiservizi – valori di esempio",ccnl:"CCNL Multiservizi (servizi di pulizia)",ambito:"Provincia di esempio",decorrenza:y+"-01-01",fonte:"Valori dimostrativi, non ufficiali: sostituiscili con la tabella del Ministero del Lavoro",
-      livelli:[["1","Operaio comune",17.4],["2","Addetto alle pulizie",18.2],["3","Addetto qualificato",19.1],["4","Operaio specializzato",20.3],["5","Caposquadra",21.6],["6","Capo cantiere",23.4]].map(([livello,descrizione,costoOrario])=>({livello,descrizione,costoOrario})),esempio:true}]);
-    [["di1","DURC","Regolarità contributiva",D(-100),D(18)],["di2","Visura camerale","Registro imprese",D(-60),""],["di3","Iscrizione fascia di classificazione (DM 274/1997)","Fascia per volume d'affari",D(-400),""],
-     ["di4","Certificazione ISO 9001","Sistema di gestione qualità",D(-300),D(430)],["di5","Certificazione ISO 14001","Sistema di gestione ambientale",D(-700),D(-10)],["di6","Polizza RCT/RCO","Massimale 3.000.000 €",D(-150),D(215)]]
-     .forEach(([id,tipo,descrizione,rilascio,scadenza])=>w.push(["docimpresa",{id,tipo,descrizione,rilascio,scadenza,esempio:true}]));
-    const docs=(tipo,pronti)=>docGaraDefault(tipo).map((d,i)=>i<pronti&&d.stato==="da fare"?Object.assign({},d,{stato:"pronto"}):d);
-    w.push(["gare",{id:"ga1",oggetto:"Pulizia plessi scolastici – lotto 2",tipo:"pubblica",ente:"Comune di Esempio",enteCf:"80012345678",enteCodice:"UF3K2Z",cig:"B1234567AB",procedura:"aperta",criterio:"oepv",puntiTecnici:70,puntiEconomici:30,formula:"bilineare",coeffX:0.85,piattaforma:"Piattaforma telematica del Comune",
-      importoBase:465000,manodoperaSa:352000,oneriSicurezza:4500,durataMesi:36,rinnovoMesi:12,dataPubblicazione:D(-20),sopralluogo:D(3),sopralluogoObbl:true,scadChiarimenti:D(5),scadOfferta:D(9),oraOfferta:"12:00",aperturaBuste:D(12),cam:true,clausolaSociale:true,
-      requisiti:["DURC","Certificazione ISO 9001","Certificazione ISO 14001","Iscrizione fascia di classificazione (DM 274/1997)"],stato:"preparazione",costiLavoroId:"tl_es",livelloBase:"2",materialiPct:7,attrezzatureAnno:3500,sicurezzaAnno:1200,generaliPct:9,utilePct:5,ribassoMaxAtteso:18,ribassoMedioAtteso:11,tecnicoStimato:52,
-      voci:[["Scuola primaria Via Roma","Aule",1800,200,180],["Scuola primaria Via Roma","Corridoi e scale",600,200,220],["Scuola primaria Via Roma","Bagni",220,400,60],["Scuola primaria Via Roma","Palestra",500,100,300],["Scuola dell'infanzia Via Verdi","Aule e dormitori",900,200,160],["Scuola dell'infanzia Via Verdi","Bagni",120,400,55]]
-        .map(([lotto,descr,mq,passaggi,resa])=>({lotto,descr,mq,passaggi,resa})).concat({lotto:"Scuola primaria Via Roma",descr:"Pulizie di fondo estive",oreExtra:120,livello:"3"}),
-      personale:[["Addetta 1","2",20],["Addetta 2","2",20],["Addetto 3","2",20],["Caposquadra uscente","3",25]].map(([nome,livello,oreSett])=>({nome,livello,oreSett})),
-      documenti:docs("pubblica",4),garProvImporto:9300,garProvEmittente:"Compagnia assicurativa",garProvScadenza:D(190),esempio:true}]);
-    w.push(["gare",{id:"ga2",oggetto:"Pulizia uffici distretto sanitario Nord",tipo:"pubblica",ente:"Azienda sanitaria di esempio",enteCf:"01234567897",enteCodice:"UFQ7LM",cig:"B7654321CD",procedura:"negoziata",criterio:"oepv",puntiTecnici:70,puntiEconomici:30,formula:"lineare",piattaforma:"MePA",
-      importoBase:210000,manodoperaSa:158000,oneriSicurezza:2000,durataMesi:24,dataPubblicazione:D(-95),scadOfferta:D(-60),dataEsito:D(-25),stato:"aggiudicata",costiLavoroId:"tl_es",livelloBase:"2",materialiPct:6,generaliPct:9,utilePct:5,
-      voci:[{lotto:"Sede distretto Nord",descr:"Uffici e ambulatori",mq:1600,passaggi:250,resa:190},{lotto:"Sede distretto Nord",descr:"Bagni e spogliatoi",mq:180,passaggi:250,resa:60}],
-      importoOfferto:186500,ribassoOfferto:14.2,posizione:1,punteggioTecnico:61.5,punteggioEconomico:28.7,aggiudicatario:"La nostra impresa",ribassoAggiudicazione:14.2,
-      concorrenti:[{nome:"Alfa Pulizie Srl",ribasso:16.1,puntiTecnici:54,puntiTotali:84.2},{nome:"Beta Servizi Integrati",ribasso:9.8,puntiTecnici:58,puntiTotali:78.3}],
-      garProvImporto:4200,garProvScadenza:D(60),cauzDefImporto:18650,cauzDefEmittente:"Banca di esempio",cauzDefScadenza:D(700),documenti:docs("pubblica",20).map(d=>d.stato==="pronto"?Object.assign({},d,{stato:"caricato"}):d),esempio:true}]);
-    w.push(["gare",{id:"ga3",oggetto:"Pulizia biblioteca civica e archivio",tipo:"pubblica",ente:"Comune di Esempio",cig:"A9988776EF",procedura:"mepa",criterio:"prezzo",importoBase:64000,manodoperaSa:47000,oneriSicurezza:600,durataMesi:24,scadOfferta:D(-120),dataEsito:D(-90),stato:"persa",
-      motivo:"Il ribasso vincente (21%) era molto più alto del nostro: sotto il 15% il margine non era sostenibile.",importoOfferto:58000,ribassoOfferto:8.5,posizione:3,aggiudicatario:"Alfa Pulizie Srl",ribassoAggiudicazione:21.3,
-      concorrenti:[{nome:"Alfa Pulizie Srl",ribasso:21.3,aggiudicatario:true},{nome:"Gamma Multiservizi",ribasso:12.4}],documenti:docs("pubblica",20).map(d=>d.stato==="pronto"?Object.assign({},d,{stato:"caricato"}):d),esempio:true}]);
-    w.push(["gare",{id:"ga4",oggetto:"Condominio Parco dei Tigli – richiesta di offerta",tipo:"privata",procedura:"privata",criterio:"prezzo",ente:"Studio Bianchi Amministrazioni",scadOfferta:D(14),sopralluogo:D(6),stato:"individuata",requisiti:["DURC","Polizza RCT/RCO"],
-      costiLavoroId:"tl_es",livelloBase:"2",durataMesi:12,documenti:docGaraDefault("privata"),note:"Tre scale da 8 piani, box e cortile. L'amministratore vuole l'offerta prima dell'assemblea.",esempio:true}]);
-  }
+  if(moduloOn("gare"))w.push(...esempiGare());
   toast("Carico i dati di esempio…");
   PAG_DEFAULT.filter(p=>!S.pagamenti.some(x=>x.id===p.id)).forEach(p=>w.push(["pagamenti",Object.assign({},p)]));
   const ord=c=>ORDINE_COLS.indexOf(c);
@@ -2788,6 +2800,7 @@ document.addEventListener("click",async e=>{
   if(d.mark){e.stopPropagation();const[k,id,st]=d.mark.split("|");mark(k,id,st);return}
   if(d.week){const k=+d.week;weekStart=k===0?monday(today()):addDays(weekStart,7*k);render();return}
   if(d.act==="loadEx"){el.disabled=true;loadExamples();return}
+  if(d.act==="loadExGare"){caricaEsempiGare(el);return}
   if(d.act==="rmEx"){removeExamples(el);return}
   if(d.act==="genFatt"){el.disabled=true;await genFatture();el.disabled=false;return}
   if(d.addscad){const t=docTotForm(), s=readField({k:"scadenze",type:"scad"}).reduce((a,x)=>a+x.importo,0), last=readField({k:"scadenze",type:"scad"}).pop(); $("#f_scadenze").insertAdjacentHTML("beforeend",scadRow({data:last?iso(addDays(parse(last.data),30)):($("#f_data").value||TODAY()),importo:r2(Math.max(0,t.dovuto-s))})); current.scadManual=true; updScadInfo(); return}
