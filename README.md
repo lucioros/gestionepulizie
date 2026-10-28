@@ -14,7 +14,8 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 | `index.html` | Gestionale del titolare: turni, agenda, clienti, personale, preventivi, qualità, fatture, prima nota, partite aperte, mastrini, timbrature |
 | `dipendenti/` | App dipendenti: turni di oggi e dei prossimi giorni, timbratura di inizio e fine lavoro, ore del mese |
 | `supabase/schema.sql` | Impostazioni, timbrature e permessi di base (da eseguire per primo) |
-| `supabase/schema_v2.sql` | Tabelle collegate di tutti gli archivi, funzioni di salvataggio e permessi (da eseguire dopo) |
+| `supabase/schema_v2.sql` | Tabelle collegate di tutti gli archivi, funzioni di salvataggio, registro dei moduli e permessi (da eseguire dopo) |
+| `supabase/modulo_gare.sql` | Modulo facoltativo Gare d'appalto: tabelle, permessi legati al modulo, spazio file per gli allegati |
 | `config.js` | Indirizzo del progetto Supabase e chiave pubblica (anon) |
 | `vendor/` | Librerie Supabase e JSZip (MIT), incluse per non dipendere da CDN esterni |
 
@@ -24,6 +25,7 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 1. Supabase → **SQL Editor** → **New query**.
 2. Incolla tutto il contenuto di `supabase/schema.sql` e premi **Run**. L'ultima riga mostra l'email del titolare (`luciorosalba@gmail.com`). Se vuoi usarne un'altra, cambiala nello script (sezione 1) e rilancialo.
 3. Nuova query: incolla tutto il contenuto di `supabase/schema_v2.sql` e premi **Run**. Crea le tabelle collegate e le funzioni che usa il gestionale.
+4. Solo se serve il modulo Gare: nuova query con `supabase/modulo_gare.sql` → **Run**. Il modulo parte attivo; si spegne e si riaccende da Impostazioni → Moduli.
 
 Entrambi gli script si possono rilanciare senza perdere dati. Se rilanci `schema.sql`, rilancia sempre anche `schema_v2.sql` subito dopo: il secondo aggiorna alcune funzioni del primo per farle lavorare sulle nuove tabelle.
 
@@ -76,6 +78,29 @@ Fino a ottobre 2026 tutti i dati stavano nella tabella `docs` (un record JSON pe
 - alla fine mostra quanti record sono stati trasferiti per archivio e l'elenco delle sistemazioni fatte.
 
 Da **Impostazioni → Ripeti il trasferimento** si possono aggiungere i record che mancassero, senza toccare quelli già presenti. Quando avrai verificato i dati per qualche settimana potrai eliminare la vecchia tabella con `drop table public.docs;`.
+
+## Moduli facoltativi
+
+Alcune funzioni sono **moduli** che si attivano per azienda, per poterle includere o no nell'abbonamento:
+
+- L'elenco dei moduli attivi è la colonna `moduli` della tabella `impostazioni` (oggi c'è una sola azienda). Nella versione per più aziende passerà alla tabella delle aziende e potrà cambiarlo solo il fornitore dell'app.
+- La tabella `archivi` dice a quale modulo appartiene ogni archivio. Con il modulo spento il database **non fa né leggere né salvare** i suoi dati (regole di sicurezza e funzione `salva_lotto`), e l'app nasconde il menu. I dati restano conservati e ricompaiono riaccendendolo.
+
+### Modulo Gare d'appalto
+- **Gare e offerte**: gare pubbliche e richieste di offerta private, con ente, CIG, procedura, criterio, importi, date (sopralluogo, chiarimenti, scadenza, apertura buste) e avanzamento.
+- **Requisiti** confrontati con i **documenti dell'impresa** (DURC, visura, certificazioni ISO, fascia di classificazione, polizze) e le loro scadenze.
+- **Documenti da presentare** con stato e file allegati (spazio file privato `allegati` di Supabase).
+- **Calcolo dell'offerta**:
+  - ore per ambiente (m² × passaggi ÷ resa) e costo del lavoro dalle tabelle per livello;
+  - personale da assorbire (clausola sociale), materiali, spese generali e utile;
+  - ribasso calcolato sulla sola parte ribassabile, con avvisi rispetto alla stima dell'ente;
+  - simulazione del punteggio economico (lineare, bilineare, proporzionale inversa).
+- **Esito** con concorrenti, ribassi e punteggi. **Garanzie** (provvisoria e definitiva) e **contratto** con scadenze.
+- Dalla gara vinta si crea **cliente e sedi** con un clic: codice ufficio PA, scissione dei pagamenti e CIG riportato nelle fatture.
+- **Statistiche**: tasso di vittoria, ribassi vincenti per ente, concorrenti più frequenti, motivi delle sconfitte.
+- **Avvisi** in Oggi per scadenze di offerte, sopralluoghi, chiarimenti, documenti, garanzie e contratti.
+
+I valori del costo del lavoro nei dati di esempio sono dimostrativi: vanno sostituiti con le tabelle del Ministero del Lavoro in vigore.
 
 ## Come funziona
 

@@ -257,6 +257,14 @@ pre.copy{white-space:pre-wrap;background:var(--sunk);padding:12px;border-radius:
 @media (prefers-reduced-motion:no-preference){.btn,.nav button{transition:background .12s,border-color .12s}}
 .banner-err{background:var(--bad-soft);color:var(--bad);border-radius:var(--r);padding:10px 12px}.banner-warn{background:var(--warn-soft);color:var(--ink);border-radius:var(--r);padding:10px 12px}.banner-err ul,.banner-warn ul{margin:4px 0 0;padding-left:18px}.ok-msg{color:var(--ok);margin:0}
 
+table.gcalc input,table.gcalc select{border:1px solid var(--line);border-radius:6px;padding:5px 6px;background:var(--surface);width:100%;min-width:72px}
+table.gcalc td{padding:4px 3px}
+table.gsum td.r{white-space:normal;text-align:right}
+.modal.wide{width:min(1180px,100%)}
+table.gsum td:first-child{color:var(--muted)}
+select[data-gdocst]{border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--surface);min-height:34px;max-width:100%}
+table.gcalc input[data-gv$=":descr"],table.gcalc input[data-gv$=":lotto"],table.gcalc input[data-gp$=":nome"],table.gcalc input[data-gq$=":nome"]{min-width:130px}
+table.gcalc input[type=checkbox]{width:18px;min-width:0}
 /* ---------- telefono e tablet ---------- */
 td>.cv{display:contents}
 .scrim{overscroll-behavior:contain}
@@ -330,7 +338,7 @@ body:has(#modalRoot .scrim){overflow:hidden}
 <script>
 (function(){
 "use strict";
-const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze","pagamenti","amministratori","cu"];
+const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze","pagamenti","amministratori","cu","gare","docimpresa","costilavoro"];
 const S={}; COLS.forEach(c=>S[c]=[]);
 const loaded={};
 let mode="loading", sb=null, tab="oggi", weekStart=null, fattMese=null, ver=0;
@@ -341,9 +349,11 @@ const NAV=[["oggi","Oggi",[["oggi","Oggi"]]],
            ["clienti","Clienti",[["clienti","Clienti e sedi"],["amministratori","Amministratori"],["preventivi","Preventivi"]]],
            ["personale","Personale",[["personale","Personale e timbrature"]]],
            ["fatture","Fatture",[["vendite","Vendita"],["acquisti","Acquisto"],["fornitori","Fornitori"]]],
+           ["gare","Gare",[["gare","Gare e offerte"],["docimpresa","Documenti impresa"],["costilavoro","Costo del lavoro"],["garestat","Statistiche"]]],
            ["contabilita","Incassi e contabilità",[["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["mastrini","Mastrini e IVA"]]],
            ["impostazioni","Impostazioni",[["impostazioni","Generali e app dipendenti"],["pagamenti","Tipi di pagamento"]]]];
-const gruppoDi=t=>NAV.find(g=>g[2].some(x=>x[0]===t))||NAV[0];
+const navAttivo=()=>NAV.filter(g=>g[0]!=="gare"||moduloOn("gare"));
+const gruppoDi=t=>t==="gara"?NAV.find(g=>g[0]==="gare"):NAV.find(g=>g[2].some(x=>x[0]===t))||NAV[0];
 const ultimaScheda={};
 const GIORNI=["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
 const GIORNI_L=["lunedì","martedì","mercoledì","giovedì","venerdì","sabato","domenica"];
@@ -467,7 +477,7 @@ const prossimaRata=(kind,doc)=>{const rs=rateDoc(kind,doc);return rs.find(r=>r.r
 function scadCell(kind,doc){ const rs=rateDoc(kind,doc); if(!rs.length)return""; const nx=rs.find(r=>r.res>0.005);
   return `${dShort((nx||rs[rs.length-1]).data)}${rs.length>1?` <span class="muted">${nx?nx.n:rs.length}/${rs.length}</span>`:""}` }
 const tipiAss=()=>[...TIPI_ASSENZA,...lst("assenze")];
-const ADD_LABEL={amministratori:"amministratore",pagamenti:"tipo di pagamento",codiceIva:"codice IVA","lista:assenze":"tipo di assenza",clienti:"cliente",fornitori:"fornitore",sedi:"sede",operatori:"operatore",conti:"conto","lista:tipi":"tipo di immobile","lista:categorie":"categoria","lista:causali":"causale"};
+const ADD_LABEL={amministratori:"amministratore",pagamenti:"tipo di pagamento",codiceIva:"codice IVA","lista:assenze":"tipo di assenza",clienti:"cliente",fornitori:"fornitore",sedi:"sede",operatori:"operatore",conti:"conto","lista:tipi":"tipo di immobile","lista:categorie":"categoria","lista:causali":"causale","lista:tipidoc":"tipo di documento"};
 
 /* ---------- utilità ---------- */
 const $=s=>document.querySelector(s);
@@ -511,7 +521,7 @@ function errMsg(e){
 // i intero, b sì/no, ai elenco di interi, at elenco di testi, r codice di un altro record; senza tipo è testo.
 // I campi non previsti finiscono nella colonna "extra", così nessun dato va perso.
 const snake=k=>k.replace(/[A-Z]/g,m=>"_"+m.toLowerCase());
-const FKF={clienti_righe:"cliente_id",sedi_operatori:"sede_id",variazioni_operatori:"variazione_id",straordinari_operatori:"straordinario_id",ispezioni_voti:"ispezione_id",preventivi_righe:"preventivo_id",fatture_righe:"fattura_id",fatture_scadenze:"fattura_id",fatture_preventivi:"fattura_id",fatture_sdi_storia:"fattura_id",acquisti_righe:"acquisto_id",acquisti_scadenze:"acquisto_id",elenchi_voci:"elenco_id",codici_iva:"elenco_id"};
+const FKF={costi_lavoro_livelli:"tabella_id",gare_voci:"gara_id",gare_personale:"gara_id",gare_documenti:"gara_id",gare_concorrenti:"gara_id",clienti_righe:"cliente_id",sedi_operatori:"sede_id",variazioni_operatori:"variazione_id",straordinari_operatori:"straordinario_id",ispezioni_voti:"ispezione_id",preventivi_righe:"preventivo_id",fatture_righe:"fattura_id",fatture_scadenze:"fattura_id",fatture_preventivi:"fattura_id",fatture_sdi_storia:"fattura_id",acquisti_righe:"acquisto_id",acquisti_scadenze:"acquisto_id",elenchi_voci:"elenco_id",codici_iva:"elenco_id"};
 const RIGHE=tab=>({tab,to:(v,o,k)=>righeOf(k==="righe"?o:{righe:v,regime:o.regime}).map(r=>({descr:r.descr==null?"":String(r.descr),qta:numDB(r.qta),prezzo:numDB(r.prezzo),cod:r.cod||null})),from:rs=>rs.map(r=>({descr:r.descr||"",qta:r.qta==null?1:+r.qta,prezzo:r.prezzo==null?0:+r.prezzo,cod:r.cod||"22"}))});
 const SCAD=tab=>({tab,to:v=>(Array.isArray(v)?v:[]).filter(x=>x&&dateDB(x.data)).map(x=>({data:dateDB(x.data),importo:numDB(x.importo)||0})),from:rs=>rs.map(r=>({data:r.data,importo:+r.importo}))});
 const LINK=(tab,col)=>({tab,to:v=>[...new Set((Array.isArray(v)?v:[]).filter(Boolean).map(String))].map(x=>({[col||"operatore_id"]:x})),from:rs=>rs.map(r=>r[col||"operatore_id"])});
@@ -519,6 +529,10 @@ const ALLOC=fk=>({tab:"abbinamenti",fk,to:v=>(Array.isArray(v)?v:[]).filter(x=>x
   from:rs=>rs.map(r=>{const o={doc:r.fattura_id?"v:"+r.fattura_id:"a:"+r.acquisto_id,importo:+r.importo}; if(r.rata)o.rata=r.rata; return o})});
 const VOTI={tab:"ispezioni_voti",to:v=>Object.entries(v||{}).filter(([,x])=>+x>=1&&+x<=5).map(([area,voto])=>({area,voto:Math.round(+voto)})),from:rs=>Object.fromEntries(rs.map(r=>[r.area,r.voto]))};
 const SDI_STORIA={tab:"fatture_sdi_storia",to:(v,o)=>((o.sdi&&o.sdi.storia)||[]).map(x=>({data:dateDB(x.data),evento:String(x.evento||"")})),from:rs=>rs.map(r=>({data:r.data||"",evento:r.evento||""}))};
+// tabella figlia generica: campi [nome nell'app, tipo, colonna]; "obbl" = campo senza il quale la riga si scarta
+const FIGLI=(tab,campi,obbl)=>({tab,
+  to:v=>(Array.isArray(v)?v:[]).filter(x=>x&&(!obbl||String(x[obbl]??"").trim()!=="")).map(x=>{const r={}; campi.forEach(([k,ty,col])=>{const val=convDB(x[k],ty||"t"); r[col||k]=(ty||"t")==="t"&&val==null?null:val}); if(r.stato===null&&tab==="gare_documenti")r.stato="da fare"; return r}),
+  from:rs=>rs.map(r=>{const o={}; campi.forEach(([k,ty,col])=>{const v=r[col||k]; if(v!=null)o[k]=ty==="n"?+v:v}); return o})});
 const DBS={
   amministratori:{t:"amministratori",c:"nome referente cf tel email pec indirizzo note esempio:b"},
   conti:{t:"conti",c:"nome iban saldoIniziale:n dataSaldo:d esempio:b"},
@@ -538,6 +552,11 @@ const DBS={
   acquisti:{t:"acquisti",c:"fornitoreId:r numero data:d dataReg:d protocollo categoria pagamento:r ritenutaPct:n scadenza:d note fileXml tipoDoc stato esempio:b",f:{righe:RIGHE("acquisti_righe"),scadenze:SCAD("acquisti_scadenze")}},
   movimenti:{t:"movimenti",c:"data:d tipo conto:r contoDest:r causale importo:n clienteId:r fornitoreId:r descrizione esempio:b",f:{alloc:ALLOC("movimento_id")}},
   cu:{t:"cu",c:"clienteId:r anno:i ricevuta:b data:d"},
+  costilavoro:{t:"costi_lavoro",c:"nome ccnl ambito decorrenza:d fonte note esempio:b",f:{livelli:FIGLI("costi_lavoro_livelli",[["livello"],["descrizione"],["costoOrario","n","costo_orario"]],"livello")}},
+  docimpresa:{t:"documenti_impresa",c:"tipo descrizione numero ente rilascio:d scadenza:d file nomeFile note esempio:b"},
+  gare:{t:"gare",c:"oggetto tipo ente enteCf enteCodice entePec cig cup piattaforma link procedura criterio:r puntiTecnici:n puntiEconomici:n formula coeffX:n importoBase:n manodoperaSa:n oneriSicurezza:n durataMesi:i rinnovoMesi:i dataPubblicazione:d sopralluogo:d sopralluogoObbl:b scadChiarimenti:d scadOfferta:d oraOfferta aperturaBuste:d cam:b clausolaSociale:b requisiti:at stato motivo note clienteId:r costiLavoroId:r livelloBase materialiPct:n attrezzatureAnno:n sicurezzaAnno:n generaliPct:n utilePct:n ribassoMaxAtteso:n ribassoMedioAtteso:n tecnicoStimato:n importoOfferto:n ribassoOfferto:n dataEsito:d aggiudicatario ribassoAggiudicazione:n punteggioTecnico:n punteggioEconomico:n posizione:i garProvImporto:n garProvScadenza:d garProvEmittente garProvSvincolata:b cauzDefImporto:n cauzDefScadenza:d cauzDefEmittente cauzDefSvincolata:b dataStipula:d dataInizio:d dataFine:d revisionePrezzi penali esempio:b",
+    f:{voci:FIGLI("gare_voci",[["lotto"],["descr"],["mq","n"],["passaggi","n"],["resa","n"],["oreExtra","n","ore_extra"],["livello"]]),personale:FIGLI("gare_personale",[["nome"],["livello"],["oreSett","n","ore_sett"]]),
+       documenti:FIGLI("gare_documenti",[["nome"],["stato"],["file"],["nomeFile","t","nome_file"],["note"]],"nome"),concorrenti:FIGLI("gare_concorrenti",[["nome"],["ribasso","n"],["puntiTecnici","n","punti_tecnici"],["puntiTotali","n","punti_totali"],["aggiudicatario","b"]],"nome")}},
   azienda:{t:"azienda",c:"denominazione piva cf regimeFiscale indirizzo cap comune provincia tel email pec iban reaUfficio reaNumero capitaleSociale:n socioUnico tipoRitenuta causaleRitenuta feDal:d progressivo:i"}
 };
 Object.values(DBS).forEach(s=>{s.cols=s.c.split(" ").map(x=>{const[k,ty]=x.split(":");return {k,s:snake(k),ty:ty||"t"}}); s.keys=new Set(s.cols.map(c=>c.k))});
@@ -604,8 +623,8 @@ function roundTrip(c,obj){
 }
 const TAB_COL={}; Object.entries(DBS).forEach(([c,s])=>{if(c!=="azienda")TAB_COL[s.t]=c}); TAB_COL.elenchi="liste"; TAB_COL.azienda="liste";
 // record collegati da ricaricare quando l'eliminazione si propaga (abbinamenti, squadre, ...)
-const DEL_RELOAD={fatture:["movimenti","fatture"],acquisti:["movimenti"],operatori:["sedi","variazioni","straordinari","assenze"],preventivi:["fatture"],sedi:["registro","variazioni"],clienti:["cu"]};
-const ORDINE_COLS=["amministratori","conti","pagamenti","liste","clienti","fornitori","operatori","sedi","registro","variazioni","straordinari","assenze","ispezioni","preventivi","fatture","acquisti","movimenti","cu"];
+const DEL_RELOAD={costilavoro:["gare"],fatture:["movimenti","fatture"],acquisti:["movimenti"],operatori:["sedi","variazioni","straordinari","assenze"],preventivi:["fatture"],sedi:["registro","variazioni"],clienti:["cu","gare"]};
+const ORDINE_COLS=["amministratori","conti","pagamenti","costilavoro","docimpresa","liste","clienti","fornitori","operatori","sedi","registro","variazioni","straordinari","assenze","ispezioni","preventivi","fatture","acquisti","movimenti","cu","gare"];
 function figliTabs(c){ if(c==="liste")return ["elenchi_voci","codici_iva"]; return Object.values(DBS[c].f||{}).map(sp=>sp.tab) }
 const fkDi=(c,tab)=>tab==="abbinamenti"?(c==="movimenti"?"movimento_id":"nota_id"):FKF[tab];
 async function tuttaLaTabella(tab,filtro){
@@ -617,7 +636,7 @@ async function tuttaLaTabella(tab,filtro){
 }
 // carica gli archivi indicati (tutti se non indicati); con ids solo quei record di un archivio
 async function caricaDB(cols,ids){
-  cols=cols||ORDINE_COLS;
+  cols=cols||colsAttive();
   const padri=c=>c==="liste"?["elenchi","azienda"]:[DBS[c].t];
   const jobs=[]; cols.forEach(c=>{ padri(c).forEach(t=>jobs.push([c,t,true])); figliTabs(c).forEach(t=>jobs.push([c,t,false])) });
   const res=await Promise.all(jobs.map(([c,t,pad])=>tuttaLaTabella(t,ids?(q=>q.in(pad?"id":fkDi(c,t),ids)):null)));
@@ -1000,6 +1019,7 @@ function alerts(){
   S.sedi.filter(s=>s.attiva!==false).forEach(s=>{const l=lastIspezione(s.id); if(l){const p=punteggio(l.voti); if(p!=null&&p<70)a.push(["warn",`${s.nome}: ultima ispezione ${p}/100.`,"qualita"])}});
   const mk=monthKey(today()); if(S.sedi.some(s=>s.attiva!==false&&+s.canone>0)&&!S.fatture.some(f=>f.mese===mk)) a.push(["warn",`Fatture dei canoni di ${monthLabel(mk)} non ancora preparate.`,"vendite"]);
   conti().forEach(c=>{const s=saldoConto(c.id); if(s<0)a.push(["bad",`${c.nome}: saldo negativo ${eur2(s)}.`,"primanota"])});
+  avvisiGare(a);
   const sc=S.fatture.filter(f=>["scartata","rifiutata"].includes(sdiStato(f)));
   if(sc.length)a.push(["bad",`${sc.length} fattur${sc.length>1?"e scartate":"a scartata"} dallo SdI: correggi e reinvia entro 5 giorni dallo scarto.`,"vendite"]);
   const dal=azienda().feDal;
@@ -1015,14 +1035,15 @@ function alerts(){
 function render(){
   if(mode!=="db"){ $("#nav").innerHTML=""; $("#foot").innerHTML=""; $("#main").innerHTML=authView(); return }
   const al=alerts(); const bad=al.filter(x=>x[0]==="bad").length;
-  const G=gruppoDi(tab); ultimaScheda[G[0]]=tab;
-  $("#nav").innerHTML=NAV.map(([g,l])=>`<button data-grp="${g}" ${G[0]===g?'aria-current="page"':""}>${l}${g==="oggi"&&bad?`<span class="badge">${bad}</span>`:""}</button>`).join("");
+  if(!moduloOn("gare")&&gruppoDi(tab)[0]==="gare")tab="oggi";
+  const G=gruppoDi(tab); ultimaScheda[G[0]]=tab==="gara"?"gare":tab;
+  $("#nav").innerHTML=navAttivo().map(([g,l])=>`<button data-grp="${g}" ${G[0]===g?'aria-current="page"':""}>${l}${g==="oggi"&&bad?`<span class="badge">${bad}</span>`:""}</button>`).join("");
   $("#foot").innerHTML=`<span>${esc(me&&me.email||"")}</span><button class="btn small" data-act="logout">Esci</button>`;
   const m=$("#main");
   const empty=!S.clienti.length&&!S.sedi.length&&!S.operatori.length&&!S.fornitori.length;
   if(empty&&["oggi","piano","clienti"].includes(tab)){m.innerHTML=emptyView();return}
-  const V={amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
-  const sub=G[2].length>1?`<div class="subnav" role="navigation" aria-label="${esc(G[1])}">${G[2].map(([k,l])=>`<button data-tab="${k}" ${tab===k?'aria-current="page"':""}>${esc(l)}</button>`).join("")}</div>`:"";
+  const V={gare:vGare,gara:vGara,docimpresa:vDocImpresa,costilavoro:vCostiLavoro,garestat:vGareStat,amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
+  const sub=G[2].length>1?`<div class="subnav" role="navigation" aria-label="${esc(G[1])}">${G[2].map(([k,l])=>`<button data-tab="${k}" ${tab===k||(tab==="gara"&&k==="gare")?'aria-current="page"':""}>${esc(l)}</button>`).join("")}</div>`:"";
   m.innerHTML=sub+V[tab](al);
   schedeTabelle(m);
   const att=$("#nav [aria-current=page]"); if(att&&att.scrollIntoView&&innerWidth<=900)att.scrollIntoView({block:"nearest",inline:"nearest"});
@@ -1262,6 +1283,8 @@ function vImpostazioni(){
     <p class="note">"Importa dati" carica il file esportato dall'app su Claude (o un backup di questa app). I record con lo stesso codice vengono sovrascritti. "Esporta dati" salva una copia completa sul tuo computer: fallo ogni tanto come backup.</p>
     <div class="actions">${hasExamples()?'<button class="btn" data-act="rmEx">Rimuovi dati di esempio</button>':'<button class="btn" data-act="loadEx">Carica dati di esempio</button>'}</div></section>
     ${fePanel()}
+    <section class="panel"><h2>Moduli</h2><div class="chips"><label><input type="checkbox" id="modGare" ${moduloOn("gare")?"checked":""}> Gare d'appalto</label></div>
+    <p class="note">Gare pubbliche e richieste di offerta: scadenze, documenti, calcolo dell'offerta con il costo del lavoro, esiti e statistiche. Spento, il menu Gare sparisce e il database blocca i suoi dati, che restano conservati. Nella versione per più aziende lo attiverà il fornitore dell'app per ogni azienda, secondo l'abbonamento.</p></section>
     ${docsN>0?`<section class="panel"><h2>Vecchia tabella "docs"</h2><p class="note">Contiene ancora ${docsN} record del vecchio formato, già trasferiti nelle nuove tabelle. Non viene più usata. Se qualche record non era stato trasferito puoi ripetere il trasferimento: vengono aggiunti solo i record che mancano, quelli già nelle nuove tabelle non vengono toccati.</p><div class="actions"><button class="btn" data-act="rimigra">Ripeti il trasferimento</button></div></section>`:""}
     <section class="panel"><h2>Account</h2><p class="note">Sei entrato come <b>${esc(me&&me.email||"")}</b>, titolare. Per cambiare password usa "Password dimenticata" nella pagina di accesso.</p></section></div></div>`;
 }
@@ -1630,6 +1653,21 @@ const FORMS={
   variazioni:{t:"Turno",f:[{k:"data",l:"Giorno",type:"date",req:1},{k:"ora",l:"Ora di inizio",type:"time"},{k:"durata",l:"Durata (ore)",type:"number",step:"0.25"},{k:"operatori",l:"Squadra per questo turno",type:"ops",full:1,add:"operatori"},{k:"nota",l:"Nota per questo turno",type:"textarea",full:1,hint:"Es. sostituisce Marco in permesso"}]},
   assenze:{t:"Assenza",f:[{k:"operatoreId",l:"Dipendente",type:"select",opts:opOpts,req:1,full:1,add:"operatori"},{k:"tipo",l:"Tipo",type:"select",noEmpty:1,opts:()=>tipiAss().map(x=>[x,x]),add:"lista:assenze"},{k:"dal",l:"Dal",type:"date",def:plus(0),req:1},{k:"al",l:"Al (compreso)",type:"date",def:plus(0)},{k:"dalle",l:"Dalle ore",type:"time",hint:"Solo per permessi a ore"},{k:"alle",l:"Alle ore",type:"time"},{k:"note",l:"Note",type:"textarea",full:1}]},
   codiceIva:{t:"Codice IVA",f:[{k:"d",l:"Descrizione",req:1,full:1,hint:"Es. Esente art. 10 n. 18, IVA 22% su materiali"},{k:"t",l:"Trattamento",type:"select",noEmpty:1,opts:()=>TIPI_IVA,full:1},{k:"al",l:"Aliquota %",type:"number",def:22,hint:"Solo per IVA ordinaria o scissione"},{k:"nat",l:"Natura fattura elettronica",hint:"Es. N4, N6.7 (vuoto per le aliquote)"},{k:"norma",l:"Dicitura in fattura",full:1,hint:"Riferimento normativo stampato in fattura"}]},
+  gare:{t:"Gara o richiesta di offerta",f:[{k:"oggetto",l:"Oggetto",req:1,full:1,hint:"Es. Servizio di pulizia plessi scolastici, lotto 2"},{k:"tipo",l:"Tipo",type:"select",noEmpty:1,opts:()=>[["pubblica","Gara pubblica"],["privata","Richiesta di offerta privata"]]},{k:"stato",l:"Stato",type:"select",noEmpty:1,opts:()=>STATI_GARA.map(x=>[x[0],x[1]])},
+    {k:"ente",l:"Ente o committente",full:1},{k:"enteCf",l:"Codice fiscale dell'ente"},{k:"enteCodice",l:"Codice ufficio (fattura elettronica PA)"},{k:"entePec",l:"PEC dell'ente",full:1},
+    {k:"cig",l:"CIG"},{k:"cup",l:"CUP"},{k:"procedura",l:"Procedura",type:"select",opts:()=>PROCEDURE},{k:"criterio",l:"Criterio di aggiudicazione",type:"select",opts:()=>[["oepv","Offerta economicamente più vantaggiosa"],["prezzo","Prezzo più basso"]],hint:"Nei servizi ad alta intensità di manodopera, come le pulizie, si usa di norma l'offerta più vantaggiosa"},
+    {k:"piattaforma",l:"Piattaforma telematica",hint:"Es. MePA, piattaforma regionale"},{k:"link",l:"Link alla gara",type:"url"},
+    {k:"importoBase",l:"Importo a base di gara (€)",type:"number",step:"0.01"},{k:"manodoperaSa",l:"Costo manodopera stimato dall'ente (€)",type:"number",step:"0.01"},{k:"oneriSicurezza",l:"Oneri della sicurezza (€)",type:"number",step:"0.01"},{k:"durataMesi",l:"Durata (mesi)",type:"number",def:36},{k:"rinnovoMesi",l:"Rinnovo o proroga possibile (mesi)",type:"number"},
+    {k:"dataPubblicazione",l:"Pubblicazione",type:"date"},{k:"sopralluogo",l:"Sopralluogo",type:"date"},{k:"sopralluogoObbl",l:"Sopralluogo obbligatorio",type:"bool",yes:"Sì",no:"No",def:false},{k:"scadChiarimenti",l:"Termine per i chiarimenti",type:"date"},{k:"scadOfferta",l:"Scadenza dell'offerta",type:"date"},{k:"oraOfferta",l:"Ora di scadenza",type:"time"},{k:"aperturaBuste",l:"Apertura delle buste",type:"date"},
+    {k:"requisiti",l:"Requisiti richiesti",type:"multi",opts:()=>tipiDocImpresa().map(x=>[x,x]),full:1,hint:"Si confrontano con i documenti dell'impresa e le loro scadenze"},
+    {k:"cam",l:"Criteri ambientali minimi (CAM)",type:"bool",yes:"Richiesti",no:"Non richiesti",def:false},{k:"clausolaSociale",l:"Clausola sociale",type:"bool",yes:"Sì: personale da assorbire",no:"No",def:false},
+    {k:"motivo",l:"Motivo (rinuncia, esclusione, esito)",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
+  gareGaranzie:{t:"Garanzie della gara",col:"gare",nodel:1,f:[{k:"garProvImporto",l:"Garanzia provvisoria (€)",type:"number",step:"0.01"},{k:"garProvEmittente",l:"Emessa da"},{k:"garProvScadenza",l:"Scadenza",type:"date"},{k:"garProvSvincolata",l:"Stato",type:"bool",yes:"Svincolata",no:"In corso",def:false},
+    {k:"cauzDefImporto",l:"Cauzione definitiva (€)",type:"number",step:"0.01"},{k:"cauzDefEmittente",l:"Emessa da"},{k:"cauzDefScadenza",l:"Scadenza",type:"date"},{k:"cauzDefSvincolata",l:"Stato",type:"bool",yes:"Svincolata",no:"In corso",def:false}]},
+  gareContratto:{t:"Contratto della gara",col:"gare",nodel:1,f:[{k:"dataStipula",l:"Stipula",type:"date"},{k:"dataInizio",l:"Inizio del servizio",type:"date"},{k:"dataFine",l:"Fine del contratto",type:"date"},{k:"rinnovoMesi",l:"Rinnovo o proroga possibile (mesi)",type:"number"},{k:"revisionePrezzi",l:"Revisione dei prezzi",type:"textarea",full:1,hint:"Clausola prevista, indice di riferimento, date di richiesta"},{k:"penali",l:"Penali",type:"textarea",full:1}]},
+  docimpresa:{t:"Documento dell'impresa",f:[{k:"tipo",l:"Tipo",type:"select",req:1,opts:()=>tipiDocImpresa().map(x=>[x,x]),add:"lista:tipidoc",full:1},{k:"descrizione",l:"Descrizione",full:1,hint:"Es. fascia di classificazione, massimale della polizza"},{k:"numero",l:"Numero o protocollo"},{k:"ente",l:"Rilasciato da"},{k:"rilascio",l:"Data di rilascio",type:"date"},{k:"scadenza",l:"Scadenza",type:"date",hint:"Vuota se non scade"},{k:"note",l:"Note",type:"textarea",full:1}]},
+  costilavoro:{t:"Tabella del costo del lavoro",f:[{k:"nome",l:"Nome",req:1,full:1,hint:"Es. Multiservizi Milano 2026"},{k:"ccnl",l:"Contratto collettivo",def:"CCNL Multiservizi (servizi di pulizia)"},{k:"ambito",l:"Ambito territoriale",hint:"Es. provincia"},{k:"decorrenza",l:"In vigore dal",type:"date"},{k:"fonte",l:"Fonte",hint:"Es. decreto del Ministero del Lavoro"},
+    {k:"livelli",l:"Costo orario per livello",type:"livelli",full:1,def:()=>[1,2,3,4,5,6].map(n=>({livello:String(n),descrizione:"",costoOrario:""}))},{k:"note",l:"Note",type:"textarea",full:1}]},
   lista:{t:"Voce di elenco",f:[{k:"valore",l:"Nome della nuova voce",req:1,full:1}]},
   conti:{t:"Conto di cassa o banca",f:[{k:"nome",l:"Nome",req:1,full:1,hint:"Es. Banca Intesa c/c, Cassa contanti"},{k:"iban",l:"IBAN",full:1},{k:"saldoIniziale",l:"Saldo iniziale (€)",type:"number",step:"0.01",def:0},{k:"dataSaldo",l:"Alla data",type:"date"}]}
 };
@@ -1669,6 +1707,8 @@ function fieldHtml(f,v){
   else if(f.type==="textarea") inp=`<textarea id="${id}">${esc(Array.isArray(v)?v.join("\n"):v)}</textarea>`;
   else if(f.type==="months") inp=`<div class="chips" id="${id}">${MESI.map((m,i)=>`<label><input type="checkbox" value="${i+1}" ${(v||[]).map(Number).includes(i+1)?"checked":""}>${m.slice(0,3)}</label>`).join("")}</div>`;
   else if(f.type==="scad") return `<div class="fld full" id="w_${f.k}"><span class="lb">${esc(f.l)}</span><div class="rows" id="${id}">${(v||[]).map(scadRow).join("")}</div><div class="actions"><button type="button" class="btn small" data-addscad="1">+ Rata</button><button type="button" class="btn small" data-ricalc="1">Ricalcola dal tipo di pagamento</button></div><span class="hint" id="scadInfo"></span></div>`;
+  else if(f.type==="multi") inp=`<div class="chips" id="${id}">${f.opts().map(([a,b])=>`<label><input type="checkbox" value="${esc(a)}" ${(v||[]).includes(a)?"checked":""}>${esc(b)}</label>`).join("")}${(v||[]).filter(x=>!f.opts().some(o=>o[0]===x)).map(x=>`<label><input type="checkbox" value="${esc(x)}" checked>${esc(x)}</label>`).join("")}</div>`;
+  else if(f.type==="livelli"){ const rows=(v&&v.length?v:[{livello:"",descrizione:"",costoOrario:""}]); return `<div class="fld full" id="w_${f.k}"><span class="lb">${esc(f.l)}</span><div class="rows" id="${id}">${rows.map(livRow).join("")}</div><div class="actions"><button type="button" class="btn small" data-livadd="1">+ Livello</button></div>${hint}</div>` }
   else if(f.type==="days") inp=`<div class="chips" id="${id}">${GIORNI.map((g,i)=>`<label><input type="checkbox" value="${i+1}" ${(v||[]).includes(i+1)?"checked":""}>${g}</label>`).join("")}</div>`;
   else if(f.type==="ops"){const o=opOpts(); inp=`<div class="chips" id="${id}">${o.map(([a,b])=>`<label><input type="checkbox" value="${esc(a)}" ${(v||[]).includes(a)?"checked":""}>${esc(b)}</label>`).join("")}${f.add?addBtns(f):""}</div>${o.length?"":`<span class="hint">Nessun operatore ancora: aggiungilo da qui.</span>`}`}
   else if(f.type==="bool") inp=`<select id="${id}"><option value="1" ${v!==false?"selected":""}>${f.yes}</option><option value="0" ${v===false?"selected":""}>${f.no}</option></select>`;
@@ -1677,11 +1717,14 @@ function fieldHtml(f,v){
   else inp=`<input id="${id}" type="${f.type||"text"}" ${f.step?`step="${f.step}"`:""} ${f.type==="number"?'inputmode="decimal"':""} value="${esc(v)}">`;
   return `<div class="fld ${f.full?"full":""}" id="w_${f.k}">${lab}${inp}${hint}</div>`;
 }
+function livRow(l){return `<div class="rg liv" style="grid-template-columns:80px minmax(0,1fr) 110px 30px"><input value="${esc(l.livello??"")}" placeholder="Livello" aria-label="Livello"><input value="${esc(l.descrizione??"")}" placeholder="Qualifica" aria-label="Qualifica"><input type="number" step="0.01" inputmode="decimal" value="${esc(l.costoOrario??"")}" placeholder="€/ora" aria-label="Costo orario"><button type="button" class="x" data-livrm="1" aria-label="Togli livello">✕</button></div>`}
 function readField(f){
   const el=document.getElementById("f_"+f.k); if(!el)return f.type==="ops"?[]:f.type==="righe"?[]:"";
   if(f.type==="months")return [...el.querySelectorAll("input:checked")].map(x=>+x.value);
   if(f.type==="scad")return [...el.querySelectorAll(".rg")].map(r=>{const i=r.querySelectorAll("input");return {data:i[0].value,importo:r2(parseFloat(String(i[1].value).replace(",","."))||0)}}).filter(x=>x.data);
   if(f.type==="days")return [...el.querySelectorAll("input:checked")].map(x=>+x.value);
+  if(f.type==="multi")return [...el.querySelectorAll("input:checked")].map(x=>x.value);
+  if(f.type==="livelli")return [...el.querySelectorAll(".rg")].map(r=>{const i=r.querySelectorAll("input");return {livello:i[0].value.trim(),descrizione:i[1].value.trim(),costoOrario:parseFloat(String(i[2].value).replace(",","."))||0}}).filter(x=>x.livello);
   if(f.type==="ops")return [...el.querySelectorAll("input:checked")].map(x=>x.value);
   if(f.type==="votes"){const o={};el.querySelectorAll("select").forEach(s=>{if(s.value)o[s.dataset.area]=+s.value});return o}
   if(f.type==="righe")return [...el.querySelectorAll(".rg:not(.hd)")].map(r=>{const i=r.querySelectorAll("input,select");return {descr:i[0].value.trim(),qta:parseFloat(i[1].value)||0,prezzo:parseFloat(String(i[2].value).replace(",","."))||0,cod:i[3].value}}).filter(r=>r.descr||r.prezzo);
@@ -1718,7 +1761,7 @@ function openForm(c,rec,prefill,returnTo){
   const title=tOcc?`Turno: ${esc(tOcc.nome)} · ${esc(dLong(parse(current.occ.orig)))}`:c==="lista"?`Nuova voce: ${esc(ADD_LABEL["lista:"+String(current.lista).split("_")[0]]||"elenco")}`:`${rec?"Modifica":"Nuovo"}: ${esc(F.t.toLowerCase())}`;
   modalShell(title+(stack.length?` <span class="small muted" style="font-family:var(--f-body);font-weight:400">· poi torni a ${esc(FORMS[stack[stack.length-1].cur.c].t.toLowerCase())}</span>`:""),
    `<form id="frm" novalidate><div class="mb">${tOcc?`<p class="note full">Turno ricorrente: ${esc(GIORNI_L[isoDow(parse(current.occ.orig))-1])} ${dShort(current.occ.orig)}, ${esc(tOcc.ora||"")}, ${n1(tOcc.durata)} h, ${esc(opNames(tOcc.operatori)||"nessuno")}. Le modifiche valgono solo per questo giorno.</p>`:""}${F.f.map(f=>fieldHtml(f,data[f.k])).join("")}${F.calc?'<div class="calc" id="calcBox"></div>':""}${F.calcPag?'<div class="calc" id="pagPrev" style="grid-template-columns:1fr"></div>':""}${F.alloc||c==="fatture"?'<div class="alloc" id="allocBox" hidden></div>':""}${c==="variazioni"||c==="straordinari"?'<div class="alloc" id="freeBox" hidden></div>':""}${extra}<div class="err full" id="ferr"></div></div>
-   <div class="mf"><div class="actions">${rec?`<button type="button" class="btn danger" data-del="1">${c==="variazioni"?"Ripristina turno originale":"Elimina"}</button>`:""}${c==="fatture"&&rec?`<button type="button" class="btn" data-fe="${rec.id}">Fattura elettronica</button>`:""}${c==="fatture"&&rec&&rec.tipo!=="nc"&&residuoV(rec)>0.005?`<button type="button" class="btn" data-incassa="${rec.id}">Registra incasso</button>`:""}${c==="acquisti"&&rec&&residuoA(rec)>0.005?`<button type="button" class="btn" data-paga="${rec.id}">Registra pagamento</button>`:""}</div><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="submit" class="btn primary">Salva</button></div></div></form>`);
+   <div class="mf"><div class="actions">${rec&&!F.nodel?`<button type="button" class="btn danger" data-del="1">${c==="variazioni"?"Ripristina turno originale":"Elimina"}</button>`:""}${c==="fatture"&&rec?`<button type="button" class="btn" data-fe="${rec.id}">Fattura elettronica</button>`:""}${c==="fatture"&&rec&&rec.tipo!=="nc"&&residuoV(rec)>0.005?`<button type="button" class="btn" data-incassa="${rec.id}">Registra incasso</button>`:""}${c==="acquisti"&&rec&&residuoA(rec)>0.005?`<button type="button" class="btn" data-paga="${rec.id}">Registra pagamento</button>`:""}</div><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="submit" class="btn primary">Salva</button></div></div></form>`);
   if(c==="movimenti"){ setCausali(data.causale); }
   if(F.calc)updCalc();
   if(F.calcPag)updPagPrev();
@@ -1854,7 +1897,7 @@ function applyNew(rt,value){
   }
 }
 async function submitForm(){
-  const {c,rec}=current, F=FORMS[c], out={};
+  const {c,rec}=current, F=FORMS[c], out={}, col=F.col||c;
   const hidden=k=>{const w=document.getElementById("w_"+k);return w&&w.hidden};
   for(const f of F.f){ if(hidden(f.k))continue; const v=readField(f); if(f.req&&(v===""||v===0||(Array.isArray(v)&&!v.length))){$("#ferr").textContent=`Compila il campo "${f.l}".`;return} out[f.k]=v }
   if(c==="variazioni"){
@@ -1882,7 +1925,7 @@ async function submitForm(){
   }
   if(c==="lista"){
     const name=current.lista, v=out.valore, rt=current.returnTo;
-    const base0=name==="assenze"?TIPI_ASSENZA:name==="tipi"?TIPI:name==="categorie"?CAT_COSTI:name.startsWith("causali_")?(CAUSALI[name.slice(8)]||[]):[];
+    const base0=name==="tipidoc"?TIPI_DOC_IMPRESA:name==="assenze"?TIPI_ASSENZA:name==="tipi"?TIPI:name==="categorie"?CAT_COSTI:name.startsWith("causali_")?(CAUSALI[name.slice(8)]||[]):[];
     if([...base0,...lst(name)].some(x=>x.toLowerCase()===v.toLowerCase())){$("#ferr").textContent=`"${v}" è già nell'elenco.`;return}
     const ok=await save("liste",{id:name,valori:lst(name).concat(v)});
     if(ok){closeModal(); if(rt)applyNew(rt,v); toast(`Aggiunto "${v}"`)}
@@ -1956,14 +1999,371 @@ async function submitForm(){
     if(S.preventivi.some(x=>x.numero===out.numero&&(!rec||x.id!==rec.id))){$("#ferr").textContent=`Il numero ${out.numero} è già usato.`;return}
     if(out.clienteId){const cc=byId("clienti",out.clienteId); if(cc)out.cliente=cc.nome}
   }
+  if(c==="costilavoro"){ out.livelli=out.livelli.filter(l=>l.costoOrario>0); if(!out.livelli.length){$("#ferr").textContent="Inserisci il costo orario di almeno un livello.";return} }
+  if(c==="gare"&&!rec)out.documenti=docGaraDefault(out.tipo);
+  if(c==="gare"&&out.tipo==="privata"&&!out.procedura)out.procedura="privata";
   const obj=Object.assign({},rec||{},current.extra||{},out); if(rec&&rec.esempio)obj.esempio=true;
   const rt=current.returnTo;
-  const id=await save(c,obj); if(!id)return;
+  const id=await save(col,obj); if(!id)return;
+  if(c==="gare"&&!rec){closeModal(); UI.garaSel=id; tab="gara"; render(); toast("Gara registrata: completa date, documenti e calcolo"); return}
   if(c==="fatture"&&!rec&&obj.preventivi) for(const pid of obj.preventivi){const pv=byId("preventivi",pid); if(pv&&pv.stato!=="Fatturato")await save("preventivi",Object.assign({},pv,{stato:"Fatturato"}))}
   closeModal();
   if(rt){ applyNew(rt,(rt.k==="soggetto"?(c==="clienti"?"c:":"f:"):"")+id); toast(`"${obj.nome||obj.descrizione}" aggiunto e selezionato`); return }
   toast(c==="fatture"&&!rec?`Salvata ${obj.tipo==="nc"?"nota di credito":"fattura"} ${obj.numero}`:"Salvato");
 }
+/* ---------- modulo GARE D'APPALTO ---------- */
+// Si attiva e si disattiva con l'elenco dei moduli (oggi in impostazioni, nella versione
+// multi-azienda per ogni azienda e solo dal fornitore dell'app). Spento: menu nascosto,
+// dati non caricati, e il database rifiuta letture e scritture delle sue tabelle.
+let moduli=[];
+const moduloOn=m=>moduli.includes(m);
+const MODULO_COL={gare:"gare",docimpresa:"gare",costilavoro:"gare"};
+const colsAttive=()=>ORDINE_COLS.filter(c=>!MODULO_COL[c]||moduloOn(MODULO_COL[c]));
+const STATI_GARA=[["individuata","Individuata",""],["valutazione","In valutazione",""],["preparazione","In preparazione","acc"],["presentata","Offerta presentata","acc"],
+  ["aggiudicata","Aggiudicata","ok"],["contratto","Contratto in corso","ok"],["conclusa","Conclusa",""],["persa","Non aggiudicata","bad"],["esclusa","Esclusa","bad"],["rinuncia","Non partecipiamo",""]];
+const GARA_APERTA=["individuata","valutazione","preparazione"];
+const GARA_VINTA=["aggiudicata","contratto","conclusa"];
+const GARA_PRESENTATA=["presentata","aggiudicata","contratto","conclusa","persa","esclusa"];
+const statoGara=s=>STATI_GARA.find(x=>x[0]===s)||STATI_GARA[0];
+const PROCEDURE=[["affidamento","Affidamento diretto"],["negoziata","Procedura negoziata"],["aperta","Procedura aperta"],["ristretta","Procedura ristretta"],["mepa","Richiesta di offerta su MePA"],["accordo","Adesione ad accordo quadro"],["privata","Richiesta di offerta privata"]];
+const FORMULE=[["lineare","Lineare sul ribasso"],["bilineare","Bilineare (con coefficiente X)"],["inversa","Proporzionale inversa sul prezzo"]];
+const TIPI_DOC_IMPRESA=["DURC","Visura camerale","Iscrizione fascia di classificazione (DM 274/1997)","Certificazione ISO 9001","Certificazione ISO 14001","Certificazione ISO 45001","Certificazione SA8000","Polizza RCT/RCO","Comunicazione antimafia","Attestati formazione sicurezza","Altro"];
+const tipiDocImpresa=()=>[...TIPI_DOC_IMPRESA,...lst("tipidoc")];
+const DOC_STATI=[["ricevuto","Ricevuto dall'ente"],["da fare","Da preparare"],["pronto","Pronto"],["caricato","Caricato in piattaforma"]];
+function docGaraDefault(tipo){
+  const a=[{nome:"Bando o lettera d'invito",stato:"ricevuto"},{nome:"Capitolato e allegati tecnici",stato:"ricevuto"}];
+  if(tipo==="privata")return a.concat([{nome:"Offerta tecnica (descrizione del servizio)",stato:"da fare"},{nome:"Offerta economica",stato:"da fare"},{nome:"DURC e visura",stato:"da fare"}]);
+  return a.concat(["DGUE (documento di gara unico europeo)","Garanzia provvisoria","PassOE / fascicolo virtuale (FVOE)","Dichiarazioni integrative","Attestato di sopralluogo","Offerta tecnica (relazione)","Offerta economica","Dettaglio costi della manodopera e della sicurezza"].map(n=>({nome:n,stato:"da fare"})));
+}
+const giorniA=d=>d?daysBetween(TODAY(),d):null;
+function quando(d){ const g=giorniA(d); if(g==null)return ""; if(g<0)return `${-g===1?"ieri":-g+" giorni fa"}`; if(g===0)return "oggi"; if(g===1)return "domani"; return `tra ${g} giorni` }
+const pctTxt=v=>v==null||!isFinite(v)?"—":(Math.round(v*1000)/1000).toLocaleString("it-IT",{maximumFractionDigits:3})+"%";
+// ---------- costo del lavoro ----------
+const tabCosti=g=>byId("costilavoro",g&&g.costiLavoroId)||S.costilavoro[0]||null;
+function costoOrario(tab,liv){ if(!tab||!liv)return null; const l=(tab.livelli||[]).find(x=>String(x.livello)===String(liv)); return l?+l.costoOrario:null }
+// ---------- calcolo dell'offerta ----------
+function calcGara(g){
+  const tab=tabCosti(g), lb=g.livelloBase||((tab&&tab.livelli&&tab.livelli[0])||{}).livello, cb=costoOrario(tab,lb);
+  const avvisi=[];
+  const voci=(g.voci||[]).map(v=>{const resa=+v.resa||0, ore=(resa>0?(+v.mq||0)*(+v.passaggi||0)/resa:0)+(+v.oreExtra||0); const liv=v.livello||lb, co=costoOrario(tab,liv); if(ore>0&&co==null)avvisi.push(`Manca il costo orario del livello ${liv||"?"} per "${v.descr||v.lotto||"voce"}".`); return Object.assign({},v,{ore:r2(ore),liv,co,costo:r2(ore*(co||0))})});
+  const oreRich=r2(voci.reduce((a,v)=>a+v.ore,0)), costoVoci=r2(voci.reduce((a,v)=>a+v.costo,0));
+  const pers=(g.personale||[]).map(p=>{const liv=p.livello||lb, co=costoOrario(tab,liv), ore=r2((+p.oreSett||0)*52); if(ore>0&&co==null)avvisi.push(`Manca il costo orario del livello ${liv||"?"} per ${p.nome||"un addetto"}.`); return Object.assign({},p,{liv,co,ore,costo:r2(ore*(co||0))})});
+  const oreAss=r2(pers.reduce((a,p)=>a+p.ore,0)), costoPers=r2(pers.reduce((a,p)=>a+p.costo,0));
+  const costoMedio=oreRich>0?costoVoci/oreRich:(cb||0);
+  const oreNuove=r2(Math.max(0,oreRich-oreAss));
+  const manodopera=r2(pers.length?costoPers+oreNuove*costoMedio:costoVoci);
+  if(pers.length&&oreAss>oreRich+0.5)avvisi.push(`Il personale da assorbire copre ${n1(oreAss)} ore l'anno, più delle ${n1(oreRich)} ore stimate: il costo del personale in più resta a tuo carico.`);
+  if(!tab)avvisi.push("Nessuna tabella del costo del lavoro: inseriscila in Gare → Costo del lavoro.");
+  const materiali=r2(manodopera*(+g.materialiPct||0)/100), attrezz=r2(+g.attrezzatureAnno||0), sicur=r2(+g.sicurezzaAnno||0);
+  const baseCosti=r2(manodopera+materiali+attrezz+sicur), generali=r2(baseCosti*(+g.generaliPct||0)/100), utile=r2((baseCosti+generali)*(+g.utilePct||0)/100);
+  const annuo=r2(baseCosti+generali+utile), anni=(+g.durataMesi||12)/12, oneri=+g.oneriSicurezza||0;
+  const totale=r2(annuo*anni+oneri), manodoperaTot=r2(manodopera*anni);
+  const base=+g.importoBase||0, mSa=+g.manodoperaSa||0;
+  let ribassabile=null, ribasso=null;
+  if(base>0){ ribassabile=r2(base-mSa-oneri); if(ribassabile>0)ribasso=r2((1-(totale-mSa-oneri)/ribassabile)*100*1000)/1000 }
+  if(base>0&&totale>base)avvisi.push("Il prezzo supera l'importo a base di gara: l'offerta non sarebbe ammessa.");
+  if(mSa>0&&manodoperaTot>0&&manodoperaTot<mSa*0.98)avvisi.push(`Il tuo costo della manodopera (${eur(manodoperaTot)}) è inferiore alla stima dell'ente (${eur(mSa)}): andrà giustificato con un'organizzazione più efficiente.`);
+  if(mSa>0&&manodoperaTot>mSa*1.02)avvisi.push(`Il tuo costo della manodopera (${eur(manodoperaTot)}) supera la stima dell'ente (${eur(mSa)}): il margine si riduce.`);
+  // punteggio economico stimato
+  let pe=null; const pmax=+g.puntiEconomici||0, R=ribasso, Rmax=Math.max(+g.ribassoMaxAtteso||0,R||0), Rmed=+g.ribassoMedioAtteso||0, X=+g.coeffX||0.85;
+  if(g.criterio==="oepv"&&pmax>0&&R!=null&&R>0){
+    if(g.formula==="bilineare"&&Rmed>0){ pe=R<=Rmed?pmax*X*R/Rmed:pmax*(X+(1-X)*(R-Rmed)/Math.max(0.0001,Rmax-Rmed)) }
+    else if(g.formula==="inversa"&&base>0){ const pmin=base*(1-Rmax/100), poff=base*(1-R/100); pe=pmax*pmin/poff }
+    else pe=Rmax>0?pmax*R/Rmax:pmax;
+    pe=r2(Math.min(pmax,pe));
+  }
+  const pt=g.criterio==="oepv"?(+g.tecnicoStimato||0):null;
+  return {tab,lb,cb,voci,pers,oreRich,oreAss,oreNuove,costoVoci,costoPers,manodopera,materiali,attrezz,sicur,generali,utile,annuo,anni,oneri,totale,manodoperaTot,ribassabile,ribasso,pe,pt,tot:pe!=null?r2(pe+(pt||0)):null,margine:r2(utile*anni),addetti:r2(oreRich/1500),avvisi};
+}
+// requisiti della gara confrontati con i documenti dell'impresa
+function requisitiGara(g){
+  const quando=g.scadOfferta||TODAY();
+  return (g.requisiti||[]).map(r=>{ const docs=S.docimpresa.filter(d=>String(d.tipo).toLowerCase()===String(r).toLowerCase()).sort((a,b)=>String(b.scadenza||"9999").localeCompare(String(a.scadenza||"9999")));
+    const d=docs[0]; const st=!d?"manca":d.scadenza&&d.scadenza<quando?"scaduto":"ok"; return {r,d,st} });
+}
+function prossimoPasso(g){
+  if(!GARA_APERTA.includes(g.stato)&&g.stato!=="presentata"){ if(g.stato==="contratto"&&g.dataFine){const x=giorniA(g.dataFine); if(x!=null&&x<=90)return `Contratto in scadenza ${quando(g.dataFine)}`} return "" }
+  if(g.stato==="presentata")return g.aperturaBuste?`Apertura buste ${quando(g.aperturaBuste)}`:"In attesa dell'esito";
+  if(g.sopralluogo&&g.sopralluogo>=TODAY())return `Sopralluogo ${quando(g.sopralluogo)}`;
+  const req=requisitiGara(g).filter(x=>x.st!=="ok"); if(req.length)return `${req.length} requisit${req.length>1?"i":"o"} da sistemare`;
+  const dd=(g.documenti||[]).filter(d=>d.stato==="da fare").length; if(dd)return `${dd} document${dd>1?"i":"o"} da preparare`;
+  if(!(g.voci||[]).length)return "Calcola l'offerta";
+  return g.scadOfferta?`Presentare ${quando(g.scadOfferta)}`:"";
+}
+function avvisiGare(a){
+  if(!moduloOn("gare"))return;
+  S.gare.filter(g=>GARA_APERTA.includes(g.stato)&&g.scadOfferta).forEach(g=>{const x=giorniA(g.scadOfferta); if(x>=0&&x<=7)a.push([x<=2?"bad":"warn",`Gara "${g.oggetto}": offerta da presentare ${quando(g.scadOfferta)}.`,"gare"])});
+  S.gare.filter(g=>GARA_APERTA.includes(g.stato)&&g.sopralluogo).forEach(g=>{const x=giorniA(g.sopralluogo); if(x>=0&&x<=3)a.push(["warn",`Gara "${g.oggetto}": sopralluogo ${quando(g.sopralluogo)}.`,"gare"])});
+  S.gare.filter(g=>GARA_APERTA.includes(g.stato)&&g.scadChiarimenti).forEach(g=>{const x=giorniA(g.scadChiarimenti); if(x>=0&&x<=3)a.push(["warn",`Gara "${g.oggetto}": richieste di chiarimento entro ${quando(g.scadChiarimenti)}.`,"gare"])});
+  const ko=S.docimpresa.filter(d=>d.scadenza&&d.scadenza<TODAY()), presto=S.docimpresa.filter(d=>d.scadenza&&d.scadenza>=TODAY()&&giorniA(d.scadenza)<=30);
+  if(ko.length)a.push(["bad",`${ko.length} document${ko.length>1?"i":"o"} dell'impresa scadut${ko.length>1?"i":"o"} (${ko.map(d=>d.tipo).join(", ")}).`,"docimpresa"]);
+  if(presto.length)a.push(["warn",`${presto.length} document${presto.length>1?"i":"o"} dell'impresa in scadenza entro 30 giorni (${presto.map(d=>d.tipo+" il "+dShort(d.scadenza)).join(", ")}).`,"docimpresa"]);
+  S.gare.forEach(g=>{[["garProv","Garanzia provvisoria"],["cauzDef","Cauzione definitiva"]].forEach(([k,l])=>{const d=g[k+"Scadenza"]; if(d&&!g[k+"Svincolata"]&&+g[k+"Importo"]>0){const x=giorniA(d); if(x<=30)a.push([x<0?"bad":"warn",`${l} della gara "${g.oggetto}" ${x<0?"scaduta":"in scadenza"} il ${dShort(d)}.`,"gare"])}})});
+  S.gare.filter(g=>g.stato==="contratto"&&g.dataFine).forEach(g=>{const x=giorniA(g.dataFine); if(x>=0&&x<=90)a.push(["warn",`Contratto "${g.oggetto}" in scadenza il ${dShort(g.dataFine)}: valuta rinnovo o nuova gara.`,"gare"])});
+}
+// ---------- viste ----------
+function vGare(){
+  const f=UI.gFil||"corso";
+  const set={corso:g=>GARA_APERTA.includes(g.stato)||g.stato==="presentata",vinte:g=>GARA_VINTA.includes(g.stato),chiuse:g=>["persa","esclusa","rinuncia"].includes(g.stato),tutte:()=>true}[f]||(()=>true);
+  const list=S.gare.filter(set).sort((a,b)=>String(a.scadOfferta||"9999").localeCompare(String(b.scadOfferta||"9999")));
+  const corso=S.gare.filter(g=>GARA_APERTA.includes(g.stato)||g.stato==="presentata");
+  const y=String(today().getFullYear()), pres=S.gare.filter(g=>GARA_PRESENTATA.includes(g.stato)&&(g.dataEsito||g.scadOfferta||"").startsWith(y)), vinte=pres.filter(g=>GARA_VINTA.includes(g.stato));
+  const sett=S.gare.filter(g=>GARA_APERTA.includes(g.stato)&&g.scadOfferta&&giorniA(g.scadOfferta)>=0&&giorniA(g.scadOfferta)<=7).length;
+  return head("Gare d'appalto",`${corso.length} in corso · ${eur(corso.reduce((a,g)=>a+(+g.importoBase||0),0))} a base di gara`,`<button class="btn primary" data-new="gare">Nuova gara</button>`)+
+  `<div class="kpis"><div class="kpi"><span class="label">In corso</span><span class="v">${corso.length}</span><span class="n">da preparare o in attesa di esito</span></div>
+   <div class="kpi"><span class="label">Scadenze 7 giorni</span><span class="v ${sett?"neg":""}">${sett}</span><span class="n">offerte da presentare</span></div>
+   <div class="kpi"><span class="label">Vinte ${y}</span><span class="v">${vinte.length}/${pres.length}</span><span class="n">${pres.length?Math.round(vinte.length/pres.length*100)+"% delle offerte presentate":"nessuna offerta presentata"}</span></div>
+   <div class="kpi"><span class="label">Valore aggiudicato ${y}</span><span class="v">${eur(vinte.reduce((a,g)=>a+(+g.importoOfferto||0),0))}</span><span class="n">importo delle offerte vinte</span></div></div>
+  <section class="panel"><div class="ph"><div class="seg" role="group" aria-label="Filtro">${[["corso","In corso"],["vinte","Vinte"],["chiuse","Perse o rinunciate"],["tutte","Tutte"]].map(([k,l])=>`<button data-gfil="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div><span class="small muted">${list.length} gare</span></div>
+  ${list.length?`<div class="tablewrap"><table><thead><tr><th>Gara</th><th>Procedura</th><th class="r">Base di gara</th><th>Scadenza offerta</th><th>Stato</th><th>Prossimo passo</th></tr></thead><tbody>${list.map(g=>{const st=statoGara(g.stato), x=giorniA(g.scadOfferta);
+    return `<tr class="click" data-gara="${g.id}"><td><b>${esc(g.oggetto)}</b>${g.esempio?' <span class="pill">esempio</span>':""}<div class="small muted">${esc(g.ente||"")}${g.cig?" · CIG "+esc(g.cig):""}</div></td><td class="small">${esc((PROCEDURE.find(p=>p[0]===g.procedura)||["",g.tipo==="privata"?"Richiesta privata":"—"])[1])}${g.criterio?`<div class="muted">${g.criterio==="oepv"?"Offerta più vantaggiosa":"Prezzo più basso"}</div>`:""}</td><td class="r num">${g.importoBase?eur(g.importoBase):"—"}</td><td class="mono small ${GARA_APERTA.includes(g.stato)&&x!=null&&x<=2?"neg":""}">${g.scadOfferta?dShort(g.scadOfferta)+(g.oraOfferta?" "+esc(g.oraOfferta):""):"—"}${GARA_APERTA.includes(g.stato)&&x!=null&&x>=0?`<div class="muted">${quando(g.scadOfferta)}</div>`:""}</td><td><span class="pill ${st[2]}">${esc(st[1])}</span></td><td class="small">${esc(prossimoPasso(g))}</td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty"><h2>Nessuna gara ${f==="corso"?"in corso":"in questo elenco"}</h2><p>Registra le gare pubbliche e le richieste di offerta dei privati: scadenze, sopralluogo, documenti, calcolo dell'offerta con il costo del lavoro e simulazione del punteggio. Quando ne vinci una, con un clic diventa cliente con le sue sedi.</p><button class="btn primary" data-new="gare">Nuova gara</button></div>`}</section>
+  <p class="note">Le offerte per gli enti pubblici si presentano sulle piattaforme telematiche certificate (MePA, piattaforme regionali o dell'ente): qui prepari, calcoli e tieni traccia, poi carichi i documenti sulla piattaforma indicata nel bando.</p>`;
+}
+function vGara(){
+  const g=byId("gare",UI.garaSel); if(!g){tab="gare";return vGare()}
+  const st=statoGara(g.stato), c=calcGara(g), req=requisitiGara(g), docs=g.documenti||[], cli=byId("clienti",g.clienteId);
+  const date=[["Pubblicazione",g.dataPubblicazione],["Sopralluogo"+(g.sopralluogoObbl?" (obbligatorio)":""),g.sopralluogo],["Richieste di chiarimento",g.scadChiarimenti],["Scadenza offerta",g.scadOfferta,g.oraOfferta],["Apertura buste",g.aperturaBuste],["Esito",g.dataEsito],["Stipula del contratto",g.dataStipula],["Inizio servizio",g.dataInizio],["Fine contratto",g.dataFine]].filter(x=>x[1]);
+  const fatti=docs.filter(d=>d.stato!=="da fare").length;
+  const docRow=(d,i)=>`<tr><td>${esc(d.nome)}${d.note?`<div class="small muted">${esc(d.note)}</div>`:""}</td><td><select data-gdocst="${i}" aria-label="Stato di ${esc(d.nome)}">${DOC_STATI.map(([k,l])=>`<option value="${k}" ${d.stato===k?"selected":""}>${l}</option>`).join("")}</select></td><td>${d.file?`<button class="btn small" data-fopen="${esc(d.file)}">${esc(d.nomeFile||"Apri")}</button>`:`<button class="btn small" data-gdocup="${i}">Allega file</button>`}</td><td class="r"><button class="btn small ghost" data-gdocrm="${i}" aria-label="Togli ${esc(d.nome)}">✕</button></td></tr>`;
+  const riga=(l,v,cls)=>`<tr><td>${l}</td><td class="r num ${cls||""}">${v}</td></tr>`;
+  return `<div class="actions" style="margin-bottom:10px"><button class="btn small ghost" data-tab="gare">← Tutte le gare</button></div>`+
+  head(esc(g.oggetto),`${esc(g.ente||"")}${g.cig?" · CIG "+esc(g.cig):""} · <span class="pill ${st[2]}">${esc(st[1])}</span>`,`<button class="btn" data-edit="gare:${g.id}">Modifica dati</button><button class="btn primary" data-garacalc="${g.id}">Calcola l'offerta</button>${GARA_PRESENTATA.includes(g.stato)||g.stato==="presentata"?`<button class="btn" data-garaesito="${g.id}">Esito</button>`:""}`)+
+  `<section class="panel"><h2>Stato</h2><div class="seg" role="group" aria-label="Stato della gara" style="flex-wrap:nowrap">${STATI_GARA.map(([k,l])=>`<button data-garastato="${k}" aria-pressed="${g.stato===k}">${l}</button>`).join("")}</div>${g.motivo?`<p class="note">${esc(g.motivo)}</p>`:""}</section>
+  <div class="grid2"><div class="col">
+   <section class="panel"><h2>Date</h2>${date.length?`<table class="gsum"><tbody>${date.map(([l,d,o])=>`<tr><td>${l}</td><td class="mono small">${dShort(d)}${o?" "+esc(o):""}</td><td class="small muted r">${GARA_APERTA.includes(g.stato)||g.stato==="presentata"||l.startsWith("Fine")?esc(quando(d)):""}</td></tr>`).join("")}</tbody></table>`:`<p class="muted">Nessuna data inserita: usa "Modifica dati".</p>`}
+    ${g.link?`<p><a href="${esc(g.link)}" target="_blank" rel="noopener">Apri la gara ${g.piattaforma?"su "+esc(g.piattaforma):"sulla piattaforma"} ↗</a></p>`:g.piattaforma?`<p class="small">Piattaforma: ${esc(g.piattaforma)}</p>`:""}</section>
+   <section class="panel"><h2>Requisiti</h2>${req.length?`<table><tbody>${req.map(x=>`<tr><td>${esc(x.r)}</td><td>${x.st==="ok"?`<span class="pill ok">Valido${x.d.scadenza?" fino al "+dShort(x.d.scadenza):""}</span>`:x.st==="scaduto"?`<span class="pill bad">Scaduto il ${dShort(x.d.scadenza)}</span>`:`<span class="pill warn">Manca</span>`}</td></tr>`).join("")}</tbody></table>`:`<p class="muted">Nessun requisito indicato.</p>`}
+    <p class="small">${g.cam?'<span class="pill acc">Criteri ambientali minimi (CAM)</span> ':""}${g.clausolaSociale?'<span class="pill acc">Clausola sociale: personale da assorbire</span>':""}</p>
+    <p class="note">I requisiti si confrontano con i documenti in Gare → Documenti impresa, alla data di scadenza dell'offerta.</p></section>
+   <section class="panel"><h2>Garanzie</h2><table class="gsum"><tbody>
+    <tr><td>Garanzia provvisoria</td><td class="r num">${g.garProvImporto?eur2(g.garProvImporto):g.importoBase?`<span class="muted">circa ${eur(g.importoBase*0.02)} (2%)</span>`:"—"}</td><td class="small">${g.garProvScadenza?"scade "+dShort(g.garProvScadenza):""}${g.garProvSvincolata?' <span class="pill ok">svincolata</span>':""}</td></tr>
+    <tr><td>Cauzione definitiva</td><td class="r num">${g.cauzDefImporto?eur2(g.cauzDefImporto):GARA_VINTA.includes(g.stato)&&g.importoOfferto?`<span class="muted">circa ${eur(g.importoOfferto*0.1)} (10%)</span>`:"—"}</td><td class="small">${g.cauzDefScadenza?"scade "+dShort(g.cauzDefScadenza):""}${g.cauzDefSvincolata?' <span class="pill ok">svincolata</span>':""}</td></tr></tbody></table>
+    <div class="actions"><button class="btn small" data-gform="gareGaranzie:${g.id}">Modifica garanzie</button></div>
+    <p class="note">Percentuali indicative (2% e 10%): fanno fede il bando e le riduzioni per le certificazioni possedute.</p></section>
+  </div><div class="col">
+   <section class="panel"><div class="ph"><h2>Offerta</h2><button class="btn small" data-garacalc="${g.id}">Calcola</button></div>${(g.voci||[]).length?`<table class="gsum"><tbody>
+    ${riga("Ore di lavoro all'anno",n1(c.oreRich)+" h · circa "+n1(c.addetti)+" addetti a tempo pieno")}
+    ${riga("Costo della manodopera all'anno",eur(c.manodopera))}
+    ${riga("Prezzo annuo",eur(c.annuo))}
+    ${riga(`Totale offerta (${n1(c.anni*12)} mesi${c.oneri?" + oneri sicurezza":""})`,"<b>"+eur(c.totale)+"</b>")}
+    ${c.ribasso!=null?riga("Ribasso sulla parte ribassabile",pctTxt(c.ribasso),c.ribasso<0?"neg":""):""}
+    ${riga("Utile sull'intero contratto",eur(c.margine))}
+    ${c.tot!=null?riga("Punteggio stimato",`${n1(c.tot)} / ${n1((+g.puntiTecnici||0)+(+g.puntiEconomici||0))} <span class="muted">(tecnico ${n1(c.pt)} + economico ${n1(c.pe)})</span>`):""}
+   </tbody></table>${c.avvisi.length?`<div class="banner-warn small"><ul>${c.avvisi.map(a=>`<li>${esc(a)}</li>`).join("")}</ul></div>`:""}`:`<p class="muted">Inserisci superfici, frequenze e rese per calcolare ore, costo del lavoro, prezzo, ribasso e punteggio.</p>`}</section>
+   <section class="panel"><div class="ph"><h2>Documenti (${fatti}/${docs.length})</h2></div>${docs.length?`<div class="tablewrap"><table><thead><tr><th>Documento</th><th>Stato</th><th>File</th><th></th></tr></thead><tbody>${docs.map(docRow).join("")}</tbody></table></div>`:""}
+    <div class="withadd" style="margin-top:8px"><input id="gdocNuovo" placeholder="Aggiungi un documento richiesto dal bando" aria-label="Nuovo documento" style="flex:1;min-width:0"><button class="btn small" data-gdocadd="1">Aggiungi</button></div></section>
+   ${GARA_PRESENTATA.includes(g.stato)&&(g.dataEsito||(g.concorrenti||[]).length)?`<section class="panel"><h2>Esito</h2><table class="gsum"><tbody>${g.posizione?riga("Posizione in graduatoria",g.posizione+"ª"):""}${g.punteggioTecnico!=null||g.punteggioEconomico!=null?riga("Punteggio ottenuto",`${n1((+g.punteggioTecnico||0)+(+g.punteggioEconomico||0))} <span class="muted">(${n1(g.punteggioTecnico)} + ${n1(g.punteggioEconomico)})</span>`):""}${g.aggiudicatario?riga("Aggiudicatario",esc(g.aggiudicatario)):""}${g.ribassoAggiudicazione!=null?riga("Ribasso vincente",pctTxt(g.ribassoAggiudicazione)):""}${g.ribassoOfferto!=null?riga("Nostro ribasso",pctTxt(g.ribassoOfferto)):""}</tbody></table>
+    ${(g.concorrenti||[]).length?`<div class="tablewrap"><table><thead><tr><th>Concorrente</th><th class="r">Ribasso</th><th class="r">Punti totali</th></tr></thead><tbody>${g.concorrenti.slice().sort((a,b)=>(+b.puntiTotali||0)-(+a.puntiTotali||0)).map(x=>`<tr><td>${esc(x.nome)}${x.aggiudicatario?' <span class="pill ok">aggiudicatario</span>':""}</td><td class="r num">${pctTxt(x.ribasso)}</td><td class="r num">${x.puntiTotali!=null?n1(x.puntiTotali):"—"}</td></tr>`).join("")}</tbody></table></div>`:""}</section>`:""}
+   ${GARA_VINTA.includes(g.stato)?`<section class="panel"><h2>Contratto</h2><table class="gsum"><tbody>${riga("Cliente",cli?`<a href="#" data-edit="clienti:${cli.id}">${esc(cli.nome)}</a>`:'<span class="muted">non ancora creato</span>')}${g.dataInizio?riga("Periodo",dShort(g.dataInizio)+" – "+dShort(g.dataFine)):""}${g.revisionePrezzi?riga("Revisione prezzi",esc(g.revisionePrezzi)):""}${g.penali?riga("Penali",esc(g.penali)):""}</tbody></table>
+    <div class="actions">${cli?"":`<button class="btn primary" data-garacli="${g.id}">Crea cliente e sedi</button>`}<button class="btn" data-gform="gareContratto:${g.id}">Dati del contratto</button></div></section>`:""}
+   ${g.note?`<section class="panel"><h2>Note</h2><p style="white-space:pre-wrap">${esc(g.note)}</p></section>`:""}
+  </div></div>`;
+}
+function vDocImpresa(){
+  const list=S.docimpresa.slice().sort((a,b)=>String(a.scadenza||"9999").localeCompare(String(b.scadenza||"9999")));
+  return head("Documenti dell'impresa",`${list.length} documenti · servono come requisiti nelle gare`,`<button class="btn primary" data-new="docimpresa">Nuovo documento</button>`)+
+  (list.length?`<section class="panel"><div class="tablewrap"><table><thead><tr><th>Documento</th><th>Numero ed ente</th><th>Rilascio</th><th>Scadenza</th><th>File</th></tr></thead><tbody>${list.map(d=>{const x=giorniA(d.scadenza);
+    return `<tr class="click" data-edit="docimpresa:${d.id}"><td><b>${esc(d.tipo)}</b>${d.esempio?' <span class="pill">esempio</span>':""}${d.descrizione?`<div class="small muted">${esc(d.descrizione)}</div>`:""}</td><td class="small">${esc(d.numero||"")}${d.ente?`<div class="muted">${esc(d.ente)}</div>`:""}</td><td class="mono small">${dShort(d.rilascio)}</td><td class="mono small">${d.scadenza?dShort(d.scadenza):"—"}${x!=null?` <span class="pill ${x<0?"bad":x<=30?"warn":"ok"}">${x<0?"scaduto":x<=30?quando(d.scadenza):"valido"}</span>`:""}</td><td>${d.file?`<button class="btn small" data-fopen="${esc(d.file)}">${esc(d.nomeFile||"Apri")}</button>`:`<button class="btn small" data-docup="${d.id}">Allega</button>`}</td></tr>`}).join("")}</tbody></table></div></section>`:
+  `<div class="empty"><h2>Nessun documento</h2><p>Registra DURC, visura, certificazioni ISO, iscrizione alla fascia di classificazione, polizze: l'app ti avvisa prima che scadano e controlla i requisiti di ogni gara.</p><button class="btn primary" data-new="docimpresa">Nuovo documento</button></div>`);
+}
+function vCostiLavoro(){
+  return head("Costo del lavoro","Tabelle del costo orario per livello, usate nel calcolo delle offerte",`<button class="btn primary" data-new="costilavoro">Nuova tabella</button>`)+
+  (S.costilavoro.length?S.costilavoro.map(t=>`<section class="panel"><div class="ph"><h2>${esc(t.nome)}${t.esempio?' <span class="pill warn">valori di esempio</span>':""}</h2><button class="btn small" data-edit="costilavoro:${t.id}">Modifica</button></div>
+    <p class="small muted">${[t.ccnl,t.ambito,t.decorrenza?"in vigore dal "+dShort(t.decorrenza):"",t.fonte].filter(Boolean).map(esc).join(" · ")}</p>
+    <div class="tablewrap"><table><thead><tr><th>Livello</th><th>Qualifica</th><th class="r">Costo orario</th></tr></thead><tbody>${(t.livelli||[]).map(l=>`<tr><td><b>${esc(l.livello)}</b></td><td>${esc(l.descrizione||"")}</td><td class="r num">${eur2(l.costoOrario)}</td></tr>`).join("")}</tbody></table></div></section>`).join(""):
+   `<div class="empty"><h2>Nessuna tabella</h2><p>Inserisci il costo orario per livello dalle tabelle del Ministero del Lavoro per il contratto applicato (es. Multiservizi) e la tua provincia.</p><button class="btn primary" data-new="costilavoro">Nuova tabella</button></div>`)+
+  `<p class="note">Le tabelle ministeriali vengono aggiornate periodicamente: usa sempre quelle in vigore alla data della gara. Un costo del personale inferiore ai minimi tabellari porta all'esclusione dell'offerta.</p>`;
+}
+function vGareStat(){
+  const ys=anni(S.gare.map(g=>({d:g.dataEsito||g.scadOfferta||""})),"d"); const y=UI.gsAnno||"*";
+  const L=S.gare.filter(g=>y==="*"||(g.dataEsito||g.scadOfferta||"").startsWith(y));
+  const pres=L.filter(g=>GARA_PRESENTATA.includes(g.stato)), vinte=pres.filter(g=>GARA_VINTA.includes(g.stato)), perse=pres.filter(g=>["persa","esclusa"].includes(g.stato));
+  const avg=a=>{const v=a.filter(x=>x!=null&&isFinite(x)); return v.length?v.reduce((s,x)=>s+ +x,0)/v.length:null};
+  const grp=(k)=>{const m={}; pres.forEach(g=>{const n=k(g)||"—"; (m[n]=m[n]||[]).push(g)}); return Object.entries(m).sort((a,b)=>b[1].length-a[1].length)};
+  const conc={}; L.forEach(g=>(g.concorrenti||[]).forEach(x=>{const k=String(x.nome).trim(); if(!k)return; const o=conc[k]=conc[k]||{n:0,v:0,r:[]}; o.n++; if(x.aggiudicatario)o.v++; if(x.ribasso!=null)o.r.push(+x.ribasso)}));
+  const motivi=L.filter(g=>["persa","esclusa","rinuncia"].includes(g.stato)&&g.motivo);
+  return head("Statistiche delle gare",`${pres.length} offerte presentate · ${vinte.length} vinte`,`<select id="gsAnno" class="btn" aria-label="Anno"><option value="*">Tutti gli anni</option>${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select>`)+
+  `<div class="kpis"><div class="kpi"><span class="label">Tasso di vittoria</span><span class="v">${pres.length?Math.round(vinte.length/pres.length*100)+"%":"—"}</span><span class="n">${vinte.length} su ${pres.length} offerte</span></div>
+   <div class="kpi"><span class="label">Valore vinto</span><span class="v">${eur(vinte.reduce((a,g)=>a+(+g.importoOfferto||0),0))}</span><span class="n">su ${eur(pres.reduce((a,g)=>a+(+g.importoOfferto||0),0))} offerti</span></div>
+   <div class="kpi"><span class="label">Nostro ribasso medio</span><span class="v">${pctTxt(avg(pres.map(g=>g.ribassoOfferto)))}</span><span class="n">sulle offerte presentate</span></div>
+   <div class="kpi"><span class="label">Ribasso vincente medio</span><span class="v">${pctTxt(avg(pres.map(g=>g.ribassoAggiudicazione)))}</span><span class="n">nelle gare con esito</span></div></div>
+  <div class="grid2"><section class="panel"><h2>Per ente o committente</h2>${pres.length?`<div class="tablewrap"><table><thead><tr><th>Ente</th><th class="r">Offerte</th><th class="r">Vinte</th><th class="r">Ribasso vincente medio</th></tr></thead><tbody>${grp(g=>g.ente).map(([k,a])=>`<tr><td>${esc(k)}</td><td class="r num">${a.length}</td><td class="r num">${a.filter(g=>GARA_VINTA.includes(g.stato)).length}</td><td class="r num">${pctTxt(avg(a.map(g=>g.ribassoAggiudicazione)))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Nessuna offerta presentata nel periodo.</p>`}</section>
+  <section class="panel"><h2>Per procedura</h2>${pres.length?`<div class="tablewrap"><table><thead><tr><th>Procedura</th><th class="r">Offerte</th><th class="r">Vinte</th></tr></thead><tbody>${grp(g=>(PROCEDURE.find(p=>p[0]===g.procedura)||["",g.tipo==="privata"?"Richiesta privata":"Non indicata"])[1]).map(([k,a])=>`<tr><td>${esc(k)}</td><td class="r num">${a.length}</td><td class="r num">${a.filter(g=>GARA_VINTA.includes(g.stato)).length}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">—</p>`}</section></div>
+  <div class="grid2"><section class="panel"><h2>Concorrenti incontrati</h2>${Object.keys(conc).length?`<div class="tablewrap"><table><thead><tr><th>Impresa</th><th class="r">Gare</th><th class="r">Vinte</th><th class="r">Ribasso medio</th></tr></thead><tbody>${Object.entries(conc).sort((a,b)=>b[1].n-a[1].n).slice(0,15).map(([k,o])=>`<tr><td>${esc(k)}</td><td class="r num">${o.n}</td><td class="r num">${o.v}</td><td class="r num">${pctTxt(avg(o.r))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Inserisci i concorrenti nell'esito delle gare per vederli qui.</p>`}</section>
+  <section class="panel"><h2>Perché non abbiamo vinto o partecipato</h2>${motivi.length?`<div class="list">${motivi.map(g=>`<div class="row" data-gara="${g.id}" style="cursor:pointer"><span class="t">${dShort(g.dataEsito||g.scadOfferta)}</span><span style="flex:1"><b>${esc(g.oggetto)}</b><br><span class="small muted">${esc(statoGara(g.stato)[1])}: ${esc(g.motivo)}</span></span></div>`).join("")}</div>`:`<p class="muted">Nessun motivo registrato.</p>`}</section></div>`;
+}
+// ---------- calcolo offerta: finestra ----------
+function openCalcGara(id){ const g=byId("gare",id); if(!g)return; current={c:"garacalc",id,g:JSON.parse(JSON.stringify(g))}; if(!current.g.voci||!current.g.voci.length)current.g.voci=[{lotto:"Lotto unico",descr:"",mq:"",passaggi:"",resa:"",oreExtra:"",livello:""}]; renderCalcGara() }
+function livOpts(tab,v,vuoto){ return (vuoto?`<option value="">${vuoto}</option>`:"")+((tab&&tab.livelli)||[]).map(l=>`<option value="${esc(l.livello)}" ${String(v)===String(l.livello)?"selected":""}>${esc(l.livello)}${l.descrizione?" · "+esc(l.descrizione):""}</option>`).join("") }
+function renderCalcGara(){
+  const g=current.g, tab=tabCosti(g), c=calcGara(g), num=(k,v,st,ph)=>`<input type="number" inputmode="decimal" step="${st||"any"}" data-gc="${k}" value="${v==null?"":esc(v)}" ${ph?`placeholder="${ph}"`:""}>`;
+  const fld=(l,inner,full)=>`<div class="fld ${full?"full":""}"><label>${l}</label>${inner}</div>`;
+  modalShell(`Calcolo dell'offerta · ${esc(g.oggetto)}`,`<div class="mb">
+   ${fld("Tabella del costo del lavoro",`<select data-gc="costiLavoroId">${S.costilavoro.map(t=>`<option value="${t.id}" ${tab&&tab.id===t.id?"selected":""}>${esc(t.nome)}</option>`).join("")||'<option value="">Nessuna tabella</option>'}</select>`)}
+   ${fld("Livello predefinito",`<select data-gc="livelloBase">${livOpts(tab,c.lb)}</select>`)}
+   ${fld("Importo a base di gara (€, intero contratto)",num("importoBase",g.importoBase,"0.01"))}
+   ${fld("Durata (mesi)",num("durataMesi",g.durataMesi||12,"1"))}
+   ${fld("Costo manodopera stimato dall'ente (€)",num("manodoperaSa",g.manodoperaSa,"0.01"))}
+   ${fld("Oneri della sicurezza non ribassabili (€)",num("oneriSicurezza",g.oneriSicurezza,"0.01"))}
+   <div class="fld full"><span class="lb">Ambienti e frequenze</span><div class="tablewrap"><table class="altab gcalc"><thead><tr><th>Lotto</th><th>Ambiente</th><th>m²</th><th>Passaggi l'anno</th><th>Resa m²/h</th><th>Ore extra l'anno</th><th>Livello</th><th class="r">Ore</th><th></th></tr></thead><tbody>
+    ${c.voci.map((v,i)=>`<tr><td><input data-gv="${i}:lotto" value="${esc(v.lotto||"")}" aria-label="Lotto"></td><td><input data-gv="${i}:descr" value="${esc(v.descr||"")}" aria-label="Ambiente" placeholder="es. aule, uffici, bagni"></td><td><input type="number" inputmode="decimal" data-gv="${i}:mq" value="${esc(v.mq??"")}" aria-label="Metri quadri"></td><td><input type="number" inputmode="decimal" data-gv="${i}:passaggi" value="${esc(v.passaggi??"")}" aria-label="Passaggi l'anno" placeholder="es. 250"></td><td><input type="number" inputmode="decimal" data-gv="${i}:resa" value="${esc(v.resa??"")}" aria-label="Resa oraria" placeholder="es. 200"></td><td><input type="number" inputmode="decimal" data-gv="${i}:oreExtra" value="${esc(v.oreExtra??"")}" aria-label="Ore extra"></td><td><select data-gv="${i}:livello" aria-label="Livello">${livOpts(tab,v.livello,"predef.")}</select></td><td class="r num">${n1(v.ore)}</td><td><button type="button" class="btn small ghost" data-gvrm="${i}" aria-label="Togli riga">✕</button></td></tr>`).join("")}
+   </tbody></table></div><div class="actions"><button type="button" class="btn small" data-gvadd="1">+ Ambiente</button></div>
+   <span class="hint">Ore = m² × passaggi ÷ resa oraria, più le ore fisse (presidi, lavori periodici). Per un servizio giornaliero dal lunedì al venerdì i passaggi sono circa 250 l'anno.</span></div>
+   ${g.clausolaSociale||(g.personale||[]).length?`<div class="fld full"><span class="lb">Personale da assorbire (clausola sociale)</span><div class="tablewrap"><table class="altab gcalc"><thead><tr><th>Nome o riferimento</th><th>Livello</th><th>Ore a settimana</th><th class="r">Costo l'anno</th><th></th></tr></thead><tbody>
+    ${c.pers.map((p,i)=>`<tr><td><input data-gp="${i}:nome" value="${esc(p.nome||"")}" aria-label="Nome"></td><td><select data-gp="${i}:livello" aria-label="Livello">${livOpts(tab,p.livello,"predef.")}</select></td><td><input type="number" inputmode="decimal" data-gp="${i}:oreSett" value="${esc(p.oreSett??"")}" aria-label="Ore settimanali"></td><td class="r num">${eur(p.costo)}</td><td><button type="button" class="btn small ghost" data-gprm="${i}" aria-label="Togli">✕</button></td></tr>`).join("")}
+   </tbody></table></div><div class="actions"><button type="button" class="btn small" data-gpadd="1">+ Addetto</button></div><span class="hint">Il personale dell'impresa uscente indicato nel bando: il costo viene calcolato sulle sue ore e i suoi livelli; le ore che mancano al fabbisogno sono coperte con nuovo personale.</span></div>`:`<div class="full"><button type="button" class="btn small" data-gpadd="1">+ Personale da assorbire (clausola sociale)</button></div>`}
+   ${fld("Materiali e prodotti (% sulla manodopera)",num("materialiPct",g.materialiPct??6,"0.1"))}
+   ${fld("Attrezzature e macchinari (€ l'anno)",num("attrezzatureAnno",g.attrezzatureAnno,"0.01"))}
+   ${fld("Costi aziendali per la sicurezza (€ l'anno)",num("sicurezzaAnno",g.sicurezzaAnno,"0.01"))}
+   ${fld("Spese generali (%)",num("generaliPct",g.generaliPct??10,"0.1"))}
+   ${fld("Utile d'impresa (%)",num("utilePct",g.utilePct??5,"0.1"))}
+   ${fld("Criterio di aggiudicazione",`<select data-gc="criterio"><option value="oepv" ${g.criterio!=="prezzo"?"selected":""}>Offerta economicamente più vantaggiosa</option><option value="prezzo" ${g.criterio==="prezzo"?"selected":""}>Prezzo più basso</option></select>`)}
+   ${g.criterio!=="prezzo"?`${fld("Punti tecnici massimi",num("puntiTecnici",g.puntiTecnici??70,"1"))}${fld("Punti economici massimi",num("puntiEconomici",g.puntiEconomici??30,"1"))}
+   ${fld("Formula del punteggio economico",`<select data-gc="formula">${FORMULE.map(([k,l])=>`<option value="${k}" ${(g.formula||"lineare")===k?"selected":""}>${l}</option>`).join("")}</select>`)}
+   ${(g.formula||"")==="bilineare"?fld("Coefficiente X",num("coeffX",g.coeffX??0.85,"0.01")):""}
+   ${fld("Ribasso massimo atteso dai concorrenti (%)",num("ribassoMaxAtteso",g.ribassoMaxAtteso,"0.01"))}
+   ${(g.formula||"")==="bilineare"?fld("Ribasso medio atteso (%)",num("ribassoMedioAtteso",g.ribassoMedioAtteso,"0.01")):""}
+   ${fld("Punteggio tecnico che prevedi di ottenere",num("tecnicoStimato",g.tecnicoStimato,"0.1"))}`:""}
+   <div class="full" id="gcRis">${risCalcGara(g,c)}</div>
+   <div class="err full" id="ferr"></div></div>
+   <div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-gcsave="1">Salva il calcolo</button></div></div>`);
+  $(".modal").classList.add("wide");
+}
+function risCalcGara(g,c){
+  const r=(l,v,b)=>`<tr${b?' style="font-weight:700"':""}><td>${l}</td><td class="r num">${v}</td></tr>`;
+  return `<table class="gsum"><tbody>
+   ${r("Ore di lavoro all'anno",`${n1(c.oreRich)} h · circa ${n1(c.addetti)} addetti a tempo pieno`)}
+   ${c.pers.length?r("Ore coperte dal personale assorbito",n1(c.oreAss)+" h · nuove "+n1(c.oreNuove)+" h"):""}
+   ${r("Manodopera",eur(c.manodopera))}${r("Materiali e prodotti",eur(c.materiali))}${c.attrezz?r("Attrezzature",eur(c.attrezz)):""}${c.sicur?r("Sicurezza aziendale",eur(c.sicur)):""}
+   ${r("Spese generali",eur(c.generali))}${r("Utile",eur(c.utile))}${r("Prezzo annuo",eur(c.annuo),1)}
+   ${r(`Totale offerta per ${n1(c.anni*12)} mesi${c.oneri?" (con "+eur(c.oneri)+" di oneri per la sicurezza)":""}`,eur(c.totale),1)}
+   ${c.ribassabile!=null?r("Parte ribassabile della base di gara",eur(c.ribassabile)):""}
+   ${c.ribasso!=null?r("Ribasso da offrire",`<span class="${c.ribasso<0?"neg":""}">${pctTxt(c.ribasso)}</span>`,1):""}
+   ${c.tot!=null?r("Punteggio stimato",`${n1(c.tot)} (tecnico ${n1(c.pt)} + economico ${n1(c.pe)})`,1):""}
+  </tbody></table>${c.avvisi.length?`<div class="banner-warn small" style="margin-top:8px"><ul>${c.avvisi.map(a=>`<li>${esc(a)}</li>`).join("")}</ul></div>`:""}
+  <p class="note">Il ribasso si calcola solo sulla parte ribassabile: dall'importo a base di gara si tolgono il costo della manodopera stimato dall'ente e gli oneri della sicurezza (art. 41 c. 14 del Codice dei contratti). La formula del punteggio è una simulazione: usa quella esatta del disciplinare.</p>`;
+}
+function leggiCalcGara(){
+  const g=current.g;
+  document.querySelectorAll("[data-gc]").forEach(el=>{const k=el.dataset.gc; g[k]=el.type==="number"?(el.value===""?null:parseFloat(el.value)):el.value});
+  document.querySelectorAll("[data-gv]").forEach(el=>{const[i,k]=el.dataset.gv.split(":"); if(!g.voci[i])return; g.voci[i][k]=el.type==="number"?(el.value===""?"":parseFloat(el.value)):el.value});
+  document.querySelectorAll("[data-gp]").forEach(el=>{const[i,k]=el.dataset.gp.split(":"); if(!g.personale||!g.personale[i])return; g.personale[i][k]=el.type==="number"?(el.value===""?"":parseFloat(el.value)):el.value});
+}
+async function salvaCalcGara(){
+  leggiCalcGara(); const g=current.g, c=calcGara(g);
+  g.voci=(g.voci||[]).filter(v=>v.descr||v.mq||v.oreExtra); g.personale=(g.personale||[]).filter(p=>p.nome||p.oreSett);
+  if(c.totale>0){g.importoOfferto=c.totale; g.ribassoOfferto=c.ribasso}
+  const orig=byId("gare",g.id); const obj=Object.assign({},orig,{costiLavoroId:g.costiLavoroId,livelloBase:g.livelloBase,importoBase:g.importoBase,durataMesi:g.durataMesi,manodoperaSa:g.manodoperaSa,oneriSicurezza:g.oneriSicurezza,
+    materialiPct:g.materialiPct,attrezzatureAnno:g.attrezzatureAnno,sicurezzaAnno:g.sicurezzaAnno,generaliPct:g.generaliPct,utilePct:g.utilePct,criterio:g.criterio,puntiTecnici:g.puntiTecnici,puntiEconomici:g.puntiEconomici,formula:g.formula,coeffX:g.coeffX,
+    ribassoMaxAtteso:g.ribassoMaxAtteso,ribassoMedioAtteso:g.ribassoMedioAtteso,tecnicoStimato:g.tecnicoStimato,voci:g.voci,personale:g.personale,importoOfferto:g.importoOfferto,ribassoOfferto:g.ribassoOfferto});
+  if(GARA_APERTA.includes(obj.stato)&&obj.stato!=="preparazione")obj.stato="preparazione";
+  if(await save("gare",obj)){closeAll();toast("Calcolo salvato")}
+}
+// ---------- esito ----------
+function openEsitoGara(id){ const g=byId("gare",id); if(!g)return; current={c:"garaesito",id,conc:JSON.parse(JSON.stringify(g.concorrenti||[]))}; if(!current.conc.length)current.conc=[{nome:"",ribasso:"",puntiTecnici:"",puntiTotali:"",aggiudicatario:false}]; renderEsitoGara() }
+function renderEsitoGara(){
+  const g=byId("gare",current.id), v=(k)=>g[k]==null?"":esc(g[k]);
+  modalShell(`Esito · ${esc(g.oggetto)}`,`<div class="mb">
+   <div class="fld"><label for="ge_stato">Esito</label><select id="ge_stato">${[["presentata","In attesa"],["aggiudicata","Aggiudicata a noi"],["persa","Non aggiudicata"],["esclusa","Esclusa"]].map(([k,l])=>`<option value="${k}" ${g.stato===k?"selected":""}>${l}</option>`).join("")}</select></div>
+   <div class="fld"><label for="ge_data">Data dell'esito</label><input type="date" id="ge_data" value="${v("dataEsito")||TODAY()}"></div>
+   <div class="fld"><label for="ge_pos">Nostra posizione in graduatoria</label><input type="number" id="ge_pos" value="${v("posizione")}"></div>
+   <div class="fld"><label for="ge_rib">Nostro ribasso offerto (%)</label><input type="number" step="0.001" id="ge_rib" value="${v("ribassoOfferto")}"></div>
+   <div class="fld"><label for="ge_pt">Nostro punteggio tecnico</label><input type="number" step="0.01" id="ge_pt" value="${v("punteggioTecnico")}"></div>
+   <div class="fld"><label for="ge_pe">Nostro punteggio economico</label><input type="number" step="0.01" id="ge_pe" value="${v("punteggioEconomico")}"></div>
+   <div class="fld"><label for="ge_agg">Aggiudicatario</label><input id="ge_agg" value="${v("aggiudicatario")}"></div>
+   <div class="fld"><label for="ge_ra">Ribasso vincente (%)</label><input type="number" step="0.001" id="ge_ra" value="${v("ribassoAggiudicazione")}"></div>
+   <div class="fld full"><label for="ge_mot">Motivo (esclusione, punto debole dell'offerta, ecc.)</label><input id="ge_mot" value="${v("motivo")}"></div>
+   <div class="fld full"><span class="lb">Concorrenti</span><div class="tablewrap"><table class="altab gcalc"><thead><tr><th>Impresa</th><th>Ribasso %</th><th>Punti tecnici</th><th>Punti totali</th><th>Vincitore</th><th></th></tr></thead><tbody>
+    ${current.conc.map((x,i)=>`<tr><td><input data-gq="${i}:nome" value="${esc(x.nome||"")}" aria-label="Impresa"></td><td><input type="number" step="0.001" data-gq="${i}:ribasso" value="${esc(x.ribasso??"")}" aria-label="Ribasso"></td><td><input type="number" step="0.01" data-gq="${i}:puntiTecnici" value="${esc(x.puntiTecnici??"")}" aria-label="Punti tecnici"></td><td><input type="number" step="0.01" data-gq="${i}:puntiTotali" value="${esc(x.puntiTotali??"")}" aria-label="Punti totali"></td><td><input type="checkbox" data-gq="${i}:aggiudicatario" ${x.aggiudicatario?"checked":""} aria-label="Aggiudicatario"></td><td><button type="button" class="btn small ghost" data-gqrm="${i}" aria-label="Togli">✕</button></td></tr>`).join("")}
+   </tbody></table></div><div class="actions"><button type="button" class="btn small" data-gqadd="1">+ Concorrente</button></div><span class="hint">Servono per le statistiche: ribassi vincenti per ente e concorrenti più frequenti.</span></div>
+   <div class="err full" id="ferr"></div></div>
+   <div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-gesave="1">Salva l'esito</button></div></div>`);
+  $(".modal").classList.add("wide");
+}
+function leggiConc(){ document.querySelectorAll("[data-gq]").forEach(el=>{const[i,k]=el.dataset.gq.split(":"); if(!current.conc[i])return; current.conc[i][k]=el.type==="checkbox"?el.checked:el.type==="number"?(el.value===""?"":parseFloat(el.value)):el.value}) }
+async function salvaEsitoGara(){
+  leggiConc(); const g=byId("gare",current.id), n=id=>{const v=$("#"+id).value;return v===""?null:parseFloat(v)};
+  const obj=Object.assign({},g,{stato:$("#ge_stato").value,dataEsito:$("#ge_data").value,posizione:n("ge_pos"),ribassoOfferto:n("ge_rib"),punteggioTecnico:n("ge_pt"),punteggioEconomico:n("ge_pe"),aggiudicatario:$("#ge_agg").value.trim(),ribassoAggiudicazione:n("ge_ra"),motivo:$("#ge_mot").value.trim(),concorrenti:current.conc.filter(x=>String(x.nome||"").trim())});
+  if(obj.stato==="aggiudicata"&&!obj.aggiudicatario)obj.aggiudicatario=azienda().denominazione||"La nostra impresa";
+  if(await save("gare",obj)){closeAll();toast("Esito salvato")}
+}
+// ---------- dopo l'aggiudicazione: cliente e sedi ----------
+function openGaraCliente(id){
+  const g=byId("gare",id); if(!g)return; const c=calcGara(g);
+  const lotti={}; c.voci.forEach(v=>{const k=v.lotto||"Lotto unico"; const o=lotti[k]=lotti[k]||{nome:k,mq:0,costo:0}; o.mq+=+v.mq||0; o.costo+=v.costo});
+  const tot=Object.values(lotti).reduce((a,l)=>a+l.costo,0)||1, annuo=g.importoOfferto?(g.importoOfferto-(+g.oneriSicurezza||0))/((+g.durataMesi||12)/12):c.annuo;
+  current={c:"garacli",id,lotti:Object.values(lotti).map(l=>Object.assign(l,{canone:r2(annuo*l.costo/tot/12),crea:true}))};
+  modalShell(`Crea cliente e sedi · ${esc(g.oggetto)}`,`<div class="mb">
+   <div class="fld full"><label for="gk_nome">Cliente</label><input id="gk_nome" value="${esc(g.ente||"")}"></div>
+   <div class="fld"><label for="gk_cf">Codice fiscale o partita IVA</label><input id="gk_cf" value="${esc(g.enteCf||"")}"></div>
+   <div class="fld"><label for="gk_sdi">Codice destinatario (ufficio PA: 6 caratteri)</label><input id="gk_sdi" value="${esc(g.enteCodice||"")}"></div>
+   <div class="fld"><label for="gk_pec">PEC</label><input id="gk_pec" value="${esc(g.entePec||"")}"></div>
+   <div class="fld"><label for="gk_iva">Codice IVA predefinito</label><select id="gk_iva">${codOptsHtml(g.tipo==="pubblica"?"22S":"22")}</select></div>
+   <div class="fld"><label for="gk_pag">Tipo di pagamento</label><select id="gk_pag"><option value="">—</option>${S.pagamenti.map(p=>`<option value="${p.id}" ${p.id===(g.tipo==="pubblica"?"PAGOPA":"BB30DF")?"selected":""}>${esc(p.descrizione)}</option>`).join("")}</select></div>
+   <div class="fld"><label for="gk_ini">Inizio del servizio</label><input type="date" id="gk_ini" value="${esc(g.dataInizio||"")}"></div>
+   <div class="fld full"><span class="lb">Sedi da creare (una per lotto)</span>${current.lotti.map((l,i)=>`<div class="withadd" style="margin:4px 0"><label style="flex:1"><input type="checkbox" data-gkl="${i}" checked> ${esc(l.nome)} · ${n1(l.mq)} m²</label><input type="number" step="0.01" data-gkc="${i}" value="${l.canone}" aria-label="Canone mensile" style="width:130px"><span class="small muted">€/mese</span></div>`).join("")||'<p class="muted">Nessun lotto nel calcolo: crei solo il cliente.</p>'}
+   <span class="hint">Il canone mensile è ripartito tra i lotti in base al costo calcolato. Giorni, orari e squadre li completi poi nella scheda di ogni sede.</span></div>
+   <p class="note full">Nel cliente vengono salvati CIG e riferimento del contratto: le fatture li riporteranno nella fattura elettronica. Con il codice IVA "scissione dei pagamenti" l'IVA è versata dall'ente.</p>
+   <div class="err full" id="ferr"></div></div>
+   <div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-gksave="1">Crea</button></div></div>`);
+}
+async function salvaGaraCliente(){
+  const g=byId("gare",current.id), nome=$("#gk_nome").value.trim(); if(!nome){$("#ferr").textContent="Scrivi il nome del cliente.";return}
+  const cf=$("#gk_cf").value.replace(/\s/g,"").toUpperCase(), sdi=$("#gk_sdi").value.trim().toUpperCase();
+  if(cf&&!(pivaOk(cf)||cfOk(cf))){$("#ferr").textContent="Codice fiscale o partita IVA non valido.";return}
+  const cli={nome,piva:/^\d{11}$/.test(cf)&&g.tipo!=="pubblica"?cf:"",cf:/^\d{11}$/.test(cf)&&g.tipo!=="pubblica"?"":cf,sdi,pec:$("#gk_pec").value.trim(),codIva:$("#gk_iva").value,pagamento:$("#gk_pag").value,cig:g.cig||"",rifOrdine:g.cig?"Contratto "+(g.cig):"",note:"Da gara: "+g.oggetto};
+  const cid=await save("clienti",cli); if(!cid)return;
+  document.querySelectorAll("[data-gkc]").forEach(el=>current.lotti[+el.dataset.gkc].canone=parseFloat(el.value)||0);
+  for(const [i,l] of current.lotti.entries()){ const on=document.querySelector(`[data-gkl="${i}"]`); if(!on||!on.checked)continue;
+    await save("sedi",{clienteId:cid,nome:l.nome,mq:r2(l.mq),canone:l.canone,giorni:[1,2,3,4,5],ora:"18:00",durata:0,operatori:[],attiva:true,tipo:"Uffici"}) }
+  const ini=$("#gk_ini").value; const obj=Object.assign({},g,{clienteId:cid,stato:"contratto"}); if(ini){obj.dataInizio=ini; if(!obj.dataFine&&obj.durataMesi){const d=parse(ini); d.setMonth(d.getMonth()+ +obj.durataMesi); obj.dataFine=iso(addDays(d,-1))}}
+  if(await save("gare",obj)){closeAll();toast(`Creato il cliente "${nome}"`)}
+}
+// ---------- allegati (Supabase Storage) ----------
+const storageOk=()=>!!(sb&&sb.storage);
+function scegliFile(){ return new Promise(res=>{const i=document.createElement("input"); i.type="file"; i.accept=".pdf,.p7m,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip,.xml"; i.onchange=()=>res(i.files[0]||null); i.click()}) }
+async function caricaAllegato(cartella,file){
+  if(!storageOk()){toast("Spazio file non disponibile");return null}
+  if(file.size>20*1024*1024){toast("Il file supera 20 MB");return null}
+  const nome=String(file.name||"file").replace(/[^\w.\-]+/g,"_").slice(-80), path=`${cartella}/${rid()}-${nome}`;
+  const {error}=await sb.storage.from("allegati").upload(path,file,{upsert:false,contentType:file.type||undefined});
+  if(error){toast("Caricamento non riuscito: "+(error.message||"errore"));return null}
+  return {path,nome:file.name};
+}
+async function apriAllegato(path){ const {data,error}=await sb.storage.from("allegati").createSignedUrl(path,600); if(error||!data){toast("File non disponibile");return} const w=window.open(data.signedUrl,"_blank"); if(!w)location.href=data.signedUrl }
+// ---------- clic e modifiche del modulo ----------
+async function clicGare(d,el,e){
+  if(d.gara){e.stopPropagation();UI.garaSel=d.gara;tab="gara";closeAll();render();window.scrollTo(0,0);return true}
+  if(d.gfil){UI.gFil=d.gfil;render();return true}
+  if(d.garastato){const g=byId("gare",UI.garaSel); if(g&&g.stato!==d.garastato){ if(["aggiudicata","persa","esclusa"].includes(d.garastato)){ await save("gare",Object.assign({},g,{stato:d.garastato,dataEsito:g.dataEsito||TODAY()})); openEsitoGara(g.id); return true } await save("gare",Object.assign({},g,{stato:d.garastato})) } return true}
+  if(d.garacalc){openCalcGara(d.garacalc);return true}
+  if(d.garaesito){openEsitoGara(d.garaesito);return true}
+  if(d.garacli){openGaraCliente(d.garacli);return true}
+  if(d.gform){const[f,id]=d.gform.split(":"); const g=byId("gare",id); if(g)openForm(f,g); return true}
+  if(d.gvadd){leggiCalcGara(); const last=current.g.voci[current.g.voci.length-1]||{}; current.g.voci.push({lotto:last.lotto||"Lotto unico",descr:"",mq:"",passaggi:last.passaggi||"",resa:"",oreExtra:"",livello:""}); renderCalcGara(); return true}
+  if(d.gvrm!==undefined){leggiCalcGara(); current.g.voci.splice(+d.gvrm,1); renderCalcGara(); return true}
+  if(d.gpadd){leggiCalcGara(); current.g.personale=(current.g.personale||[]).concat({nome:"",livello:"",oreSett:""}); current.g.clausolaSociale=true; renderCalcGara(); return true}
+  if(d.gprm!==undefined){leggiCalcGara(); current.g.personale.splice(+d.gprm,1); renderCalcGara(); return true}
+  if(d.gcsave){el.disabled=true; await salvaCalcGara(); el.disabled=false; return true}
+  if(d.gqadd){leggiConc(); current.conc.push({nome:"",ribasso:"",puntiTecnici:"",puntiTotali:"",aggiudicatario:false}); renderEsitoGara(); return true}
+  if(d.gqrm!==undefined){leggiConc(); current.conc.splice(+d.gqrm,1); renderEsitoGara(); return true}
+  if(d.gesave){el.disabled=true; await salvaEsitoGara(); el.disabled=false; return true}
+  if(d.gksave){el.disabled=true; await salvaGaraCliente(); el.disabled=false; return true}
+  if(d.gdocadd){const g=byId("gare",UI.garaSel), v=$("#gdocNuovo").value.trim(); if(!g||!v)return true; await save("gare",Object.assign({},g,{documenti:(g.documenti||[]).concat({nome:v,stato:"da fare"})})); return true}
+  if(d.gdocrm!==undefined){const g=byId("gare",UI.garaSel); if(!g)return true; const docs=(g.documenti||[]).slice(); const x=docs.splice(+d.gdocrm,1)[0]; if(x&&x.file&&storageOk())await sb.storage.from("allegati").remove([x.file]); await save("gare",Object.assign({},g,{documenti:docs})); return true}
+  if(d.gdocup!==undefined){const g=byId("gare",UI.garaSel); const f=await scegliFile(); if(!f||!g)return true; const up=await caricaAllegato("gare/"+g.id,f); if(!up)return true; const docs=(g.documenti||[]).map((x,i)=>i===+d.gdocup?Object.assign({},x,{file:up.path,nomeFile:up.nome,stato:x.stato==="da fare"?"pronto":x.stato}):x); await save("gare",Object.assign({},g,{documenti:docs})); toast("File allegato"); return true}
+  if(d.docup){e.stopPropagation(); const doc=byId("docimpresa",d.docup); const f=await scegliFile(); if(!f||!doc)return true; const up=await caricaAllegato("documenti/"+doc.id,f); if(!up)return true; await save("docimpresa",Object.assign({},doc,{file:up.path,nomeFile:up.nome})); toast("File allegato"); return true}
+  if(d.fopen){e.stopPropagation(); apriAllegato(d.fopen); return true}
+  return false;
+}
+async function cambioGare(t){
+  if(t.dataset&&t.dataset.gdocst!==undefined){const g=byId("gare",UI.garaSel); if(!g)return true; const docs=(g.documenti||[]).map((x,i)=>i===+t.dataset.gdocst?Object.assign({},x,{stato:t.value}):x); await save("gare",Object.assign({},g,{documenti:docs})); return true}
+  if(t.id==="gsAnno"){UI.gsAnno=t.value;render();return true}
+  if(current&&current.c==="garacalc"&&t.closest(".modal")){leggiCalcGara(); if(t.tagName==="SELECT"){ const sc=$(".scrim").scrollTop; renderCalcGara(); const s=$(".scrim"); if(s)s.scrollTop=sc } else {const c=calcGara(current.g); $("#gcRis").innerHTML=risCalcGara(current.g,c)} return true}
+  return false;
+}
+function inputGare(t){ if(current&&current.c==="garacalc"&&t.closest(".modal")&&(t.dataset.gc||t.dataset.gv||t.dataset.gp)){leggiCalcGara(); const c=calcGara(current.g); const r=$("#gcRis"); if(r)r.innerHTML=risCalcGara(current.g,c); if(t.dataset.gv){const tr=t.closest("tr"), i=+t.dataset.gv.split(":")[0]; if(tr&&c.voci[i])tr.children[7].textContent=n1(c.voci[i].ore)} return true} return false }
+
 /* ---------- fattura elettronica: FatturaPA 1.2 (specifiche tecniche 1.9) ---------- */
 const azienda=()=>S.liste.find(x=>x.id==="azienda")||{};
 let lastDaInv=[];
@@ -2222,6 +2622,7 @@ async function genFatture(){
     if(existing.has(c.id)){skipped++;continue}
     const numero=vendNum("fattura",data);
     const nd={tipo:"fattura",numero,clienteId:c.id,clienteNome:c.nome,data,mese:mk,righe,ritenuta:!!c.ritenuta,auto:true,alloc:[]};
+    if(c.cig)nd.cig=c.cig; if(c.rifOrdine)nd.rifOrdine=c.rifOrdine;
     const pg=pagSogg(c), tt=vTot(nd); nd.pagamento=pg&&pg.id||""; nd.scadenze=calcScadenze(pg,data,tt.dovuto,tt.ivaDeb); nd.scadenza=nd.scadenze[0].data;
     const ok=await save("fatture",nd);
     if(!ok)break; created++;
@@ -2284,6 +2685,32 @@ async function loadExamples(){
   w.push(["movimenti",{id:"mv4",data:D(-8),tipo:"uscita",conto:"banca",causale:"Stipendi",importo:5200,soggetto:"",descrizione:"Stipendi del mese",alloc:[],esempio:true}]);
   w.push(["movimenti",{id:"mv5",data:D(-1),tipo:"uscita",conto:"cassa",causale:"Carburante",importo:45,soggetto:"",descrizione:"Rifornimento furgone",alloc:[],esempio:true}]);
   w.push(["movimenti",{id:"mv6",data:D(-1),tipo:"giroconto",conto:"cassa",contoDest:"banca",causale:"Giroconto tra conti",importo:200,soggetto:"",descrizione:"Versamento contanti",alloc:[],esempio:true}]);
+  if(moduloOn("gare")){
+    w.push(["costilavoro",{id:"tl_es",nome:"Multiservizi – valori di esempio",ccnl:"CCNL Multiservizi (servizi di pulizia)",ambito:"Provincia di esempio",decorrenza:y+"-01-01",fonte:"Valori dimostrativi, non ufficiali: sostituiscili con la tabella del Ministero del Lavoro",
+      livelli:[["1","Operaio comune",17.4],["2","Addetto alle pulizie",18.2],["3","Addetto qualificato",19.1],["4","Operaio specializzato",20.3],["5","Caposquadra",21.6],["6","Capo cantiere",23.4]].map(([livello,descrizione,costoOrario])=>({livello,descrizione,costoOrario})),esempio:true}]);
+    [["di1","DURC","Regolarità contributiva",D(-100),D(18)],["di2","Visura camerale","Registro imprese",D(-60),""],["di3","Iscrizione fascia di classificazione (DM 274/1997)","Fascia per volume d'affari",D(-400),""],
+     ["di4","Certificazione ISO 9001","Sistema di gestione qualità",D(-300),D(430)],["di5","Certificazione ISO 14001","Sistema di gestione ambientale",D(-700),D(-10)],["di6","Polizza RCT/RCO","Massimale 3.000.000 €",D(-150),D(215)]]
+     .forEach(([id,tipo,descrizione,rilascio,scadenza])=>w.push(["docimpresa",{id,tipo,descrizione,rilascio,scadenza,esempio:true}]));
+    const docs=(tipo,pronti)=>docGaraDefault(tipo).map((d,i)=>i<pronti&&d.stato==="da fare"?Object.assign({},d,{stato:"pronto"}):d);
+    w.push(["gare",{id:"ga1",oggetto:"Pulizia plessi scolastici – lotto 2",tipo:"pubblica",ente:"Comune di Esempio",enteCf:"80012345678",enteCodice:"UF3K2Z",cig:"B1234567AB",procedura:"aperta",criterio:"oepv",puntiTecnici:70,puntiEconomici:30,formula:"bilineare",coeffX:0.85,piattaforma:"Piattaforma telematica del Comune",
+      importoBase:465000,manodoperaSa:352000,oneriSicurezza:4500,durataMesi:36,rinnovoMesi:12,dataPubblicazione:D(-20),sopralluogo:D(3),sopralluogoObbl:true,scadChiarimenti:D(5),scadOfferta:D(9),oraOfferta:"12:00",aperturaBuste:D(12),cam:true,clausolaSociale:true,
+      requisiti:["DURC","Certificazione ISO 9001","Certificazione ISO 14001","Iscrizione fascia di classificazione (DM 274/1997)"],stato:"preparazione",costiLavoroId:"tl_es",livelloBase:"2",materialiPct:7,attrezzatureAnno:3500,sicurezzaAnno:1200,generaliPct:9,utilePct:5,ribassoMaxAtteso:18,ribassoMedioAtteso:11,tecnicoStimato:52,
+      voci:[["Scuola primaria Via Roma","Aule",1800,200,180],["Scuola primaria Via Roma","Corridoi e scale",600,200,220],["Scuola primaria Via Roma","Bagni",220,400,60],["Scuola primaria Via Roma","Palestra",500,100,300],["Scuola dell'infanzia Via Verdi","Aule e dormitori",900,200,160],["Scuola dell'infanzia Via Verdi","Bagni",120,400,55]]
+        .map(([lotto,descr,mq,passaggi,resa])=>({lotto,descr,mq,passaggi,resa})).concat({lotto:"Scuola primaria Via Roma",descr:"Pulizie di fondo estive",oreExtra:120,livello:"3"}),
+      personale:[["Addetta 1","2",20],["Addetta 2","2",20],["Addetto 3","2",20],["Caposquadra uscente","3",25]].map(([nome,livello,oreSett])=>({nome,livello,oreSett})),
+      documenti:docs("pubblica",4),garProvImporto:9300,garProvEmittente:"Compagnia assicurativa",garProvScadenza:D(190),esempio:true}]);
+    w.push(["gare",{id:"ga2",oggetto:"Pulizia uffici distretto sanitario Nord",tipo:"pubblica",ente:"Azienda sanitaria di esempio",enteCf:"01234567897",enteCodice:"UFQ7LM",cig:"B7654321CD",procedura:"negoziata",criterio:"oepv",puntiTecnici:70,puntiEconomici:30,formula:"lineare",piattaforma:"MePA",
+      importoBase:210000,manodoperaSa:158000,oneriSicurezza:2000,durataMesi:24,dataPubblicazione:D(-95),scadOfferta:D(-60),dataEsito:D(-25),stato:"aggiudicata",costiLavoroId:"tl_es",livelloBase:"2",materialiPct:6,generaliPct:9,utilePct:5,
+      voci:[{lotto:"Sede distretto Nord",descr:"Uffici e ambulatori",mq:1600,passaggi:250,resa:190},{lotto:"Sede distretto Nord",descr:"Bagni e spogliatoi",mq:180,passaggi:250,resa:60}],
+      importoOfferto:186500,ribassoOfferto:14.2,posizione:1,punteggioTecnico:61.5,punteggioEconomico:28.7,aggiudicatario:"La nostra impresa",ribassoAggiudicazione:14.2,
+      concorrenti:[{nome:"Alfa Pulizie Srl",ribasso:16.1,puntiTecnici:54,puntiTotali:84.2},{nome:"Beta Servizi Integrati",ribasso:9.8,puntiTecnici:58,puntiTotali:78.3}],
+      garProvImporto:4200,garProvScadenza:D(60),cauzDefImporto:18650,cauzDefEmittente:"Banca di esempio",cauzDefScadenza:D(700),documenti:docs("pubblica",20).map(d=>d.stato==="pronto"?Object.assign({},d,{stato:"caricato"}):d),esempio:true}]);
+    w.push(["gare",{id:"ga3",oggetto:"Pulizia biblioteca civica e archivio",tipo:"pubblica",ente:"Comune di Esempio",cig:"A9988776EF",procedura:"mepa",criterio:"prezzo",importoBase:64000,manodoperaSa:47000,oneriSicurezza:600,durataMesi:24,scadOfferta:D(-120),dataEsito:D(-90),stato:"persa",
+      motivo:"Il ribasso vincente (21%) era molto più alto del nostro: sotto il 15% il margine non era sostenibile.",importoOfferto:58000,ribassoOfferto:8.5,posizione:3,aggiudicatario:"Alfa Pulizie Srl",ribassoAggiudicazione:21.3,
+      concorrenti:[{nome:"Alfa Pulizie Srl",ribasso:21.3,aggiudicatario:true},{nome:"Gamma Multiservizi",ribasso:12.4}],documenti:docs("pubblica",20).map(d=>d.stato==="pronto"?Object.assign({},d,{stato:"caricato"}):d),esempio:true}]);
+    w.push(["gare",{id:"ga4",oggetto:"Condominio Parco dei Tigli – richiesta di offerta",tipo:"privata",procedura:"privata",criterio:"prezzo",ente:"Studio Bianchi Amministrazioni",scadOfferta:D(14),sopralluogo:D(6),stato:"individuata",requisiti:["DURC","Polizza RCT/RCO"],
+      costiLavoroId:"tl_es",livelloBase:"2",durataMesi:12,documenti:docGaraDefault("privata"),note:"Tre scale da 8 piani, box e cortile. L'amministratore vuole l'offerta prima dell'assemblea.",esempio:true}]);
+  }
   toast("Carico i dati di esempio…");
   PAG_DEFAULT.filter(p=>!S.pagamenti.some(x=>x.id===p.id)).forEach(p=>w.push(["pagamenti",Object.assign({},p)]));
   const ord=c=>ORDINE_COLS.indexOf(c);
@@ -2309,10 +2736,13 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok]");
+  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-livadd],[data-livrm]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
+  if(Object.keys(d).some(k=>/^(gara|gfil|garastato|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen)$/.test(k))&&await clicGare(d,el,e))return;
+  if(d.livadd!==undefined){$("#f_livelli").insertAdjacentHTML("beforeend",livRow({}));return}
+  if(d.livrm!==undefined){const box=el.closest(".rows"); if(box.querySelectorAll(".rg").length>1)el.closest(".rg").remove(); return}
   if(d.auth){authAction(d.auth);return}
   if(d.act==="logout"){await sb.auth.signOut(); location.reload(); return}
   if(d.act==="migra"){eseguiMigrazione();return}
@@ -2393,7 +2823,8 @@ document.addEventListener("click",async e=>{
     if(!cli)$("#ferr").textContent=`Crea prima il cliente "${p.cliente}" oppure scegline uno esistente.`;return}
   if(d.copytxt&&current&&current.rec){const t=fattText(current.rec);try{await navigator.clipboard.writeText(t);toast("Dati copiati")}catch{modalShell("Dati della fattura",`<div class="mb"><pre class="copy full">${esc(t)}</pre></div>`);current=null;toast("Seleziona il testo e copialo")}return}
   if(d.del!==undefined&&current&&current.rec){
-    const{c,rec}=current;
+    const{rec}=current, c=(FORMS[current.c]&&FORMS[current.c].col)||current.c;
+    if(c==="gare"){ for(const x of (rec.documenti||[]).filter(x=>x.file)) if(storageOk())await sb.storage.from("allegati").remove([x.file]); }
     if(c==="fatture"&&SDI_TRASMESSA.includes(sdiStato(rec))){$("#ferr").textContent="Fattura già trasmessa allo SdI: non si può eliminare. Per annullarla emetti una nota di credito.";return}
     if(c==="pagamenti"){const n=S.clienti.filter(x=>x.pagamento===rec.id).length+S.fornitori.filter(x=>x.pagamento===rec.id).length; if(n){$("#ferr").textContent=`È assegnato a ${n} tra clienti e fornitori: cambia prima il loro tipo di pagamento.`;return}}
     if(!el.dataset.sure){el.dataset.sure="1";
@@ -2405,6 +2836,7 @@ document.addEventListener("click",async e=>{
 });
 document.addEventListener("submit",e=>{if(e.target.id==="frm"){e.preventDefault();submitForm()} if(e.target.id==="authForm"){e.preventDefault();authAction(e.target.dataset.def||"login")}});
 document.addEventListener("input",e=>{
+  if(inputGare(e.target))return;
   if(!current||!e.target.closest("#frm"))return;
   if(current.c==="preventivi")updCalc();
   if(e.target.closest("#f_scadenze")){current.scadManual=true;updScadInfo();return}
@@ -2417,6 +2849,11 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",async e=>{
   const id=e.target.id;
+  if((e.target.dataset&&e.target.dataset.gdocst!==undefined||id==="gsAnno"||(current&&current.c==="garacalc"))&&await cambioGare(e.target))return;
+  if(id==="modGare"){const v=e.target.checked, nuovi=v?[...new Set(moduli.concat("gare"))]:moduli.filter(x=>x!=="gare");
+    const {error}=await sb.from("impostazioni").update({moduli:nuovi}).eq("id",1); if(error){toast(/moduli/.test(error.message||"")?"Esegui prima in Supabase lo script supabase/modulo_gare.sql":errMsg(error));e.target.checked=!v;return}
+    const prima=moduli; moduli=nuovi; try{await loadAll()}catch(err){moduli=prima; await sb.from("impostazioni").update({moduli:prima}).eq("id",1); toast("Le tabelle delle gare non ci sono: esegui in Supabase lo script supabase/modulo_gare.sql"); e.target.checked=!v; return}
+    ver++; render(); toast(v?"Modulo Gare attivato":"Modulo Gare disattivato"); return}
   if(id==="fattMese"&&e.target.value){fattMese=e.target.value;render();return}
   if(id==="vAnno"){UI.vAnno=e.target.value;render();return}
   if(id==="vCli"){UI.vCli=e.target.value;render();return}
@@ -2453,7 +2890,7 @@ document.addEventListener("change",async e=>{
   if(current.c==="preventivi"&&id==="f_tipo"){$("#f_produttivita").value=PROD[e.target.value]||200;updCalc();return}
   if(current.c==="movimenti"&&id==="f_tipo"){setCausali();current.allocInit=[];formDynamics();return}
   if(current.c==="movimenti"&&id==="f_soggetto"){current.allocInit=[];renderAlloc(false);return}
-  if(current.c==="fatture"&&id==="f_clienteId"){const c=byId("clienti",e.target.value); if(c){applyTpl(c,false);$("#f_ritenuta").value=c.ritenuta?"1":"0";$("#f_pagamento").value=c.pagamento||""} current.allocInit=[];formDynamics();return}
+  if(current.c==="fatture"&&id==="f_clienteId"){const c=byId("clienti",e.target.value); if(c){applyTpl(c,false);$("#f_ritenuta").value=c.ritenuta?"1":"0";$("#f_pagamento").value=c.pagamento||""; if(c.cig&&$("#f_cig")&&!$("#f_cig").value)$("#f_cig").value=c.cig; if(c.rifOrdine&&$("#f_rifOrdine")&&!$("#f_rifOrdine").value)$("#f_rifOrdine").value=c.rifOrdine} current.allocInit=[];formDynamics();return}
   if(current.c==="acquisti"&&id==="f_fornitoreId"){const f=byId("fornitori",e.target.value); if(f){if(f.categoria)$("#f_categoria").value=f.categoria; $("#f_pagamento").value=f.pagamento||""} recalcScad(false); return}
   if(current.c==="fatture"&&(id==="f_tipo"||id==="f_ritenuta")){formDynamics();return}
   if(current.c==="clienti"&&id==="f_codIva"){current.defCod=e.target.value; document.querySelectorAll("#f_righeAbituali .rg:not(.hd)").forEach(r=>{if(!r.querySelector("input").value)r.querySelector("select").value=e.target.value});return}
@@ -2511,7 +2948,8 @@ async function authAction(kind){
   }catch(e){ authMsg=traduci(e.message); render() }
 }
 async function loadAll(){
-  const r=await caricaDB(); COLS.forEach(c=>S[c]=r[c]||[]);
+  let r; try{ r=await caricaDB(colsAttive()) }catch(e){ if(moduli.length&&(/PGRST205|42P01/.test(e&&e.code||"")||/does not exist|Could not find the table/i.test(e&&e.message||""))){ moduli=[]; r=await caricaDB(colsAttive()) } else throw e }
+  COLS.forEach(c=>S[c]=r[c]||[]);
   const {data,error}=await sb.from("agenda").select("operatore_id,data"); if(error)throw error;
   for(const k of Object.keys(AG))delete AG[k];
   (data||[]).forEach(x=>AG[x.operatore_id]=JSON.stringify(stripGen(x.data)));
@@ -2523,7 +2961,7 @@ async function loadTimb(){
 }
 function subscribe(){
   let ch=sb.channel("registro");
-  Object.keys(TAB_COL).forEach(t=>{ ch=ch.on("postgres_changes",{event:"*",schema:"public",table:t},p=>{
+  Object.keys(TAB_COL).filter(t=>colsAttive().includes(TAB_COL[t])).forEach(t=>{ ch=ch.on("postgres_changes",{event:"*",schema:"public",table:t},p=>{
      const r=p.eventType==="DELETE"?p.old:p.new; if(!r||!r.id)return; const c=TAB_COL[t];
      if(p.eventType==="DELETE"){ S[c]=S[c].filter(x=>x.id!==r.id); if(DEL_RELOAD[c])accoda(DEL_RELOAD[c]); scheduleRender(); schedulePublish(); return }
      accoda([c],r.id);
@@ -2607,7 +3045,9 @@ async function enter(session){
   const {data:tit,error}=await sb.rpc("is_titolare");
   if(error){ mode="login"; authMsg="Il database non è pronto: hai eseguito lo script schema.sql in Supabase? ("+error.message+")"; return render() }
   if(!tit){ mode="notowner"; return render() }
-  try{ await loadAll(); await loadTimb(); const {data:imp}=await sb.from("impostazioni").select("gps_attivo").eq("id",1).maybeSingle(); gpsOn=!!(imp&&imp.gps_attivo) }
+  try{ let {data:imp,error:ie}=await sb.from("impostazioni").select("gps_attivo,moduli").eq("id",1).maybeSingle();
+    if(ie){ ({data:imp}=await sb.from("impostazioni").select("gps_attivo").eq("id",1).maybeSingle()); moduli=[] } else moduli=(imp&&imp.moduli)||[];
+    gpsOn=!!(imp&&imp.gps_attivo); await loadAll(); await loadTimb() }
   catch(e){ mode="login"; authMsg=/PGRST205|42P01/.test(e&&e.code||"")||/does not exist|Could not find the table/i.test(e&&e.message||"")?"Il database va aggiornato: in Supabase apri SQL Editor, incolla lo script supabase/schema_v2.sql del repository e premi Run. Poi ricarica questa pagina.":"Caricamento non riuscito: "+traduci(e.message); return render() }
   docsN=await contaDocs();
   const vuoto=["clienti","operatori","fornitori","fatture","movimenti","sedi","acquisti","preventivi"].every(c=>!S[c].length);

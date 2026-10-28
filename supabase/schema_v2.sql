@@ -605,43 +605,73 @@ end $$;
 --    oppure {"tab": "fatture", "elimina": "<id>"}.
 --    Gira con i permessi di chi la chiama: valgono le regole del punto 7.
 -- ---------------------------------------------------------------------
+-- Moduli: funzioni che si attivano per azienda (es. "gare"). Oggi c'è una sola
+-- azienda e l'elenco sta in impostazioni; nella versione multi-azienda passerà
+-- alla tabella delle aziende e lo potrà cambiare solo il fornitore dell'app.
+alter table public.impostazioni add column if not exists moduli text[] not null default '{}';
+create or replace function public.modulo_attivo(p_modulo text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select p_modulo = any(moduli) from impostazioni where id = 1), false)
+$$;
+
+-- Registro degli archivi che il gestionale può salvare, con le loro tabelle figlie.
+-- Un archivio con "modulo" valorizzato si può salvare solo se quel modulo è attivo.
+create table if not exists public.archivi (
+  tab    text primary key,
+  modulo text
+);
+create table if not exists public.archivi_figli (
+  padre  text not null references public.archivi (tab) on delete cascade,
+  figlio text not null,
+  fk     text not null,
+  primary key (padre, figlio)
+);
+insert into public.archivi (tab) values
+  ('amministratori'),('conti'),('pagamenti'),('clienti'),('fornitori'),('operatori'),('elenchi'),('azienda'),
+  ('sedi'),('registro'),('variazioni'),('straordinari'),('assenze'),('ispezioni'),('preventivi'),('fatture'),
+  ('acquisti'),('movimenti'),('cu')
+on conflict (tab) do nothing;
+insert into public.archivi_figli (padre, figlio, fk) values
+  ('clienti','clienti_righe','cliente_id'),
+  ('elenchi','elenchi_voci','elenco_id'),
+  ('elenchi','codici_iva','elenco_id'),
+  ('sedi','sedi_operatori','sede_id'),
+  ('variazioni','variazioni_operatori','variazione_id'),
+  ('straordinari','straordinari_operatori','straordinario_id'),
+  ('ispezioni','ispezioni_voti','ispezione_id'),
+  ('preventivi','preventivi_righe','preventivo_id'),
+  ('fatture','fatture_righe','fattura_id'),
+  ('fatture','fatture_scadenze','fattura_id'),
+  ('fatture','fatture_preventivi','fattura_id'),
+  ('fatture','fatture_sdi_storia','fattura_id'),
+  ('fatture','abbinamenti','nota_id'),
+  ('acquisti','acquisti_righe','acquisto_id'),
+  ('acquisti','acquisti_scadenze','acquisto_id'),
+  ('movimenti','abbinamenti','movimento_id')
+on conflict (padre, figlio) do nothing;
+
 create or replace function public.figlio_fk(p_padre text, p_figlio text) returns text
-language sql immutable as $$
-  select fk from (values
-    ('clienti','clienti_righe','cliente_id'),
-    ('elenchi','elenchi_voci','elenco_id'),
-    ('elenchi','codici_iva','elenco_id'),
-    ('sedi','sedi_operatori','sede_id'),
-    ('variazioni','variazioni_operatori','variazione_id'),
-    ('straordinari','straordinari_operatori','straordinario_id'),
-    ('ispezioni','ispezioni_voti','ispezione_id'),
-    ('preventivi','preventivi_righe','preventivo_id'),
-    ('fatture','fatture_righe','fattura_id'),
-    ('fatture','fatture_scadenze','fattura_id'),
-    ('fatture','fatture_preventivi','fattura_id'),
-    ('fatture','fatture_sdi_storia','fattura_id'),
-    ('fatture','abbinamenti','nota_id'),
-    ('acquisti','acquisti_righe','acquisto_id'),
-    ('acquisti','acquisti_scadenze','acquisto_id'),
-    ('movimenti','abbinamenti','movimento_id')
-  ) v(padre, figlio, fk) where padre = p_padre and figlio = p_figlio
+language sql stable set search_path = public as $$
+  select fk from archivi_figli where padre = p_padre and figlio = p_figlio
 $$;
 
 create or replace function public.salva_lotto(p_ops jsonb) returns integer
 language plpgsql security invoker set search_path = public as $$
 declare
   op jsonb; t text; rid text; riga jsonb; k text; fk text; righe jsonb;
-  cols text; upd text; bad text; n integer := 0;
-  padri constant text[] := array['amministratori','conti','pagamenti','clienti','fornitori','operatori','elenchi','azienda',
-    'sedi','registro','variazioni','straordinari','assenze','ispezioni','preventivi','fatture','acquisti','movimenti','cu'];
+  cols text; upd text; bad text; n integer := 0; m text;
 begin
   if not is_titolare() then
     raise exception 'Solo il titolare può modificare i dati' using errcode = '42501';
   end if;
   for op in select value from jsonb_array_elements(p_ops) loop
     t := op->>'tab';
-    if t is null or not (t = any (padri)) then
+    if t is null or not exists (select 1 from archivi where tab = t) then
       raise exception 'Archivio non previsto: %', t using errcode = '22023';
+    end if;
+    select modulo into m from archivi where tab = t;
+    if m is not null and not modulo_attivo(m) then
+      raise exception 'Il modulo "%" non è attivo', m using errcode = '42501';
     end if;
 
     if op ? 'elimina' then
@@ -720,6 +750,16 @@ begin
   end loop;
 end $$;
 
+alter table public.archivi enable row level security;
+alter table public.archivi_figli enable row level security;
+drop policy if exists lettura on public.archivi;
+create policy lettura on public.archivi for select to authenticated using (true);
+drop policy if exists lettura on public.archivi_figli;
+create policy lettura on public.archivi_figli for select to authenticated using (true);
+revoke all on public.archivi, public.archivi_figli from anon;
+grant select on public.archivi, public.archivi_figli to authenticated;
+grant select, insert, update, delete on public.archivi, public.archivi_figli to service_role;
+
 drop policy if exists agenda_dipendente on public.agenda;
 create policy agenda_dipendente on public.agenda for select to authenticated
   using (operatore_id = mio_operatore());
@@ -758,11 +798,13 @@ end $$;
 alter function public.tocca_updated_at() set search_path = public;
 alter function public.tocca_aggiornato() set search_path = public;
 alter function public.figlio_fk(text, text) set search_path = public;
+alter function public.modulo_attivo(text) set search_path = public;
 revoke execute on function public.is_titolare(), public.mio_operatore(), public.gps_attivo(),
-  public.controlla_timbratura(), public.figlio_fk(text, text), public.salva_lotto(jsonb) from public, anon;
+  public.controlla_timbratura(), public.figlio_fk(text, text), public.salva_lotto(jsonb),
+  public.modulo_attivo(text) from public, anon;
 revoke execute on function public.controlla_timbratura() from authenticated;
 grant execute on function public.is_titolare(), public.mio_operatore(), public.gps_attivo(),
-  public.figlio_fk(text, text), public.salva_lotto(jsonb) to authenticated;
+  public.figlio_fk(text, text), public.salva_lotto(jsonb), public.modulo_attivo(text) to authenticated;
 
 -- Fatto. Verifica: deve restituire la tua email e il numero di record
 -- ancora da trasferire dalla vecchia tabella.
