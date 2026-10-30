@@ -157,6 +157,7 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);border-bottom:0}
 .steps .st.ora.bad{background:#B42318;color:#fff}
 .steps .st .n{font-size:12px;opacity:.8}
 .steps .sep{flex:0 0 auto;align-self:center;width:14px;height:2px;background:var(--line)}
+@media (max-width:640px){.imptab thead{display:none}.imptab tr{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:8px 0;border-bottom:1px solid var(--line)}.imptab td{border:0!important;padding:0!important}.imptab td:first-child{grid-row:span 5}.imptab td.r{text-align:left}}
 .stepact{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
 .saldi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .saldo{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:2px;cursor:pointer;text-align:left}
@@ -2017,12 +2018,15 @@ async function submitForm(){
     if(out.clienteId){const cc=byId("clienti",out.clienteId); if(cc)out.cliente=cc.nome}
   }
   if(c==="costilavoro"){ out.livelli=out.livelli.filter(l=>l.costoOrario>0); if(!out.livelli.length){$("#ferr").textContent="Inserisci il costo orario di almeno un livello.";return} }
-  if(c==="gare"&&!rec)out.documenti=docGaraDefault(out.tipo);
+  // la lista dei documenti da preparare serve solo alle gare ancora aperte (non a quelle passate registrate come storico)
+  if(c==="gare"&&!rec)out.documenti=GARA_APERTA.includes(out.stato||"individuata")?docGaraDefault(out.tipo):[];
   if(c==="gare"&&out.tipo==="privata"&&!out.procedura)out.procedura="privata";
   const obj=Object.assign({},rec||{},current.extra||{},out); if(rec&&rec.esempio)obj.esempio=true;
   const rt=current.returnTo;
   const id=await save(col,obj); if(!id)return;
-  if(c==="gare"&&!rec){closeModal(); UI.garaSel=id; tab="gara"; render(); toast("Gara registrata: completa date, documenti e calcolo"); return}
+  if(c==="gare"&&!rec){closeModal(); UI.garaSel=id; tab="gara"; render();
+    if(["aggiudicata","persa","esclusa"].includes(obj.stato)){openEsitoGara(id); toast("Gara registrata: inserisci l'esito per le statistiche"); return}
+    toast(GARA_APERTA.includes(obj.stato)?"Gara registrata: completa date, documenti e calcolo":"Gara registrata"); return}
   if(c==="fatture"&&!rec&&obj.preventivi) for(const pid of obj.preventivi){const pv=byId("preventivi",pid); if(pv&&pv.stato!=="Fatturato")await save("preventivi",Object.assign({},pv,{stato:"Fatturato"}))}
   closeModal();
   if(rt){ applyNew(rt,(rt.k==="soggetto"?(c==="clienti"?"c:":"f:"):"")+id); toast(`"${obj.nome||obj.descrizione}" aggiunto e selezionato`); return }
@@ -2153,7 +2157,7 @@ function vGare(){
   const y=String(today().getFullYear()), pres=S.gare.filter(g=>GARA_PRESENTATA.includes(g.stato)&&(g.dataEsito||g.scadOfferta||"").startsWith(y)), vinte=pres.filter(g=>GARA_VINTA.includes(g.stato));
   const sett=S.gare.filter(g=>GARA_APERTA.includes(g.stato)&&g.scadOfferta&&giorniA(g.scadOfferta)>=0&&giorniA(g.scadOfferta)<=7).length;
   const esGare=S.gare.some(g=>g.esempio);
-  return head("Gare d'appalto",`${corso.length} in corso · ${eur(corso.reduce((a,g)=>a+(+g.importoBase||0),0))} a base di gara`,`${esGare?"":`<button class="btn" data-act="loadExGare">Carica gare di esempio</button>`}<button class="btn primary" data-new="gare">Nuova gara</button>`)+
+  return head("Gare d'appalto",`${corso.length} in corso · ${eur(corso.reduce((a,g)=>a+(+g.importoBase||0),0))} a base di gara`,`${esGare?"":`<button class="btn" data-act="loadExGare">Carica gare di esempio</button>`}<button class="btn" data-impg="1">Importa storico</button><button class="btn primary" data-new="gare">Nuova gara</button>`)+
   `<div class="kpis"><div class="kpi"><span class="label">In corso</span><span class="v">${corso.length}</span><span class="n">da preparare o in attesa di esito</span></div>
    <div class="kpi"><span class="label">Scadenze 7 giorni</span><span class="v ${sett?"neg":""}">${sett}</span><span class="n">offerte da presentare</span></div>
    <div class="kpi"><span class="label">Vinte ${y}</span><span class="v">${vinte.length}/${pres.length}</span><span class="n">${pres.length?Math.round(vinte.length/pres.length*100)+"% delle offerte presentate":"nessuna offerta presentata"}</span></div>
@@ -2403,6 +2407,9 @@ async function clicGare(d,el,e){
     const probl=controlliPassoGara(g,dest);
     if(probl.length||dest==="rinuncia"||dest==="conclusa"){confermaPassoGara(g,dest,probl);return true}
     await cambiaStatoGara(g,dest); return true}
+  if(d.impg){apriImportGare();return true}
+  if(d.impgfile){await sceltaImportGare();return true}
+  if(d.impgok){await confermaImportGare(el);return true}
   if(d.garaindietro){const g=byId("gare",UI.garaSel); if(g)confermaPassoGara(g,d.garaindietro,[],true); return true}
   if(d.gpconf){const g=byId("gare",current&&current.id); if(!g)return true; el.disabled=true; const dest=current.dest; closeAll(); await cambiaStatoGara(g,dest); return true}
   if(d.garacalc){openCalcGara(d.garacalc);return true}
@@ -2447,6 +2454,7 @@ async function cambioGare(t){
   if(t.dataset&&t.dataset.gdocst!==undefined){const g=byId("gare",UI.garaSel); if(!g)return true; const docs=(g.documenti||[]).map((x,i)=>i===+t.dataset.gdocst?Object.assign({},x,{stato:t.value}):x); await save("gare",Object.assign({},g,{documenti:docs})); return true}
   if(t.id==="gsAnno"){UI.gsAnno=t.value;render();return true}
   if(t.id==="mGara"){UI.mGara=t.value;render();return true}
+  if(t.id==="impSalta"&&current&&current.c==="impgare"){current.salta=t.checked;renderImportGare();return true}
   if(t.id==="genSel"){UI.genSel=t.value;return true}
   if(current&&current.c==="garacalc"&&t.closest(".modal")){leggiCalcGara(); if(t.tagName==="SELECT"){ const sc=$(".scrim").scrollTop; renderCalcGara(); const s=$(".scrim"); if(s)s.scrollTop=sc } else {const c=calcGara(current.g); $("#gcRis").innerHTML=risCalcGara(current.g,c)} return true}
   return false;
@@ -2614,6 +2622,181 @@ function vModelli(){
    <p class="note">Scrivi ogni segnaposto di seguito, senza cambiare carattere o colore a metà parola: Word potrebbe spezzarlo. Se succede, l'app ti indica il punto da correggere.</p></section>
   <section class="panel"><h2>Segnaposto disponibili</h2>${gSel?`<p class="small muted">Valori di esempio presi dalla gara "${esc(gSel.oggetto)}".</p>`:""}
    ${SEGNAPOSTO.map(([tit,L])=>`<details ${tit==="Impresa"?"open":""}><summary><b>${esc(tit)}</b></summary><div class="tablewrap"><table><thead><tr><th>Segnaposto</th><th>Contenuto</th>${dati?"<th>Esempio</th>":""}</tr></thead><tbody>${L.map(([k,l])=>{const v=dati?valoreSegnaposto(dati,k):""; return `<tr><td><button class="btn small ghost mono" data-mcopy="{${esc(k)}}" title="Copia">{${esc(k)}}</button></td><td class="small">${esc(l)}</td>${dati?`<td class="small muted">${esc(v==null||v===""?"—":String(v))}</td>`:""}</tr>`}).join("")}</tbody></table></div></details>`).join("")}</section>`;
+}
+
+// ---------- importazione dello storico delle gare da Excel (.xlsx) o CSV ----------
+const IMP_COL=[
+  {k:"oggetto",a:["oggetto","descrizione","gara","titolo"]},
+  {k:"ente",a:["ente o committente","ente","committente","stazione appaltante","amministrazione","cliente"]},
+  {k:"cig",a:["cig","codice cig"]},
+  {k:"tipo",a:["tipo","tipo gara"]},
+  {k:"procedura",a:["procedura","tipo procedura"]},
+  {k:"criterio",a:["criterio","criterio di aggiudicazione"]},
+  {k:"importoBase",a:["base di gara","base di gara eur","importo a base di gara","importo base","base d asta","importo"],ty:"n"},
+  {k:"durataMesi",a:["durata mesi","durata","mesi"],ty:"i"},
+  {k:"scadOfferta",a:["scadenza offerta","scadenza","data scadenza","data offerta","data presentazione"],ty:"d"},
+  {k:"dataEsito",a:["data esito","esito data","data aggiudicazione"],ty:"d"},
+  {k:"esito",a:["esito","stato","risultato"]},
+  {k:"importoOfferto",a:["nostra offerta","nostra offerta eur","importo offerto","offerta"],ty:"n"},
+  {k:"ribassoOfferto",a:["nostro ribasso","nostro ribasso","ribasso offerto","ribasso"],ty:"p"},
+  {k:"ribassoAggiudicazione",a:["ribasso vincente","ribasso di aggiudicazione","ribasso aggiudicatario"],ty:"p"},
+  {k:"aggiudicatario",a:["aggiudicatario","vincitore","impresa aggiudicataria"]},
+  {k:"posizione",a:["posizione","posizione in graduatoria","graduatoria"],ty:"i"},
+  {k:"punteggioTecnico",a:["punteggio tecnico","punti tecnici"],ty:"n"},
+  {k:"punteggioEconomico",a:["punteggio economico","punti economici"],ty:"n"},
+  {k:"concorrenti",a:["concorrenti","altri concorrenti","partecipanti"]},
+  {k:"motivo",a:["motivo","motivazione","perche"]},
+  {k:"note",a:["note","annotazioni"]}];
+const normTxt=s=>String(s??"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+// lettura del primo foglio (o di quello chiamato "Gare") come righe di celle
+async function leggiFoglio(file){
+  const buf=await file.arrayBuffer();
+  if(/\.(csv|txt)$/i.test(file.name)){ let t=new TextDecoder("utf-8").decode(buf); if(t.includes("�"))t=new TextDecoder("windows-1252").decode(buf); return leggiCSV(t.replace(/^﻿/,"")) }
+  if(/\.xls$/i.test(file.name))throw new Error("Il file è nel vecchio formato .xls: aprilo in Excel e salvalo come .xlsx (Cartella di lavoro di Excel).");
+  if(!/\.xlsx$/i.test(file.name))throw new Error("Usa un file Excel (.xlsx) oppure un file CSV.");
+  if(!window.JSZip)throw new Error("Libreria per i file Excel non disponibile");
+  let z; try{ z=await JSZip.loadAsync(buf) }catch(e){ throw new Error("Il file non è un documento Excel valido") }
+  const xml=async p=>{const f=z.file(p); return f?new DOMParser().parseFromString(await f.async("string"),"application/xml"):null};
+  const tag=(el,n)=>[...el.getElementsByTagName(n)];
+  const ss=[]; const sd=await xml("xl/sharedStrings.xml"); if(sd)tag(sd,"si").forEach(si=>ss.push(tag(si,"t").map(t=>t.textContent).join("")));
+  const wb=await xml("xl/workbook.xml"), rels=await xml("xl/_rels/workbook.xml.rels"); if(!wb||!rels)throw new Error("Il file Excel non contiene fogli leggibili");
+  const fogli=tag(wb,"sheet"); const sh=fogli.find(x=>/^gare$/i.test(x.getAttribute("name")||""))||fogli.find(x=>!/^(esempio|istruzioni)$/i.test(x.getAttribute("name")||""))||fogli[0];
+  if(!sh)throw new Error("Nessun foglio nel file");
+  const rid=sh.getAttribute("r:id")||[...sh.attributes].find(a=>/(^|:)id$/.test(a.name)&&a.name!=="sheetId")?.value;
+  const rel=tag(rels,"Relationship").find(r=>r.getAttribute("Id")===rid); if(!rel)throw new Error("Foglio non trovato nel file");
+  const tgt=rel.getAttribute("Target"), path=tgt.startsWith("/")?tgt.slice(1):"xl/"+tgt.replace(/^\.\//,"");
+  const doc=await xml(path); if(!doc)throw new Error("Foglio non leggibile");
+  const colIdx=ref=>{const m=/^([A-Z]+)/.exec(ref||""); if(!m)return -1; let n=0; for(const ch of m[1])n=n*26+ch.charCodeAt(0)-64; return n-1};
+  const righe=[];
+  tag(doc,"row").forEach(row=>{ const r=[]; let auto=0;
+    tag(row,"c").forEach(c=>{ let i=colIdx(c.getAttribute("r")); if(i<0)i=auto; auto=i+1; const t=c.getAttribute("t"), v=tag(c,"v")[0];
+      let val=""; if(t==="s")val=v?ss[+v.textContent]??"":""; else if(t==="inlineStr")val=tag(c,"t").map(x=>x.textContent).join(""); else if(t==="b")val=v?v.textContent==="1":""; else if(t==="str"||t==="e")val=v?v.textContent:""; else val=v&&v.textContent!==""?Number(v.textContent):"";
+      r[i]=val });
+    righe[(+row.getAttribute("r")||righe.length+1)-1]=r });
+  return righe.map(r=>Array.from(r||[],x=>x===undefined?"":x));
+}
+function leggiCSV(t){
+  const prima=t.split(/\r?\n/)[0]||""; const sep=[";","\t",","].map(s=>[s,prima.split(s).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const out=[]; let row=[], cell="", q=false;
+  for(let i=0;i<t.length;i++){ const ch=t[i];
+    if(q){ if(ch==='"'){ if(t[i+1]==='"'){cell+='"';i++} else q=false } else cell+=ch; continue }
+    if(ch==='"')q=true; else if(ch===sep){row.push(cell);cell=""} else if(ch==="\n"){row.push(cell.replace(/\r$/,""));out.push(row);row=[];cell=""} else cell+=ch }
+  if(cell!==""||row.length){row.push(cell);out.push(row)}
+  return out;
+}
+// conversioni
+function impNumero(v){ if(v===""||v==null)return null; if(typeof v==="number")return isFinite(v)?v:NaN;
+  let s=String(v).replace(/[€\s%]/g,"").replace(/^eur/i,""); if(!s)return null;
+  if(s.includes(",")&&s.includes("."))s=s.lastIndexOf(",")>s.lastIndexOf(".")?s.replace(/\./g,"").replace(",","."):s.replace(/,/g,"");
+  else if(s.includes(","))s=s.replace(",",".");
+  else if(/^\d{1,3}(\.\d{3})+$/.test(s))s=s.replace(/\./g,"");
+  const n=Number(s); return isFinite(n)?n:NaN }
+function impData(v){ if(v===""||v==null)return null;
+  if(typeof v==="number"){ if(v<1||v>80000)return undefined; const d=new Date(Date.UTC(1899,11,30)+Math.round(v)*86400000); return d.toISOString().slice(0,10) }
+  const s=String(v).trim(); let m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s); if(m)return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+  m=/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/.exec(s); if(!m)return undefined;
+  const y=m[3].length===2?"20"+m[3]:m[3], mm=+m[2], dd=+m[1]; if(mm<1||mm>12||dd<1||dd>31)return undefined;
+  const iso=`${y}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}`; const t=new Date(iso+"T12:00:00Z");
+  return isNaN(t)||t.toISOString().slice(0,10)!==iso?undefined:iso }
+function impEsito(v){ const s=normTxt(v); if(!s)return null;
+  if(/non aggiud|non vint|pers[ao]\b|sconfitt|negativ/.test(s))return "persa";
+  if(/esclus/.test(s))return "esclusa";
+  if(/non partecip|rinunc|non presentat/.test(s))return "rinuncia";
+  if(/conclus|terminat|scadut/.test(s))return "conclusa";
+  if(/contratto|in corso|esecuzione/.test(s))return "contratto";
+  if(/aggiudic|vint|vinc|positiv/.test(s))return "aggiudicata";
+  if(/presentat|attesa/.test(s))return "presentata";
+  const k=STATI_GARA.find(x=>normTxt(x[1])===s||x[0]===s); return k?k[0]:undefined }
+function impProcedura(v){ const s=normTxt(v); if(!s)return null;
+  if(/affid/.test(s))return "affidamento"; if(/negoz/.test(s))return "negoziata"; if(/apert/.test(s))return "aperta"; if(/ristrett/.test(s))return "ristretta";
+  if(/mepa|richiesta di offerta|rdo/.test(s))return "mepa"; if(/accordo|convenzion/.test(s))return "accordo"; if(/privat/.test(s))return "privata"; return undefined }
+function impCriterio(v){ const s=normTxt(v); if(!s)return null; if(/oepv|vantagg|qualit|tecnic/.test(s))return "oepv"; if(/prezzo|minor|basso|massimo ribasso/.test(s))return "prezzo"; return undefined }
+function impConcorrenti(v,aggiudicatario){ const s=String(v||"").trim(); if(!s)return [];
+  return s.split(/[;\n]+/).map(x=>x.trim()).filter(Boolean).map(x=>{ let m=/^(.*?)[\s:=(\-–]+(-?\d+(?:[.,]\d+)?)\s*%?\)?$/.exec(x); const nome=(m?m[1]:x).replace(/[:\s(]+$/,"").trim(); const r=m?impNumero(m[2]):null;
+    return {nome,ribasso:r==null||isNaN(r)?null:r,aggiudicatario:!!aggiudicatario&&normTxt(nome)===normTxt(aggiudicatario)} }).filter(x=>x.nome) }
+// righe del foglio → gare da importare, con errori e avvisi
+function preparaImportGare(righe){
+  // intestazione: la prima riga che contiene "oggetto" ed "esito" (o almeno oggetto)
+  const colDi=n=>IMP_COL.find(x=>x.a.includes(n))||IMP_COL.find(x=>x.a.some(a=>n.startsWith(a)));
+  const mappaDi=r=>{const m={}; (r||[]).forEach((c,i)=>{const n=normTxt(c); const col=n&&colDi(n); if(col&&m[col.k]==null)m[col.k]=i}); return m};
+  let h=righe.slice(0,15).findIndex(r=>{const m=mappaDi(r); return m.oggetto!=null&&m.esito!=null});
+  if(h<0)h=righe.slice(0,15).findIndex(r=>mappaDi(r).oggetto!=null);
+  if(h<0)return {err:"Non trovo la riga dei titoli: serve almeno una colonna per l'oggetto della gara (Oggetto o Descrizione) e una per l'esito. Usa il modello Excel scaricabile qui sotto."};
+  const mappa={}, ignorate=[];
+  righe[h].forEach((c,i)=>{ const n=normTxt(c); if(!n)return; const col=colDi(n); if(col&&mappa[col.k]==null)mappa[col.k]=i; else ignorate.push(String(c)) });
+  if(mappa.esito==null)return {err:"Manca la colonna \"Esito\": serve per sapere se la gara è stata vinta, persa o non fatta."};
+  const giaCig=new Set(S.gare.map(g=>String(g.cig||"").trim().toUpperCase()).filter(Boolean)), giaNome=new Set(S.gare.map(g=>normTxt(g.oggetto)+"|"+normTxt(g.ente)));
+  const visti=new Set(), out=[];
+  for(let r=h+1;r<righe.length;r++){ const row=righe[r]; if(!row||row.every(c=>c===""||c==null))continue;
+    const val=k=>mappa[k]==null?"":row[mappa[k]]??"";
+    if(/^obbligatorio\b/i.test(String(val("oggetto"))))continue; // riga di spiegazioni del modello
+    const err=[], avv=[], o={id:rid(),documenti:[],concorrenti:[]};
+    o.oggetto=String(val("oggetto")).trim(); if(!o.oggetto)err.push("manca l'oggetto");
+    o.ente=String(val("ente")).trim(); o.cig=String(val("cig")).trim().toUpperCase();
+    const st=impEsito(val("esito")); if(st==null)err.push("manca l'esito"); else if(st===undefined)err.push(`esito "${val("esito")}" non riconosciuto`); else o.stato=st;
+    const pr=impProcedura(val("procedura")); if(pr===undefined)avv.push(`procedura "${val("procedura")}" non riconosciuta`); else if(pr)o.procedura=pr;
+    const cr=impCriterio(val("criterio")); if(cr===undefined)avv.push(`criterio "${val("criterio")}" non riconosciuto`); else if(cr)o.criterio=cr;
+    o.tipo=/privat/.test(normTxt(val("tipo")))||o.procedura==="privata"?"privata":"pubblica";
+    IMP_COL.filter(c=>c.ty).forEach(c=>{ const v=val(c.k); if(v===""||v==null)return;
+      if(c.ty==="d"){ const d=impData(v); if(d===undefined)err.push(`data "${v}" non valida (${c.k==="dataEsito"?"data esito":"scadenza"})`); else if(d)o[c.k]=d; return }
+      let n=impNumero(v); if(isNaN(n)){err.push(`"${v}" non è un numero`);return} if(n==null)return;
+      if(c.ty==="p"&&typeof v==="number"&&n>0&&n<1)n=r2(n*100*1000)/1000; // cella Excel in formato percentuale
+      if(c.ty==="i")n=Math.round(n); o[c.k]=n });
+    if(o.ribassoOfferto!=null&&(o.ribassoOfferto<-50||o.ribassoOfferto>100))avv.push("ribasso offerto fuori scala");
+    o.aggiudicatario=String(val("aggiudicatario")).trim();
+    if(o.stato&&["aggiudicata","contratto","conclusa"].includes(o.stato)&&!o.aggiudicatario)o.aggiudicatario=azienda().denominazione||"La nostra impresa";
+    if(o.stato==="aggiudicata"&&o.posizione==null)o.posizione=1;
+    o.concorrenti=impConcorrenti(val("concorrenti"),o.aggiudicatario);
+    o.motivo=String(val("motivo")).trim(); o.note=String(val("note")).trim();
+    ["aggiudicatario","motivo","note","ente","cig"].forEach(k=>{if(!o[k])delete o[k]});
+    if(!o.dataEsito&&!o.scadOfferta)avv.push("senza date: nelle statistiche per anno non comparirà");
+    const kc=o.cig, kn=normTxt(o.oggetto)+"|"+normTxt(o.ente||"");
+    const doppio=(kc&&(giaCig.has(kc)||visti.has("c:"+kc)))||giaNome.has(kn)||visti.has("n:"+kn);
+    if(kc)visti.add("c:"+kc); visti.add("n:"+kn);
+    out.push({riga:r+1,o,err,avv,doppio});
+  }
+  return {righe:out,ignorate,colonne:Object.keys(mappa)};
+}
+function apriImportGare(){
+  current={c:"impgare"};
+  modalShell("Importa lo storico delle gare",`<div class="mb">
+   <p class="full">Carica in una volta le gare degli anni passati, vinte, perse o a cui non avete partecipato: alimentano subito le statistiche.</p>
+   <ol class="full small"><li>Scarica il modello Excel e compila il foglio <b>Gare</b>, una riga per gara. Sono obbligatori solo <b>Oggetto</b> ed <b>Esito</b>.</li>
+   <li>Salvalo e caricalo qui. Va bene anche un tuo file Excel o CSV, purché la prima riga abbia i titoli delle colonne.</li>
+   <li>Prima di importare vedrai l'anteprima, con le righe da correggere e i doppioni.</li></ol>
+   <div class="full actions" style="justify-content:flex-start"><a class="btn" href="modelli/storico-gare.xlsx" download>Scarica il modello Excel</a><button type="button" class="btn primary" data-impgfile="1">Scegli il file</button></div>
+   <div class="err full" id="ferr"></div></div>`);
+}
+async function sceltaImportGare(){
+  const f=await scegliFile(".xlsx,.csv,.txt,.xls"); if(!f)return;
+  let righe; try{ righe=await leggiFoglio(f) }catch(e){ const fe=$("#ferr"); if(fe)fe.textContent=e.message; else toast(e.message); return }
+  const p=preparaImportGare(righe); if(p.err){ const fe=$("#ferr"); if(fe)fe.textContent=p.err; else toast(p.err); return }
+  if(!p.righe.length){ const fe=$("#ferr"); if(fe)fe.textContent="Il foglio non contiene righe di gare sotto l'intestazione."; return }
+  current={c:"impgare",nome:f.name,p,salta:true}; renderImportGare();
+}
+function renderImportGare(){
+  const {p,nome,salta}=current, R=p.righe, lab=k=>(STATI_GARA.find(x=>x[0]===k)||["",""])[1];
+  const ok=R.filter(x=>!x.err.length&&!(salta&&x.doppio)), errN=R.filter(x=>x.err.length).length, dopN=R.filter(x=>!x.err.length&&x.doppio).length;
+  modalShell("Anteprima dell'importazione",`<div class="mb">
+   <p class="full"><b>${esc(nome)}</b>: ${R.length} righe · <span class="pos">${ok.length} da importare</span>${errN?` · <span class="neg">${errN} con errori (non importate)</span>`:""}${dopN?` · ${dopN} già presenti`:""}</p>
+   ${p.ignorate.length?`<p class="note full">Colonne non usate: ${esc(p.ignorate.join(", "))}</p>`:""}
+   ${dopN?`<label class="full small"><input type="checkbox" id="impSalta" ${salta?"checked":""}> Salta le gare già presenti (stesso CIG, oppure stesso oggetto ed ente)</label>`:""}
+   <div class="full tablewrap" style="max-height:52vh;overflow:auto"><table class="nocards imptab"><thead><tr><th>Riga</th><th>Gara</th><th>Esito</th><th>Data</th><th class="r">Ribasso</th><th>Controllo</th></tr></thead><tbody>
+   ${R.map(x=>{const o=x.o, st=x.err.length?`<span class="pill bad">Da correggere</span> <span class="small">${esc(x.err.join("; "))}</span>`:x.doppio?`<span class="pill">${salta?"Saltata: già presente":"Già presente"}</span>`:x.avv.length?`<span class="pill warn">Avviso</span> <span class="small">${esc(x.avv.join("; "))}</span>`:`<span class="pill ok">Pronta</span>`;
+     return `<tr><td class="mono small">${x.riga}</td><td><b>${esc(o.oggetto||"—")}</b><div class="small muted">${esc(o.ente||"")}${o.cig?" · CIG "+esc(o.cig):""}</div></td><td class="small">${esc(lab(o.stato)||"—")}</td><td class="mono small">${dShort(o.dataEsito||o.scadOfferta)||"—"}</td><td class="r num">${o.ribassoOfferto!=null?pctTxt(o.ribassoOfferto):"—"}</td><td>${st}</td></tr>`}).join("")}
+   </tbody></table></div>
+   ${errN?`<p class="note full">Le righe da correggere non vengono importate: sistemale nel file e caricalo di nuovo (le gare già importate saranno riconosciute come doppioni).</p>`:""}
+   <div class="err full" id="ferr"></div></div>
+   <div class="mf"><button type="button" class="btn small" data-impgfile="1" style="align-self:center">Scegli un altro file</button><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-impgok="1" ${ok.length?"":"disabled"}>Importa ${ok.length} gar${ok.length===1?"a":"e"}</button></div></div>`);
+  $(".modal").classList.add("wide");
+}
+async function confermaImportGare(btn){
+  const {p,salta}=current; const da=p.righe.filter(x=>!x.err.length&&!(salta&&x.doppio));
+  if(!da.length)return; btn.disabled=true; btn.textContent="Importazione…";
+  const res=await salvaMolti(da.map(x=>({c:"gare",o:x.o})),(n,t)=>{btn.textContent=`Importazione… ${n}/${t}`});
+  try{ const r=await caricaDB(["gare"]); S.gare=r.gare||S.gare }catch(e){}
+  if(res.errori.length){ btn.disabled=false; btn.textContent="Riprova"; $("#ferr").textContent=`Importate ${res.fatti}; non riuscite ${res.errori.length}: ${res.errori.slice(0,3).join(" · ")}`; ver++; render(); return }
+  closeAll(); UI.gFil="tutte"; tab="gare"; ver++; render(); toast(`Importate ${res.fatti} gare dallo storico`);
 }
 
 /* ---------- fattura elettronica: FatturaPA 1.2 (specifiche tecniche 1.9) ---------- */
@@ -2999,11 +3182,11 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garaindietro],[data-gpconf],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
+  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garaindietro],[data-gpconf],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
-  if(Object.keys(d).some(k=>/^(gara|gfil|garastato|garaindietro|gpconf|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
+  if(Object.keys(d).some(k=>/^(gara|gfil|garastato|garaindietro|gpconf|impg|impgfile|impgok|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
   if(d.livadd!==undefined){$("#f_livelli").insertAdjacentHTML("beforeend",livRow({}));return}
   if(d.livrm!==undefined){const box=el.closest(".rows"); if(box.querySelectorAll(".rg").length>1)el.closest(".rg").remove(); return}
   if(d.auth){authAction(d.auth);return}
@@ -3114,7 +3297,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",async e=>{
   const id=e.target.id;
-  if((e.target.dataset&&e.target.dataset.gdocst!==undefined||id==="gsAnno"||id==="mGara"||id==="genSel"||(current&&current.c==="garacalc"))&&await cambioGare(e.target))return;
+  if((e.target.dataset&&e.target.dataset.gdocst!==undefined||id==="gsAnno"||id==="mGara"||id==="genSel"||id==="impSalta"||(current&&current.c==="garacalc"))&&await cambioGare(e.target))return;
   if(id==="modGare"){const v=e.target.checked, nuovi=v?[...new Set(moduli.concat("gare"))]:moduli.filter(x=>x!=="gare");
     const {error}=await sb.from("impostazioni").update({moduli:nuovi}).eq("id",1); if(error){toast(/moduli/.test(error.message||"")?"Esegui prima in Supabase lo script supabase/modulo_gare.sql":errMsg(error));e.target.checked=!v;return}
     const prima=moduli; moduli=nuovi; try{await loadAll()}catch(err){moduli=prima; await sb.from("impostazioni").update({moduli:prima}).eq("id",1); toast("Le tabelle delle gare non ci sono: esegui in Supabase lo script supabase/modulo_gare.sql"); e.target.checked=!v; return}

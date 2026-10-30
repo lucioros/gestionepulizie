@@ -100,6 +100,8 @@ Alcune funzioni sono **moduli** che si attivano per azienda, per poterle include
 - Dalla gara vinta si crea **cliente e sedi** con un clic: codice ufficio PA, scissione dei pagamenti e CIG riportato nelle fatture.
 - **Statistiche**: tasso di vittoria, ribassi vincenti per ente, concorrenti più frequenti, motivi delle sconfitte.
 - **Avvisi** in Oggi per scadenze di offerte, sopralluoghi, chiarimenti, documenti, garanzie e contratti.
+- **Percorso guidato dello stato**: nella scheda si avanza di una fase alla volta, con conferma se mancano documenti, requisiti o il calcolo; si può tornare indietro di un passo. Nel modulo Nuova gara lo stato resta libero per registrare gare passate.
+- **Importa storico**: le gare degli anni passati si caricano da Excel (.xlsx) o CSV con anteprima, controllo degli errori e dei doppioni. Il modello da compilare è `modelli/storico-gare.xlsx` (fogli Gare, Esempio, Istruzioni).
 - **Modelli Word**: dalla scheda di una gara si genera un documento Word già compilato con i dati dell'impresa, della gara e del calcolo dell'offerta (importi anche in lettere). Ci sono cinque modelli di base nella cartella `modelli/`; l'impresa può caricare i propri (tabella `modelli_gara`, file nello spazio `allegati`). Nei modelli i dati si indicano con segnaposto tra graffe, ad esempio `{impresa.denominazione}`, `{gara.cig}`, `{offerta.totale}`; le righe ripetute con `{#voci}…{/voci}`. L'elenco completo è in Gare → Modelli. La compilazione avviene nel browser, senza server aggiuntivi.
 
 Chi aveva già installato il modulo prima dei modelli Word deve rilanciare `supabase/modulo_gare.sql` (si può rieseguire senza perdere dati): finché non lo fa, il resto del modulo funziona e la pagina Modelli spiega cosa fare.
