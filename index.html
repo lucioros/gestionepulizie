@@ -2291,8 +2291,11 @@ function renderEsitoGara(){
    <div class="err full" id="ferr"></div></div>
    <div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-gesave="1">Salva l'esito</button></div></div>`);
   $(".modal").classList.add("wide");
+  Object.entries(current.f||{}).forEach(([id,v])=>{const el=$("#"+id); if(el)el.value=v});
 }
-function leggiConc(){ document.querySelectorAll("[data-gq]").forEach(el=>{const[i,k]=el.dataset.gq.split(":"); if(!current.conc[i])return; current.conc[i][k]=el.type==="checkbox"?el.checked:el.type==="number"?(el.value===""?"":parseFloat(el.value)):el.value}) }
+const ESITO_CAMPI=["ge_stato","ge_data","ge_pos","ge_rib","ge_pt","ge_pe","ge_agg","ge_ra","ge_mot"];
+// i campi già scritti restano quando si aggiunge o toglie un concorrente
+function leggiConc(){ current.f={}; ESITO_CAMPI.forEach(id=>{const el=$("#"+id); if(el)current.f[id]=el.value}); document.querySelectorAll("[data-gq]").forEach(el=>{const[i,k]=el.dataset.gq.split(":"); if(!current.conc[i])return; current.conc[i][k]=el.type==="checkbox"?el.checked:el.type==="number"?(el.value===""?"":parseFloat(el.value)):el.value}) }
 async function salvaEsitoGara(){
   leggiConc(); const g=byId("gare",current.id), n=id=>{const v=$("#"+id).value;return v===""?null:parseFloat(v)};
   const obj=Object.assign({},g,{stato:$("#ge_stato").value,dataEsito:$("#ge_data").value,posizione:n("ge_pos"),ribassoOfferto:n("ge_rib"),punteggioTecnico:n("ge_pt"),punteggioEconomico:n("ge_pe"),aggiudicatario:$("#ge_agg").value.trim(),ribassoAggiudicazione:n("ge_ra"),motivo:$("#ge_mot").value.trim(),concorrenti:current.conc.filter(x=>String(x.nome||"").trim())});
