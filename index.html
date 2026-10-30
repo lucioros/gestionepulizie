@@ -150,6 +150,14 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);border-bottom:0}
 .seg button{all:unset;cursor:pointer;padding:6px 12px;font-weight:500;color:var(--muted);white-space:nowrap;flex-shrink:0}
 .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.steps{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.steps::-webkit-scrollbar{display:none}
+.steps .st{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:var(--sunk);color:var(--muted);font-weight:500;white-space:nowrap}
+.steps .st.fatto{background:var(--accent-soft);color:var(--ink)}
+.steps .st.ora{background:var(--accent);color:var(--accent-ink)}
+.steps .st.ora.bad{background:#B42318;color:#fff}
+.steps .st .n{font-size:12px;opacity:.8}
+.steps .sep{flex:0 0 auto;align-self:center;width:14px;height:2px;background:var(--line)}
+.stepact{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
 .saldi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .saldo{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:2px;cursor:pointer;text-align:left}
 .saldo[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
@@ -1052,6 +1060,7 @@ function render(){
   schedeTabelle(m);
   const att=$("#nav [aria-current=page]"); if(att&&att.scrollIntoView&&innerWidth<=900)att.scrollIntoView({block:"nearest",inline:"nearest"});
   // scheda attiva visibile anche quando le schede non stanno tutte sullo schermo
+  m.querySelectorAll(".steps").forEach(sn=>{const o=sn.querySelector(".ora"); if(o&&sn.scrollWidth>sn.clientWidth)sn.scrollLeft=Math.max(0,o.offsetLeft-sn.offsetLeft-(sn.clientWidth-o.offsetWidth)/2)});
   const sc=m.querySelector(".subnav [aria-current=page]"); if(sc){const sn=sc.parentElement; if(sn.scrollWidth>sn.clientWidth)sn.scrollLeft=Math.max(0,sc.offsetLeft-sn.offsetLeft-(sn.clientWidth-sc.offsetWidth)/2)}
 }
 // su telefono le tabelle diventano schede: ogni cella riceve l'etichetta della sua colonna
@@ -2032,6 +2041,30 @@ const colsAttive=()=>ORDINE_COLS.filter(c=>(!MODULO_COL[c]||moduloOn(MODULO_COL[
 const STATI_GARA=[["individuata","Individuata",""],["valutazione","In valutazione",""],["preparazione","In preparazione","acc"],["presentata","Offerta presentata","acc"],
   ["aggiudicata","Aggiudicata","ok"],["contratto","Contratto in corso","ok"],["conclusa","Conclusa",""],["persa","Non aggiudicata","bad"],["esclusa","Esclusa","bad"],["rinuncia","Non partecipiamo",""]];
 const GARA_APERTA=["individuata","valutazione","preparazione"];
+// percorso guidato: si avanza di una fase alla volta; uscite possibili solo dove hanno senso
+const GARA_PERCORSO=["individuata","valutazione","preparazione","presentata","aggiudicata","contratto","conclusa"];
+const GARA_ESITI_KO=["persa","esclusa","rinuncia"];
+function passiGara(g){
+  const s=g.stato, avanti=[], uscite=[];
+  ({individuata:()=>{avanti.push("valutazione");uscite.push("rinuncia")},valutazione:()=>{avanti.push("preparazione");uscite.push("rinuncia")},
+    preparazione:()=>{avanti.push("presentata");uscite.push("rinuncia")},presentata:()=>{avanti.push("aggiudicata");uscite.push("persa","esclusa")},
+    aggiudicata:()=>avanti.push("contratto"),contratto:()=>avanti.push("conclusa")}[s]||(()=>{}))();
+  const i=GARA_PERCORSO.indexOf(s);
+  const indietro=i>0?GARA_PERCORSO[i-1]:s==="persa"||s==="esclusa"?"presentata":s==="rinuncia"?(GARA_PERCORSO.includes(g.statoPrima)&&GARA_APERTA.includes(g.statoPrima)?g.statoPrima:"individuata"):null;
+  return {avanti,uscite,indietro};
+}
+// cosa manca prima di passare a una fase (si può proseguire dopo la conferma)
+function controlliPassoGara(g,dest){
+  const out=[];
+  if(dest==="presentata"){
+    const dd=(g.documenti||[]).filter(d=>d.stato==="da fare"); if(dd.length)out.push(`${dd.length} document${dd.length>1?"i":"o"} ancora da preparare: ${dd.slice(0,4).map(d=>d.nome).join(", ")}${dd.length>4?` e altri ${dd.length-4}`:""}.`);
+    const rq=requisitiGara(g).filter(x=>x.st!=="ok"); if(rq.length)out.push(`Requisiti da sistemare: ${rq.map(x=>x.r+(x.st==="scaduto"?" (scaduto)":" (manca)")).join(", ")}.`);
+    if(!(g.voci||[]).length)out.push("Il calcolo dell'offerta non è stato fatto.");
+    if(g.scadOfferta&&g.scadOfferta<TODAY())out.push(`La scadenza dell'offerta (${dShort(g.scadOfferta)}) è già passata.`);
+  }
+  if(dest==="preparazione"&&g.sopralluogoObbl&&g.sopralluogo&&g.sopralluogo>TODAY())out.push(`Il sopralluogo obbligatorio è fissato per il ${dShort(g.sopralluogo)}: ricordati di farlo.`);
+  return out;
+}
 const GARA_VINTA=["aggiudicata","contratto","conclusa"];
 const GARA_PRESENTATA=["presentata","aggiudicata","contratto","conclusa","persa","esclusa"];
 const statoGara=s=>STATI_GARA.find(x=>x[0]===s)||STATI_GARA[0];
@@ -2130,6 +2163,19 @@ function vGare(){
     return `<tr class="click" data-gara="${g.id}"><td><b>${esc(g.oggetto)}</b>${g.esempio?' <span class="pill">esempio</span>':""}<div class="small muted">${esc(g.ente||"")}${g.cig?" · CIG "+esc(g.cig):""}</div></td><td class="small">${esc((PROCEDURE.find(p=>p[0]===g.procedura)||["",g.tipo==="privata"?"Richiesta privata":"—"])[1])}${g.criterio?`<div class="muted">${g.criterio==="oepv"?"Offerta più vantaggiosa":"Prezzo più basso"}</div>`:""}</td><td class="r num">${g.importoBase?eur(g.importoBase):"—"}</td><td class="mono small ${GARA_APERTA.includes(g.stato)&&x!=null&&x<=2?"neg":""}">${g.scadOfferta?dShort(g.scadOfferta)+(g.oraOfferta?" "+esc(g.oraOfferta):""):"—"}${GARA_APERTA.includes(g.stato)&&x!=null&&x>=0?`<div class="muted">${quando(g.scadOfferta)}</div>`:""}</td><td><span class="pill ${st[2]}">${esc(st[1])}</span></td><td class="small">${esc(prossimoPasso(g))}</td></tr>`}).join("")}</tbody></table></div>`:`<div class="empty"><h2>Nessuna gara ${f==="corso"?"in corso":"in questo elenco"}</h2><p>Registra le gare pubbliche e le richieste di offerta dei privati: scadenze, sopralluogo, documenti, calcolo dell'offerta con il costo del lavoro e simulazione del punteggio. Quando ne vinci una, con un clic diventa cliente con le sue sedi.</p><button class="btn primary" data-new="gare">Nuova gara</button></div>`}</section>
   <p class="note">Le offerte per gli enti pubblici si presentano sulle piattaforme telematiche certificate (MePA, piattaforme regionali o dell'ente): qui prepari, calcoli e tieni traccia, poi carichi i documenti sulla piattaforma indicata nel bando.</p>`;
 }
+function pannelloStatoGara(g){
+  const lab=k=>(STATI_GARA.find(x=>x[0]===k)||[k,k])[1], s=g.stato, ko=GARA_ESITI_KO.includes(s);
+  // fino a dove si è arrivati nel percorso (per le uscite: la fase da cui si è usciti)
+  const base=ko?(s==="rinuncia"?(GARA_APERTA.includes(g.statoPrima)?g.statoPrima:"individuata"):"presentata"):s;
+  const iBase=GARA_PERCORSO.indexOf(base);
+  const percorso=ko?GARA_PERCORSO.slice(0,iBase+1):GARA_PERCORSO;
+  const chips=percorso.map((k,i)=>{const fatto=ko?true:i<iBase, ora=!ko&&i===iBase; return `<span class="st ${fatto?"fatto":ora?"ora":""}">${fatto?"✓":`<span class="n">${i+1}</span>`} ${esc(lab(k))}</span>`});
+  if(ko)chips.push(`<span class="st ora bad">${esc(lab(s))}</span>`);
+  const {avanti,uscite,indietro}=passiGara(g);
+  const nomeBtn={aggiudicata:"Aggiudicata: registra l'esito",contratto:g.clienteId?"Contratto in corso":"Contratto: crea cliente e sedi",persa:"Non aggiudicata",esclusa:"Esclusa",rinuncia:"Non partecipiamo"};
+  return `<div class="steps" role="list" aria-label="Fasi della gara">${chips.join('<span class="sep" aria-hidden="true"></span>')}</div>
+   <div class="stepact">${avanti.map(k=>`<button class="btn primary" data-garastato="${k}">${k==="aggiudicata"||k==="contratto"?esc(nomeBtn[k]):"Passa a: "+esc(lab(k))}</button>`).join("")}${uscite.map(k=>`<button class="btn" data-garastato="${k}">${esc(nomeBtn[k]||lab(k))}</button>`).join("")}${indietro?`<button class="btn ghost small" data-garaindietro="${indietro}">← Torna a ${esc(lab(indietro))}</button>`:""}</div>`;
+}
 function vGara(){
   const g=byId("gare",UI.garaSel); if(!g){tab="gare";return vGare()}
   const st=statoGara(g.stato), c=calcGara(g), req=requisitiGara(g), docs=g.documenti||[], cli=byId("clienti",g.clienteId);
@@ -2139,7 +2185,7 @@ function vGara(){
   const riga=(l,v,cls)=>`<tr><td>${l}</td><td class="r num ${cls||""}">${v}</td></tr>`;
   return `<div class="actions" style="margin-bottom:10px"><button class="btn small ghost" data-tab="gare">← Tutte le gare</button></div>`+
   head(esc(g.oggetto),`${esc(g.ente||"")}${g.cig?" · CIG "+esc(g.cig):""} · <span class="pill ${st[2]}">${esc(st[1])}</span>`,`<button class="btn" data-edit="gare:${g.id}">Modifica dati</button><button class="btn primary" data-garacalc="${g.id}">Calcola l'offerta</button>${GARA_PRESENTATA.includes(g.stato)||g.stato==="presentata"?`<button class="btn" data-garaesito="${g.id}">Esito</button>`:""}`)+
-  `<section class="panel"><h2>Stato</h2><div class="seg" role="group" aria-label="Stato della gara" style="flex-wrap:nowrap">${STATI_GARA.map(([k,l])=>`<button data-garastato="${k}" aria-pressed="${g.stato===k}">${l}</button>`).join("")}</div>${g.motivo?`<p class="note">${esc(g.motivo)}</p>`:""}</section>
+  `<section class="panel"><h2>Stato</h2>${pannelloStatoGara(g)}${g.motivo?`<p class="note">${esc(g.motivo)}</p>`:""}</section>
   <div class="grid2"><div class="col">
    <section class="panel"><h2>Date</h2>${date.length?`<table class="gsum"><tbody>${date.map(([l,d,o])=>`<tr><td>${l}</td><td class="mono small">${dShort(d)}${o?" "+esc(o):""}</td><td class="small muted r">${GARA_APERTA.includes(g.stato)||g.stato==="presentata"||l.startsWith("Fine")?esc(quando(d)):""}</td></tr>`).join("")}</tbody></table>`:`<p class="muted">Nessuna data inserita: usa "Modifica dati".</p>`}
     ${g.link?`<p><a href="${esc(g.link)}" target="_blank" rel="noopener">Apri la gara ${g.piattaforma?"su "+esc(g.piattaforma):"sulla piattaforma"} ↗</a></p>`:g.piattaforma?`<p class="small">Piattaforma: ${esc(g.piattaforma)}</p>`:""}</section>
@@ -2272,7 +2318,7 @@ async function salvaCalcGara(){
   if(await save("gare",obj)){closeAll();toast("Calcolo salvato")}
 }
 // ---------- esito ----------
-function openEsitoGara(id){ const g=byId("gare",id); if(!g)return; current={c:"garaesito",id,conc:JSON.parse(JSON.stringify(g.concorrenti||[]))}; if(!current.conc.length)current.conc=[{nome:"",ribasso:"",puntiTecnici:"",puntiTotali:"",aggiudicatario:false}]; renderEsitoGara() }
+function openEsitoGara(id,statoProposto){ const g=byId("gare",id); if(!g)return; current={c:"garaesito",id,conc:JSON.parse(JSON.stringify(g.concorrenti||[]))}; if(statoProposto)current.f={ge_stato:statoProposto}; if(!current.conc.length)current.conc=[{nome:"",ribasso:"",puntiTecnici:"",puntiTotali:"",aggiudicatario:false}]; renderEsitoGara() }
 function renderEsitoGara(){
   const g=byId("gare",current.id), v=(k)=>g[k]==null?"":esc(g[k]);
   modalShell(`Esito · ${esc(g.oggetto)}`,`<div class="mb">
@@ -2350,7 +2396,15 @@ async function apriAllegato(path){ const {data,error}=await sb.storage.from("all
 async function clicGare(d,el,e){
   if(d.gara){e.stopPropagation();UI.garaSel=d.gara;tab="gara";closeAll();render();window.scrollTo(0,0);return true}
   if(d.gfil){UI.gFil=d.gfil;render();return true}
-  if(d.garastato){const g=byId("gare",UI.garaSel); if(g&&g.stato!==d.garastato){ if(["aggiudicata","persa","esclusa"].includes(d.garastato)){ await save("gare",Object.assign({},g,{stato:d.garastato,dataEsito:g.dataEsito||TODAY()})); openEsitoGara(g.id); return true } await save("gare",Object.assign({},g,{stato:d.garastato})) } return true}
+  if(d.garastato){const g=byId("gare",UI.garaSel); if(!g||g.stato===d.garastato)return true; const dest=d.garastato, {avanti,uscite}=passiGara(g);
+    if(!avanti.includes(dest)&&!uscite.includes(dest)){toast("Questa fase non segue quella attuale");return true}
+    if(["aggiudicata","persa","esclusa"].includes(dest)){openEsitoGara(g.id,dest);return true}
+    if(dest==="contratto"&&!g.clienteId){openGaraCliente(g.id);return true}
+    const probl=controlliPassoGara(g,dest);
+    if(probl.length||dest==="rinuncia"||dest==="conclusa"){confermaPassoGara(g,dest,probl);return true}
+    await cambiaStatoGara(g,dest); return true}
+  if(d.garaindietro){const g=byId("gare",UI.garaSel); if(g)confermaPassoGara(g,d.garaindietro,[],true); return true}
+  if(d.gpconf){const g=byId("gare",current&&current.id); if(!g)return true; el.disabled=true; const dest=current.dest; closeAll(); await cambiaStatoGara(g,dest); return true}
   if(d.garacalc){openCalcGara(d.garacalc);return true}
   if(d.garaesito){openEsitoGara(d.garaesito);return true}
   if(d.garacli){openGaraCliente(d.garacli);return true}
@@ -2375,6 +2429,19 @@ async function clicGare(d,el,e){
   if(d.mrep){await caricaModello(d.mrep); return true}
   if(d.mcopy){try{await navigator.clipboard.writeText(d.mcopy);toast("Copiato: "+d.mcopy)}catch{toast(d.mcopy)} return true}
   return false;
+}
+async function cambiaStatoGara(g,dest){
+  const obj=Object.assign({},g,{stato:dest}); if(dest==="rinuncia")obj.statoPrima=g.stato;
+  if(await save("gare",obj))toast("Stato: "+(STATI_GARA.find(x=>x[0]===dest)||[dest,dest])[1]);
+}
+function confermaPassoGara(g,dest,probl,indietro){
+  const lab=(STATI_GARA.find(x=>x[0]===dest)||[dest,dest])[1];
+  current={c:"garapasso",id:g.id,dest};
+  const testo=indietro?`<p class="full">La gara torna alla fase <b>${esc(lab)}</b>. I dati inseriti restano tutti.</p>`
+    :dest==="rinuncia"?`<p class="full">La gara viene segnata come <b>Non partecipiamo</b>. Scrivi il motivo con "Modifica dati": servirà nelle statistiche.</p>`
+    :dest==="conclusa"?`<p class="full">Il contratto viene segnato come <b>concluso</b>: non compariranno più gli avvisi di scadenza.</p>`
+    :`<p class="full">Prima di passare a <b>${esc(lab)}</b> controlla:</p><ul class="full">${probl.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><p class="note full">Se questi punti li hai già sistemati fuori dall'app, puoi proseguire.</p>`;
+  modalShell(indietro?"Tornare alla fase precedente?":"Passare a: "+esc(lab)+"?",`<div class="mb">${testo}</div><div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-gpconf="1">${indietro?"Torna a "+esc(lab):probl.length?"Prosegui comunque":"Conferma"}</button></div></div>`);
 }
 async function cambioGare(t){
   if(t.dataset&&t.dataset.gdocst!==undefined){const g=byId("gare",UI.garaSel); if(!g)return true; const docs=(g.documenti||[]).map((x,i)=>i===+t.dataset.gdocst?Object.assign({},x,{stato:t.value}):x); await save("gare",Object.assign({},g,{documenti:docs})); return true}
@@ -2932,11 +2999,11 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
+  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garaindietro],[data-gpconf],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
-  if(Object.keys(d).some(k=>/^(gara|gfil|garastato|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
+  if(Object.keys(d).some(k=>/^(gara|gfil|garastato|garaindietro|gpconf|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
   if(d.livadd!==undefined){$("#f_livelli").insertAdjacentHTML("beforeend",livRow({}));return}
   if(d.livrm!==undefined){const box=el.closest(".rows"); if(box.querySelectorAll(".rg").length>1)el.closest(".rg").remove(); return}
   if(d.auth){authAction(d.auth);return}
