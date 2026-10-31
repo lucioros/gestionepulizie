@@ -158,6 +158,7 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);border-bottom:0}
 .steps .st .n{font-size:12px;opacity:.8}
 .steps .sep{flex:0 0 auto;align-self:center;width:14px;height:2px;background:var(--line)}
 @media (max-width:640px){.imptab thead{display:none}.imptab tr{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:8px 0;border-bottom:1px solid var(--line)}.imptab td{border:0!important;padding:0!important}.imptab td:first-child{grid-row:span 5}.imptab td.r{text-align:left}}
+.cetab td,.cetab th{white-space:nowrap}@media (max-width:640px){.cetab td:first-child,.cetab th:first-child{white-space:normal;min-width:140px;max-width:48vw}.cetab td{font-size:13px}}.cetab tr.cegr td{font-weight:600}.cetab tr.cevoce td:first-child{padding-left:28px}.cetab tr.cetot td{background:var(--sunk)}.cetab tr.cefin td{background:var(--accent-soft);font-size:15px}.cetab td:first-child{position:sticky;left:0;background:var(--surface)}.cetab tr.cetot td:first-child{background:var(--sunk)}.cetab tr.cefin td:first-child{background:var(--accent-soft)}
 .stepact{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
 .saldi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .saldo{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:2px;cursor:pointer;text-align:left}
@@ -350,7 +351,7 @@ body:has(#modalRoot .scrim){overflow:hidden}
 <script>
 (function(){
 "use strict";
-const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze","pagamenti","amministratori","cu","gare","docimpresa","costilavoro","modelli"];
+const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze","pagamenti","amministratori","cu","gare","docimpresa","costilavoro","modelli","contiec","scritture"];
 const S={}; COLS.forEach(c=>S[c]=[]);
 const loaded={};
 let mode="loading", sb=null, tab="oggi", weekStart=null, fattMese=null, ver=0;
@@ -362,7 +363,7 @@ const NAV=[["oggi","Oggi",[["oggi","Oggi"]]],
            ["personale","Personale",[["personale","Personale e timbrature"]]],
            ["fatture","Fatture",[["vendite","Vendita"],["acquisti","Acquisto"],["fornitori","Fornitori"]]],
            ["gare","Gare",[["gare","Gare e offerte"],["docimpresa","Documenti impresa"],["costilavoro","Costo del lavoro"],["modelli","Modelli"],["garestat","Statistiche"]]],
-           ["contabilita","Incassi e contabilità",[["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["mastrini","Mastrini e IVA"]]],
+           ["contabilita","Incassi e contabilità",[["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["contoeco","Conto economico"],["mastrini","Mastrini e IVA"],["pianoconti","Piano dei conti"]]],
            ["impostazioni","Impostazioni",[["impostazioni","Generali e app dipendenti"],["pagamenti","Tipi di pagamento"]]]];
 const navAttivo=()=>NAV.filter(g=>g[0]!=="gare"||moduloOn("gare"));
 const gruppoDi=t=>t==="gara"?NAV.find(g=>g[0]==="gare"):NAV.find(g=>g[2].some(x=>x[0]===t))||NAV[0];
@@ -409,7 +410,7 @@ const DEF_CONTI=[{id:"cassa",nome:"Cassa contanti",saldoIniziale:0},{id:"banca",
 // elenchi ampliabili dall'utente (documento "liste/<nome>" con {valori:[...]})
 const lst=n=>{const d=S.liste.find(x=>x.id===n);return d&&Array.isArray(d.valori)?d.valori:[]};
 const tipiList=()=>[...TIPI,...lst("tipi")];
-const catList=()=>[...CAT_COSTI,...lst("categorie")];
+const catList=()=>S.contiec&&S.contiec.length?[...new Set([...contiEc().filter(c=>gruppoCe(c.gruppo)[2]==="costo"&&c.attivo!==false).map(c=>c.nome),...lst("categorie")])]:[...CAT_COSTI,...lst("categorie")];
 const causaliList=t=>[...(CAUSALI[t]||[]),...(t==="giroconto"?[]:lst("causali_"+t))];
 const codici=()=>[...CODICI_BASE,...lst("codiciIva")];
 const codOf=id=>codici().find(c=>c.id===id)||CODICI_BASE[0];
@@ -489,7 +490,7 @@ const prossimaRata=(kind,doc)=>{const rs=rateDoc(kind,doc);return rs.find(r=>r.r
 function scadCell(kind,doc){ const rs=rateDoc(kind,doc); if(!rs.length)return""; const nx=rs.find(r=>r.res>0.005);
   return `${dShort((nx||rs[rs.length-1]).data)}${rs.length>1?` <span class="muted">${nx?nx.n:rs.length}/${rs.length}</span>`:""}` }
 const tipiAss=()=>[...TIPI_ASSENZA,...lst("assenze")];
-const ADD_LABEL={amministratori:"amministratore",pagamenti:"tipo di pagamento",codiceIva:"codice IVA","lista:assenze":"tipo di assenza",clienti:"cliente",fornitori:"fornitore",sedi:"sede",operatori:"operatore",conti:"conto","lista:tipi":"tipo di immobile","lista:categorie":"categoria","lista:causali":"causale","lista:tipidoc":"tipo di documento"};
+const ADD_LABEL={contiec:"voce di costo",amministratori:"amministratore",pagamenti:"tipo di pagamento",codiceIva:"codice IVA","lista:assenze":"tipo di assenza",clienti:"cliente",fornitori:"fornitore",sedi:"sede",operatori:"operatore",conti:"conto","lista:tipi":"tipo di immobile","lista:categorie":"categoria","lista:causali":"causale","lista:tipidoc":"tipo di documento"};
 
 /* ---------- utilità ---------- */
 const $=s=>document.querySelector(s);
@@ -561,12 +562,14 @@ const DBS={
   preventivi:{t:"preventivi",c:"numero data:d clienteId:r cliente stato descrizione tipo mq:n giorni:n produttivita:n costoOrario:n materiali:n generali:n margine:n canoneOfferto:n note esempio:b",f:{righe:RIGHE("preventivi_righe")}},
   fatture:{t:"fatture",c:"tipo numero clienteId:r clienteNome data:d mese pagamento:r ritenuta:b scadenza:d rifDoc rifOrdine cig cup note auto:b stato sdiStato sdiProgressivo sdiFile sdiGenerato:d sdiInviata:d sdiConsegna:d sdiScarto:d esempio:b",
     f:{righe:RIGHE("fatture_righe"),scadenze:SCAD("fatture_scadenze"),preventivi:LINK("fatture_preventivi","preventivo_id"),alloc:ALLOC("nota_id"),_sdiStoria:SDI_STORIA}},
-  acquisti:{t:"acquisti",c:"fornitoreId:r numero data:d dataReg:d protocollo categoria pagamento:r ritenutaPct:n scadenza:d note fileXml tipoDoc stato esempio:b",f:{righe:RIGHE("acquisti_righe"),scadenze:SCAD("acquisti_scadenze")}},
-  movimenti:{t:"movimenti",c:"data:d tipo conto:r contoDest:r causale importo:n clienteId:r fornitoreId:r descrizione esempio:b",f:{alloc:ALLOC("movimento_id")}},
+  acquisti:{t:"acquisti",c:"fornitoreId:r numero data:d dataReg:d protocollo categoria contoEc:r pagamento:r ritenutaPct:n scadenza:d note fileXml tipoDoc stato esempio:b",f:{righe:RIGHE("acquisti_righe"),scadenze:SCAD("acquisti_scadenze")}},
+  movimenti:{t:"movimenti",c:"data:d tipo conto:r contoDest:r causale importo:n clienteId:r fornitoreId:r descrizione contoEc:r esempio:b",f:{alloc:ALLOC("movimento_id")}},
   cu:{t:"cu",c:"clienteId:r anno:i ricevuta:b data:d"},
   costilavoro:{t:"costi_lavoro",c:"nome ccnl ambito decorrenza:d fonte note esempio:b",f:{livelli:FIGLI("costi_lavoro_livelli",[["livello"],["descrizione"],["costoOrario","n","costo_orario"]],"livello")}},
   docimpresa:{t:"documenti_impresa",c:"tipo descrizione numero ente rilascio:d scadenza:d file nomeFile note esempio:b"},
   modelli:{t:"modelli_gara",c:"nome categoria descrizione file nomeFile note esempio:b"},
+  contiec:{t:"conti_economici",c:"nome tipo gruppo ordine:i attivo:b note esempio:b"},
+  scritture:{t:"scritture",c:"data:d contoEc:r importo:n descrizione note esempio:b"},
   gare:{t:"gare",c:"oggetto tipo ente enteCf enteCodice entePec cig cup piattaforma link procedura criterio:r puntiTecnici:n puntiEconomici:n formula coeffX:n importoBase:n manodoperaSa:n oneriSicurezza:n durataMesi:i rinnovoMesi:i dataPubblicazione:d sopralluogo:d sopralluogoObbl:b scadChiarimenti:d scadOfferta:d oraOfferta aperturaBuste:d cam:b clausolaSociale:b requisiti:at stato motivo note clienteId:r costiLavoroId:r livelloBase materialiPct:n attrezzatureAnno:n sicurezzaAnno:n generaliPct:n utilePct:n ribassoMaxAtteso:n ribassoMedioAtteso:n tecnicoStimato:n importoOfferto:n ribassoOfferto:n dataEsito:d aggiudicatario ribassoAggiudicazione:n punteggioTecnico:n punteggioEconomico:n posizione:i garProvImporto:n garProvScadenza:d garProvEmittente garProvSvincolata:b cauzDefImporto:n cauzDefScadenza:d cauzDefEmittente cauzDefSvincolata:b dataStipula:d dataInizio:d dataFine:d revisionePrezzi penali esempio:b",
     f:{voci:FIGLI("gare_voci",[["lotto"],["descr"],["mq","n"],["passaggi","n"],["resa","n"],["oreExtra","n","ore_extra"],["livello"]]),personale:FIGLI("gare_personale",[["nome"],["livello"],["oreSett","n","ore_sett"]]),
        documenti:FIGLI("gare_documenti",[["nome"],["stato"],["file"],["nomeFile","t","nome_file"],["note"]],"nome"),concorrenti:FIGLI("gare_concorrenti",[["nome"],["ribasso","n"],["puntiTecnici","n","punti_tecnici"],["puntiTotali","n","punti_totali"],["aggiudicatario","b"]],"nome")}},
@@ -602,7 +605,7 @@ function opDB(c,obj){
   if(c==="movimenti"){const s=String(o.soggetto||""); o.clienteId=s.startsWith("c:")?s.slice(2):null; o.fornitoreId=s.startsWith("f:")?s.slice(2):null; delete o.soggetto}
   if(c==="fatture"){const s=o.sdi||{}; SDI_K.forEach(([a,b])=>o[b]=s[a]); const rest=Object.assign({},s); SDI_K.forEach(([a])=>delete rest[a]); delete rest.storia; o._sdiExtra=Object.keys(rest).length?rest:undefined; o._sdiStoria=s.storia}
   const riga={id:String(o.id)}, extra={}, figli={};
-  S_.cols.forEach(col=>riga[col.s]=convDB(o[col.k],col.ty));
+  S_.cols.forEach(col=>{ if(col.k==="contoEc"&&SENZA_TAB.contiec)return; riga[col.s]=convDB(o[col.k],col.ty) });
   Object.entries(S_.f||{}).forEach(([k,sp])=>{figli[sp.tab]=sp.to(o[k],o,k).map((r,i)=>Object.assign({pos:i},r))});
   Object.keys(o).forEach(k=>{ if(k==="id"||S_.keys.has(k)||(S_.f&&S_.f[k])||k==="sdi"||k==="_sdiExtra"||o[k]===undefined)return; extra[k]=o[k] });
   if(o._sdiExtra)extra.sdi=o._sdiExtra;
@@ -637,7 +640,7 @@ function roundTrip(c,obj){
 const TAB_COL={}; Object.entries(DBS).forEach(([c,s])=>{if(c!=="azienda")TAB_COL[s.t]=c}); TAB_COL.elenchi="liste"; TAB_COL.azienda="liste";
 // record collegati da ricaricare quando l'eliminazione si propaga (abbinamenti, squadre, ...)
 const DEL_RELOAD={costilavoro:["gare"],fatture:["movimenti","fatture"],acquisti:["movimenti"],operatori:["sedi","variazioni","straordinari","assenze"],preventivi:["fatture"],sedi:["registro","variazioni"],clienti:["cu","gare"]};
-const ORDINE_COLS=["amministratori","conti","pagamenti","costilavoro","docimpresa","liste","clienti","fornitori","operatori","sedi","registro","variazioni","straordinari","assenze","ispezioni","preventivi","fatture","acquisti","movimenti","cu","gare","modelli"];
+const ORDINE_COLS=["amministratori","conti","pagamenti","contiec","costilavoro","docimpresa","liste","clienti","fornitori","operatori","sedi","registro","variazioni","straordinari","assenze","ispezioni","preventivi","fatture","acquisti","movimenti","scritture","cu","gare","modelli"];
 function figliTabs(c){ if(c==="liste")return ["elenchi_voci","codici_iva"]; return Object.values(DBS[c].f||{}).map(sp=>sp.tab) }
 const fkDi=(c,tab)=>tab==="abbinamenti"?(c==="movimenti"?"movimento_id":"nota_id"):FKF[tab];
 async function tuttaLaTabella(tab,filtro){
@@ -1055,7 +1058,7 @@ function render(){
   const m=$("#main");
   const empty=!S.clienti.length&&!S.sedi.length&&!S.operatori.length&&!S.fornitori.length;
   if(empty&&["oggi","piano","clienti"].includes(tab)){m.innerHTML=emptyView();return}
-  const V={gare:vGare,gara:vGara,docimpresa:vDocImpresa,costilavoro:vCostiLavoro,modelli:vModelli,garestat:vGareStat,amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
+  const V={gare:vGare,gara:vGara,docimpresa:vDocImpresa,costilavoro:vCostiLavoro,modelli:vModelli,garestat:vGareStat,contoeco:vContoEconomico,pianoconti:vPianoConti,amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
   const sub=G[2].length>1?`<div class="subnav" role="navigation" aria-label="${esc(G[1])}">${G[2].map(([k,l])=>`<button data-tab="${k}" ${tab===k||(tab==="gara"&&k==="gare")?'aria-current="page"':""}>${esc(l)}</button>`).join("")}</div>`:"";
   m.innerHTML=sub+V[tab](al);
   schedeTabelle(m);
@@ -1519,7 +1522,7 @@ function vPrimaNota(){
     ent+=e;usc+=u; if(prog!=null)prog=r2(prog+e-u);
     const docs=(m.alloc||[]).map(x=>{const[t,id]=x.doc.split(":");const d=t==="v"?byId("fatture",id):byId("acquisti",id);return d?(t==="v"?vLabel(d):aLabel(d)):""}).filter(Boolean).join(", ");
     const na=(m.tipo!=="giroconto"&&movSogg(m))?nonAbbinato("m:"+m.id):0;
-    return `<tr class="click" data-edit="movimenti:${m.id}"><td class="mono small">${dShort(m.data)}</td><td class="small">${m.tipo==="giroconto"?esc(contoNome(m.conto))+" → "+esc(contoNome(m.contoDest)):esc(contoNome(m.conto))}</td><td>${esc(m.causale||"")}<div class="small muted">${esc([soggNome(movSogg(m)),m.descrizione,docs].filter(Boolean).join(" · "))}</div>${na>0.005&&(m.causale==="Incasso cliente"||m.causale==="Pagamento fornitore")?` <span class="pill warn">${eur2(na)} da abbinare</span>`:""}</td><td class="r num pos">${e?eur2(e):m.tipo==="giroconto"&&!UI.pnConto?eur2(v):""}</td><td class="r num neg">${u?eur2(u):""}</td>${prog!=null?`<td class="r num">${eur2(prog)}</td>`:""}</tr>`}).join("");
+    return `<tr class="click" data-edit="movimenti:${m.id}"><td class="mono small">${dShort(m.data)}</td><td class="small">${m.tipo==="giroconto"?esc(contoNome(m.conto))+" → "+esc(contoNome(m.contoDest)):esc(contoNome(m.conto))}</td><td>${esc(m.causale||"")}${(()=>{const v=voceMovimento(m);return v?` <span class="pill">${esc(ceNome(v))}</span>`:""})()}<div class="small muted">${esc([soggNome(movSogg(m)),m.descrizione,docs].filter(Boolean).join(" · "))}</div>${na>0.005&&(m.causale==="Incasso cliente"||m.causale==="Pagamento fornitore")?` <span class="pill warn">${eur2(na)} da abbinare</span>`:""}</td><td class="r num pos">${e?eur2(e):m.tipo==="giroconto"&&!UI.pnConto?eur2(v):""}</td><td class="r num neg">${u?eur2(u):""}</td>${prog!=null?`<td class="r num">${eur2(prog)}</td>`:""}</tr>`}).join("");
   const mesi=[...new Set(S.movimenti.map(m=>(m.data||"").slice(0,7)).filter(Boolean))].sort().reverse();
   return head("Prima nota",`Liquidità totale ${eur2(cs.reduce((a,c)=>a+saldoConto(c.id),0))}`,`<button class="btn" data-wiz="c:">Incasso da cliente</button><button class="btn" data-wiz="f:">Pagamento a fornitore</button><button class="btn" data-new="conti">Nuovo conto</button><button class="btn" data-new="movimenti" data-giro="1">Giroconto</button><button class="btn primary" data-new="movimenti">Registra movimento</button>`)+
   `<div class="saldi">${cs.map(c=>{const s=saldoConto(c.id);return `<button class="saldo" data-pnconto="${c.id}" aria-pressed="${UI.pnConto===c.id}"><span class="label">${esc(c.nome)}</span><span class="v ${s<0?"neg":""}">${eur2(s)}</span><span class="small muted">${c.iban?esc(c.iban):"saldo iniziale "+eur2(c.saldoIniziale||0)}</span></button>`}).join("")}</div>
@@ -1662,8 +1665,8 @@ const FORMS={
   azienda:{t:"Dati della tua impresa",f:[{k:"denominazione",l:"Denominazione o ditta",req:1,full:1},{k:"piva",l:"Partita IVA",req:1},{k:"cf",l:"Codice fiscale",hint:"Se diverso dalla partita IVA (ditte individuali)"},{k:"regimeFiscale",l:"Regime fiscale",type:"select",noEmpty:1,opts:()=>REGIMI_FISC,def:"RF01",full:1},{k:"indirizzo",l:"Indirizzo della sede (via e numero)",req:1,full:1},{k:"cap",l:"CAP",req:1},{k:"comune",l:"Comune",req:1},{k:"provincia",l:"Provincia (sigla)"},{k:"tel",l:"Telefono"},{k:"email",l:"Email"},{k:"pec",l:"PEC"},{k:"iban",l:"IBAN per gli incassi",full:1,hint:"Stampato nelle fatture con pagamento bancario"},{k:"reaUfficio",l:"REA: sigla provincia",hint:"Società iscritte al registro imprese, es. MI"},{k:"reaNumero",l:"REA: numero"},{k:"capitaleSociale",l:"Capitale sociale versato (€)",type:"number",hint:"Solo società di capitali"},{k:"socioUnico",l:"Soci",type:"select",opts:()=>[["SU","Socio unico"],["SM","Più soci"]],hint:"Solo società di capitali"},{k:"tipoRitenuta",l:"Tipo di ritenuta subita",type:"select",noEmpty:1,opts:()=>[["RT02","RT02 · Società e enti"],["RT01","RT01 · Ditte individuali e persone fisiche"]],def:"RT02"},{k:"causaleRitenuta",l:"Causale della ritenuta",def:"W",hint:"W = appalti nei condomini (art. 25-ter). Confermala con il commercialista"},{k:"feDal",l:"Fatture elettroniche gestite da qui dal",type:"date",def:plus(0),hint:"Gli avvisi di invio riguardano le fatture da questa data"},
     {k:"legaleNome",l:"Legale rappresentante (nome e cognome)",full:1,hint:"Firmatario di domande e dichiarazioni nei modelli delle gare"},{k:"legaleQualifica",l:"Qualifica del firmatario",def:"legale rappresentante"},{k:"legaleCf",l:"Codice fiscale del firmatario"},{k:"legaleNatoA",l:"Luogo di nascita del firmatario"},{k:"legaleNatoIl",l:"Data di nascita del firmatario",type:"date"},{k:"ccnl",l:"Contratto collettivo applicato",def:"CCNL Multiservizi"},{k:"fascia",l:"Fascia di classificazione (DM 274/1997)",hint:"Solo la lettera e l'importo, es. d) fino a 2.065.828 €"},{k:"inps",l:"Posizione INPS"},{k:"inail",l:"Codice ditta INAIL"}]},
   fornitori:{t:"Fornitore",f:[{k:"nome",l:"Ragione sociale",req:1,full:1},{k:"piva",l:"Partita IVA"},{k:"cf",l:"Codice fiscale"},{k:"categoria",l:"Categoria",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"tel",l:"Telefono"},{k:"email",l:"Email"},{k:"pec",l:"PEC"},{k:"indirizzo",l:"Indirizzo",full:1},{k:"cap",l:"CAP"},{k:"comune",l:"Comune"},{k:"provincia",l:"Provincia (sigla)"},{k:"iban",l:"IBAN",full:1},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1,hint:"Determina strumento e scadenze proposti nelle fatture."},{k:"note",l:"Note",type:"textarea",full:1}]},
-  acquisti:{t:"Fattura d'acquisto",righe:"a",f:[{k:"fornitoreId",l:"Fornitore",type:"select",opts:forOpts,req:1,full:1,add:"fornitori"},{k:"numero",l:"Numero del fornitore",req:1},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"dataReg",l:"Data di registrazione",type:"date",def:plus(0)},{k:"protocollo",l:"Protocollo interno",hint:"Vuoto = automatico"},{k:"categoria",l:"Categoria di costo",type:"select",opts:()=>catList().map(x=>[x,x]),add:"lista:categorie"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenutaPct",l:"Ritenuta d'acconto da operare (%)",type:"number",def:0,hint:"20 per i professionisti, altrimenti 0"},{k:"righe",l:"Righe del documento",type:"righe",full:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
-  movimenti:{t:"Movimento di prima nota",alloc:1,f:[{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"tipo",l:"Tipo",type:"select",noEmpty:1,opts:()=>[["entrata","Entrata"],["uscita","Uscita"],["giroconto","Giroconto tra conti"]]},{k:"conto",l:"Conto",type:"select",noEmpty:1,opts:contoOpts,def:"banca",add:"conti"},{k:"contoDest",l:"Conto di destinazione",type:"select",noEmpty:1,opts:contoOpts,def:"cassa",add:"conti"},{k:"causale",l:"Causale",type:"select",noEmpty:1,opts:()=>causaliList("entrata").map(x=>[x,x]),add:"lista:causali"},{k:"importo",l:"Importo (€)",type:"number",step:"0.01",req:1},{k:"soggetto",l:"Cliente o fornitore",type:"select",opts:soggOpts,full:1,add:["clienti","fornitori"]},{k:"descrizione",l:"Descrizione",full:1,hint:"Es. bonifico, assegno, contanti"}]},
+  acquisti:{t:"Fattura d'acquisto",righe:"a",f:[{k:"fornitoreId",l:"Fornitore",type:"select",opts:forOpts,req:1,full:1,add:"fornitori"},{k:"numero",l:"Numero del fornitore",req:1},{k:"data",l:"Data documento",type:"date",def:plus(0),req:1},{k:"dataReg",l:"Data di registrazione",type:"date",def:plus(0)},{k:"protocollo",l:"Protocollo interno",hint:"Vuoto = automatico"},{k:"contoEc",l:"Voce di costo",type:"select",opts:()=>ceOpts("costo",current&&current.rec&&current.rec.contoEc),add:"contiec",hint:"Dove va questo costo nel conto economico"},{k:"pagamento",l:"Tipo di pagamento",type:"select",opts:pagOpts,add:"pagamenti",full:1},{k:"ritenutaPct",l:"Ritenuta d'acconto da operare (%)",type:"number",def:0,hint:"20 per i professionisti, altrimenti 0"},{k:"righe",l:"Righe del documento",type:"righe",full:1},{k:"scadenze",l:"Scadenze",type:"scad",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
+  movimenti:{t:"Movimento di prima nota",alloc:1,f:[{k:"data",l:"Data",type:"date",def:plus(0),req:1},{k:"tipo",l:"Tipo",type:"select",noEmpty:1,opts:()=>[["entrata","Entrata"],["uscita","Uscita"],["giroconto","Giroconto tra conti"]]},{k:"conto",l:"Conto",type:"select",noEmpty:1,opts:contoOpts,def:"banca",add:"conti"},{k:"contoDest",l:"Conto di destinazione",type:"select",noEmpty:1,opts:contoOpts,def:"cassa",add:"conti"},{k:"causale",l:"Causale",type:"select",noEmpty:1,opts:()=>causaliList("entrata").map(x=>[x,x]),add:"lista:causali"},{k:"importo",l:"Importo (€)",type:"number",step:"0.01",req:1},{k:"contoEc",l:"Voce del conto economico",type:"select",opts:()=>ceOpts(),emptyLabel:"Non incide (incassi e pagamenti di fatture, IVA, prestiti, prelievi)",full:1,hint:"Per costi e ricavi senza fattura: stipendi, contributi, spese bancarie, carburante… Gli incassi e i pagamenti di fatture lasciali su \"Non incide\": la fattura è già nel conto economico."},{k:"_ripeti",l:"Ripeti ogni mese",type:"select",noEmpty:1,opts:()=>[["1","No, solo questa volta"],["3","Per 3 mesi"],["6","Per 6 mesi"],["12","Per 12 mesi"]],hint:"Comodo per stipendi, affitti, rate: crea un movimento per ogni mese"},{k:"soggetto",l:"Cliente o fornitore",type:"select",opts:soggOpts,full:1,add:["clienti","fornitori"]},{k:"descrizione",l:"Descrizione",full:1,hint:"Es. bonifico, assegno, contanti"}]},
   amministratori:{t:"Amministratore",f:[{k:"nome",l:"Nome o studio",req:1,full:1},{k:"referente",l:"Referente"},{k:"cf",l:"Codice fiscale / P.IVA"},{k:"tel",l:"Telefono"},{k:"email",l:"Email"},{k:"pec",l:"PEC",full:1},{k:"indirizzo",l:"Indirizzo",full:1},{k:"note",l:"Note",type:"textarea",full:1}]},
   pagamenti:{t:"Tipo di pagamento",calcPag:1,f:[{k:"descrizione",l:"Descrizione",req:1,full:1,hint:"Es. RiBa 30/60 gg fine mese"},{k:"strumento",l:"Strumento",type:"select",noEmpty:1,full:1,opts:()=>STRUMENTI.map(([c,n])=>[c,n+(c==="RD"?" (in fattura elettronica di solito MP05)":" · "+c)])},{k:"rate",l:"Giorni delle scadenze",def:"30",hint:"0 = a vista · 30 · più rate: 30,60,90"},{k:"base",l:"Calcolate da",type:"select",noEmpty:1,opts:()=>[["DF","Data fattura"],["FM","Fine mese"]]},{k:"giornoFisso",l:"Giorno fisso (facoltativo)",type:"number",hint:"Es. 10: la scadenza va al giorno 10 del mese successivo"},{k:"ivaPrimaRata",l:"IVA con più rate",type:"bool",yes:"Tutta l'IVA nella prima rata",no:"IVA divisa tra le rate",def:false},{k:"mesiEsclusi",l:"Mesi esclusi",type:"months",full:1,hint:"Le scadenze in questi mesi slittano al mese successivo (tipico agosto per le RiBa)"},{k:"slittamento",l:"Giorno di slittamento",type:"number",def:10,hint:"Giorno del mese successivo in cui cade la scadenza spostata"},{k:"conto",l:"Conto predefinito di incasso o pagamento",type:"select",opts:contoOpts,add:"conti"},{k:"note",l:"Note",type:"textarea",full:1}]},
   timbrature:{t:"Timbratura",f:[{k:"ora",l:"Ora",type:"time",req:1},{k:"nota",l:"Nota",type:"textarea",full:1}]},
@@ -1682,6 +1685,8 @@ const FORMS={
   gareGaranzie:{t:"Garanzie della gara",col:"gare",nodel:1,f:[{k:"garProvImporto",l:"Garanzia provvisoria (€)",type:"number",step:"0.01"},{k:"garProvEmittente",l:"Emessa da"},{k:"garProvScadenza",l:"Scadenza",type:"date"},{k:"garProvSvincolata",l:"Stato",type:"bool",yes:"Svincolata",no:"In corso",def:false},
     {k:"cauzDefImporto",l:"Cauzione definitiva (€)",type:"number",step:"0.01"},{k:"cauzDefEmittente",l:"Emessa da"},{k:"cauzDefScadenza",l:"Scadenza",type:"date"},{k:"cauzDefSvincolata",l:"Stato",type:"bool",yes:"Svincolata",no:"In corso",def:false}]},
   gareContratto:{t:"Contratto della gara",col:"gare",nodel:1,f:[{k:"dataStipula",l:"Stipula",type:"date"},{k:"dataInizio",l:"Inizio del servizio",type:"date"},{k:"dataFine",l:"Fine del contratto",type:"date"},{k:"rinnovoMesi",l:"Rinnovo o proroga possibile (mesi)",type:"number"},{k:"revisionePrezzi",l:"Revisione dei prezzi",type:"textarea",full:1,hint:"Clausola prevista, indice di riferimento, date di richiesta"},{k:"penali",l:"Penali",type:"textarea",full:1}]},
+  contiec:{t:"Voce del piano dei conti",f:[{k:"nome",l:"Nome della voce",req:1,full:1,hint:"Es. Affitto magazzino, Formazione del personale"},{k:"gruppo",l:"Gruppo del conto economico",type:"select",noEmpty:1,opts:()=>GRUPPI_CE.map(([k,l,t])=>[k,l,t==="ricavo"?"Ricavi":"Costi"]),def:"servizi",full:1},{k:"attivo",l:"Stato",type:"bool",yes:"Attiva",no:"Non in uso",def:true},{k:"note",l:"Note",type:"textarea",full:1}]},
+  scritture:{t:"Costo o ricavo senza movimento di cassa",f:[{k:"data",l:"Data di competenza",type:"date",def:plus(0),req:1},{k:"contoEc",l:"Voce del conto economico",type:"select",opts:()=>ceOpts(),req:1,full:1},{k:"importo",l:"Importo (€)",type:"number",step:"0.01",req:1,hint:"Usa un importo negativo solo per correggere"},{k:"descrizione",l:"Descrizione",full:1,hint:"Es. ammortamento lavasciuga (6.000 € in 5 anni = 1.200 € l'anno), stipendi di dicembre pagati a gennaio"},{k:"note",l:"Note",type:"textarea",full:1}]},
   modelli:{t:"Modello di documento",f:[{k:"nome",l:"Nome del modello",req:1,full:1},{k:"categoria",l:"Categoria",type:"select",noEmpty:1,opts:()=>CAT_MODELLI.map(x=>[x,x]),def:"Altro"},{k:"descrizione",l:"Descrizione",type:"textarea",full:1,hint:"Quando si usa, cosa contiene"},{k:"note",l:"Note",type:"textarea",full:1}]},
   docimpresa:{t:"Documento dell'impresa",f:[{k:"tipo",l:"Tipo",type:"select",req:1,opts:()=>tipiDocImpresa().map(x=>[x,x]),add:"lista:tipidoc",full:1},{k:"descrizione",l:"Descrizione",full:1,hint:"Es. fascia di classificazione, massimale della polizza"},{k:"numero",l:"Numero o protocollo"},{k:"ente",l:"Rilasciato da"},{k:"rilascio",l:"Data di rilascio",type:"date"},{k:"scadenza",l:"Scadenza",type:"date",hint:"Vuota se non scade"},{k:"note",l:"Note",type:"textarea",full:1}]},
   costilavoro:{t:"Tabella del costo del lavoro",f:[{k:"nome",l:"Nome",req:1,full:1,hint:"Es. Multiservizi Milano 2026"},{k:"ccnl",l:"Contratto collettivo",def:"CCNL Multiservizi (servizi di pulizia)"},{k:"ambito",l:"Ambito territoriale",hint:"Es. provincia"},{k:"decorrenza",l:"In vigore dal",type:"date"},{k:"fonte",l:"Fonte",hint:"Es. decreto del Ministero del Lavoro"},
@@ -1694,7 +1699,7 @@ function avgCosto(){const o=S.operatori.filter(x=>+x.costoOrario);return o.lengt
 function selectHtml(id,o,v,f){
   const groups=[...new Set(o.map(x=>x[2]).filter(Boolean))];
   const opt=([a,b])=>`<option value="${esc(a)}" ${a===v?"selected":""}>${esc(b)}</option>`;
-  const first=f.noEmpty?"":f.req?(v?"":'<option value="">Scegli…</option>'):'<option value="">—</option>';
+  const first=f.noEmpty?"":f.req?(v?"":'<option value="">Scegli…</option>'):`<option value="">${esc(f.emptyLabel||"—")}</option>`;
   return `<select id="${id}">${first}${groups.length?groups.map(g=>`<optgroup label="${esc(g)}">${o.filter(x=>x[2]===g).map(opt).join("")}</optgroup>`).join(""):o.map(opt).join("")}</select>`;
 }
 function addBtns(f){
@@ -1765,6 +1770,8 @@ function openForm(c,rec,prefill,returnTo){
   if(c==="preventivi"&&!rec&&!(prefill&&prefill.produttivita))data.produttivita=PROD[data.tipo||"Uffici"];
   if(c==="fatture"&&rec)data.righe=righeOf(rec);
   if(c==="acquisti"&&rec)data.righe=righeOf(rec);
+  if(c==="acquisti"&&rec&&!rec.contoEc)data.contoEc=voceAcquisto(rec)||"";
+  if(c==="movimenti"&&rec&&!rec.contoEc)data.contoEc=voceMovimento(rec)||"";
   if(c==="clienti"&&!data.codIva)data.codIva=cliCod(rec);
   if(c==="clienti"&&rec&&rec.righeAbituali)data.righeAbituali=righeOf({righe:rec.righeAbituali,regime:rec.regime});
   const defCod=c==="fatture"?cliCod(byId("clienti",data.clienteId)):c==="clienti"?data.codIva:c==="preventivi"?cliCod(prevCli(data)):"22";
@@ -1780,7 +1787,7 @@ function openForm(c,rec,prefill,returnTo){
   modalShell(title+(stack.length?` <span class="small muted" style="font-family:var(--f-body);font-weight:400">· poi torni a ${esc(FORMS[stack[stack.length-1].cur.c].t.toLowerCase())}</span>`:""),
    `<form id="frm" novalidate><div class="mb">${tOcc?`<p class="note full">Turno ricorrente: ${esc(GIORNI_L[isoDow(parse(current.occ.orig))-1])} ${dShort(current.occ.orig)}, ${esc(tOcc.ora||"")}, ${n1(tOcc.durata)} h, ${esc(opNames(tOcc.operatori)||"nessuno")}. Le modifiche valgono solo per questo giorno.</p>`:""}${F.f.map(f=>fieldHtml(f,data[f.k])).join("")}${F.calc?'<div class="calc" id="calcBox"></div>':""}${F.calcPag?'<div class="calc" id="pagPrev" style="grid-template-columns:1fr"></div>':""}${F.alloc||c==="fatture"?'<div class="alloc" id="allocBox" hidden></div>':""}${c==="variazioni"||c==="straordinari"?'<div class="alloc" id="freeBox" hidden></div>':""}${extra}<div class="err full" id="ferr"></div></div>
    <div class="mf"><div class="actions">${rec&&!F.nodel?`<button type="button" class="btn danger" data-del="1">${c==="variazioni"?"Ripristina turno originale":"Elimina"}</button>`:""}${c==="fatture"&&rec?`<button type="button" class="btn" data-fe="${rec.id}">Fattura elettronica</button>`:""}${c==="fatture"&&rec&&rec.tipo!=="nc"&&residuoV(rec)>0.005?`<button type="button" class="btn" data-incassa="${rec.id}">Registra incasso</button>`:""}${c==="acquisti"&&rec&&residuoA(rec)>0.005?`<button type="button" class="btn" data-paga="${rec.id}">Registra pagamento</button>`:""}</div><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="submit" class="btn primary">Salva</button></div></div></form>`);
-  if(c==="movimenti"){ setCausali(data.causale); }
+  if(c==="movimenti"){ setCausali(data.causale); if(!rec&&!data.contoEc&&$("#f_contoEc")){const v=ceDiCausale($("#f_causale").value); if(v)$("#f_contoEc").value=v} }
   if(F.calc)updCalc();
   if(F.calcPag)updPagPrev();
   formDynamics();
@@ -1798,6 +1805,7 @@ function formDynamics(){
     const tipo=$("#f_tipo").value;
     $("#w_contoDest").hidden=tipo!=="giroconto"; $("#w_soggetto").hidden=tipo==="giroconto";
     $("#w_conto").querySelector("label").textContent=tipo==="giroconto"?"Dal conto *":"Conto *";
+    const wce=$("#w_contoEc"); if(wce)wce.hidden=tipo==="giroconto"||!!SENZA_TAB.contiec; const wr=$("#w__ripeti"); if(wr)wr.hidden=!!current.rec;
     renderAlloc();
   }
   if(c==="fatture"){
@@ -2021,9 +2029,22 @@ async function submitForm(){
   // la lista dei documenti da preparare serve solo alle gare ancora aperte (non a quelle passate registrate come storico)
   if(c==="gare"&&!rec)out.documenti=GARA_APERTA.includes(out.stato||"individuata")?docGaraDefault(out.tipo):[];
   if(c==="gare"&&out.tipo==="privata"&&!out.procedura)out.procedura="privata";
+  let ripeti=1;
+  if(c==="movimenti"){ ripeti=+out._ripeti||1; delete out._ripeti; if(out.tipo==="giroconto")out.contoEc="";
+    // "Non incide" scelto apposta su una causale che di solito ha una voce: va ricordato
+    out.ceNo=!out.contoEc&&out.tipo!=="giroconto"&&(!!ceDiCausale(out.causale)||!CAUSALI_NON_CE.includes(out.causale))?true:undefined }
+  if(c==="acquisti")out.categoria=ceNome(out.contoEc)||"";
+  if(c==="contiec"){ out.tipo=gruppoCe(out.gruppo)[2]; if(!rec)out.ordine=500;
+    if(S.contiec.some(x=>normTxt(x.nome)===normTxt(out.nome)&&(!rec||x.id!==rec.id))){$("#ferr").textContent="Esiste già una voce con questo nome.";return}
+    if(rec&&rec.id===ceVendite()&&out.tipo!=="ricavo"){$("#ferr").textContent="Questa voce riceve le fatture di vendita: deve restare tra i ricavi.";return} }
   const obj=Object.assign({},rec||{},current.extra||{},out); if(rec&&rec.esempio)obj.esempio=true;
   const rt=current.returnTo;
   const id=await save(col,obj); if(!id)return;
+  if(c==="movimenti"&&!rec&&ripeti>1){ const d0=parse(obj.data), giorno=d0.getDate(), copie=[];
+    for(let k=1;k<ripeti;k++){ const d=new Date(d0.getFullYear(),d0.getMonth()+k,1); d.setDate(Math.min(giorno,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));
+      const o=Object.assign({},obj,{id:rid(),data:iso(d),alloc:[]}); copie.push({c:"movimenti",o}) }
+    const res=await salvaMolti(copie); try{ const r=await caricaDB(["movimenti"]); S.movimenti=r.movimenti }catch(e){}
+    closeModal(); ver++; render(); toast(`Registrati ${1+res.fatti} movimenti, uno al mese`); return }
   if(c==="gare"&&!rec){closeModal(); UI.garaSel=id; tab="gara"; render();
     if(["aggiudicata","persa","esclusa"].includes(obj.stato)){openEsitoGara(id); toast("Gara registrata: inserisci l'esito per le statistiche"); return}
     toast(GARA_APERTA.includes(obj.stato)?"Gara registrata: completa date, documenti e calcolo":"Gara registrata"); return}
@@ -2454,6 +2475,7 @@ async function cambioGare(t){
   if(t.dataset&&t.dataset.gdocst!==undefined){const g=byId("gare",UI.garaSel); if(!g)return true; const docs=(g.documenti||[]).map((x,i)=>i===+t.dataset.gdocst?Object.assign({},x,{stato:t.value}):x); await save("gare",Object.assign({},g,{documenti:docs})); return true}
   if(t.id==="gsAnno"){UI.gsAnno=t.value;render();return true}
   if(t.id==="mGara"){UI.mGara=t.value;render();return true}
+  if(t.id==="ceAnno"){UI.ceAnno=t.value;render();return true}
   if(t.id==="impSalta"&&current&&current.c==="impgare"){current.salta=t.checked;renderImportGare();return true}
   if(t.id==="genSel"){UI.genSel=t.value;return true}
   if(current&&current.c==="garacalc"&&t.closest(".modal")){leggiCalcGara(); if(t.tagName==="SELECT"){ const sc=$(".scrim").scrollTop; renderCalcGara(); const s=$(".scrim"); if(s)s.scrollTop=sc } else {const c=calcGara(current.g); $("#gcRis").innerHTML=risCalcGara(current.g,c)} return true}
@@ -2799,6 +2821,151 @@ async function confermaImportGare(btn){
   closeAll(); UI.gFil="tutte"; tab="gare"; ver++; render(); toast(`Importate ${res.fatti} gare dallo storico`);
 }
 
+// ---------- contabilità generale: conto economico di massima ----------
+// gruppi del conto economico riclassificato (ordine di stampa)
+const GRUPPI_CE=[["vendite","Ricavi delle vendite e delle prestazioni","ricavo"],["altri_ricavi","Altri ricavi e proventi","ricavo"],
+  ["materiali","Acquisti di materiali e prodotti","costo"],["servizi","Servizi","costo"],["beni_terzi","Affitti e noleggi","costo"],
+  ["personale","Costi del personale","costo"],["ammortamenti","Ammortamenti","costo"],["oneri_diversi","Oneri diversi di gestione","costo"],
+  ["fin_proventi","Proventi finanziari","ricavo"],["fin_oneri","Oneri finanziari","costo"],["imposte","Imposte sul reddito","costo"]];
+const SCHEMA_CE=[{g:"vendite"},{g:"altri_ricavi"},{t:"Valore della produzione"},{g:"materiali"},{g:"servizi"},{g:"beni_terzi"},{t:"Valore aggiunto"},
+  {g:"personale"},{t:"Margine operativo lordo (MOL)"},{g:"ammortamenti"},{g:"oneri_diversi"},{t:"Risultato operativo"},
+  {g:"fin_proventi"},{g:"fin_oneri"},{t:"Risultato prima delle imposte"},{g:"imposte"},{t:"Risultato netto",fin:1}];
+const gruppoCe=k=>GRUPPI_CE.find(x=>x[0]===k)||[k,k,"costo"];
+// proposte automatiche: causali di prima nota e vecchie categorie di costo → voce del conto economico
+const CAUSALE_CE={"Stipendi":"c_stipendi","Spese bancarie":"c_banca","Carburante":"c_carburante","Altre spese":"c_altri","Altri ricavi":"r_altri","Rimborso ricevuto":"r_altri"};
+const CAUSALI_NON_CE=["Incasso cliente","Pagamento fornitore","Finanziamento / apporto soci","Prelievo titolare","Rimborso a cliente","Giroconto tra conti"];
+const CAT_CE={"Prodotti di pulizia":"c_prodotti","Attrezzature e macchinari":"c_attrezzature","Noleggi":"c_noleggi","Carburante e trasporti":"c_carburante",
+  "Servizi professionali":"c_professionali","Affitto e utenze":"c_affitto","Divise e DPI":"c_dpi","Assicurazioni":"c_assicurazioni","Manutenzioni":"c_manutenzioni","Altro":"c_altri"};
+const contiEc=()=>S.contiec.slice().sort((a,b)=>GRUPPI_CE.findIndex(g=>g[0]===a.gruppo)-GRUPPI_CE.findIndex(g=>g[0]===b.gruppo)||(+a.ordine||500)-(+b.ordine||500)||String(a.nome).localeCompare(String(b.nome),"it"));
+const ceNome=id=>{const c=byId("contiec",id);return c?c.nome:""};
+const ceTipo=id=>{const c=byId("contiec",id);return c?gruppoCe(c.gruppo)[2]:null};
+// opzioni raggruppate; tipo = "costo" | "ricavo" | undefined (tutte)
+const ceOpts=(tipo,incl)=>contiEc().filter(c=>(c.attivo!==false||c.id===incl)&&(!tipo||gruppoCe(c.gruppo)[2]===tipo)).map(c=>[c.id,c.nome,gruppoCe(c.gruppo)[1]]);
+const ceDiNome=n=>{ if(!n)return null; if(CAT_CE[n]&&byId("contiec",CAT_CE[n]))return CAT_CE[n]; const c=S.contiec.find(x=>normTxt(x.nome)===normTxt(n)); return c?c.id:null };
+const ceDiCausale=c=>CAUSALE_CE[c]&&byId("contiec",CAUSALE_CE[c])?CAUSALE_CE[c]:null;
+// voce di un documento o movimento (anche per i dati registrati prima del conto economico)
+function voceAcquisto(a){ if(a.contoEc&&byId("contiec",a.contoEc))return a.contoEc; const v=ceDiNome(a.categoria); if(v)return v; const f=byId("fornitori",a.fornitoreId); return f?ceDiNome(f.categoria):null }
+function voceMovimento(m){ if(m.tipo!=="entrata"&&m.tipo!=="uscita")return null; if(m.contoEc&&byId("contiec",m.contoEc))return m.contoEc; if(m.ceNo)return null; return ceDiCausale(m.causale) }
+const movDaClassificare=m=>(m.tipo==="entrata"||m.tipo==="uscita")&&!voceMovimento(m)&&!m.ceNo&&!CAUSALI_NON_CE.includes(m.causale)&&!(m.alloc||[]).length;
+const ceVendite=()=>byId("contiec","r_servizi")?"r_servizi":(S.contiec.find(c=>c.gruppo==="vendite")||{}).id||null;
+// importi per voce e mese di un anno, con il dettaglio delle registrazioni
+function datiCe(anno){
+  const per={}, det={}, nonClass=[];
+  const add=(id,data,v,descr,ref)=>{ const m=+data.slice(5,7)-1; (per[id]=per[id]||Array(12).fill(0))[m]+=v; (det[id]=det[id]||[]).push({data,v,descr,ref}) };
+  const inAnno=d=>d&&d.startsWith(anno);
+  const rv=ceVendite();
+  S.fatture.filter(f=>inAnno(f.data)).forEach(f=>{ const t=vTot(f), s=f.tipo==="nc"?-1:1; if(rv)add(rv,f.data,s*t.imp,(f.tipo==="nc"?"Nota di credito ":"Fattura ")+f.numero+" · "+(f.clienteNome||soggNome("c:"+f.clienteId)),"fatture:"+f.id) });
+  S.acquisti.filter(a=>inAnno(a.data)).forEach(a=>{ const t=aTot(a), s=a.tipoDoc==="TD04"?-1:1, v=voceAcquisto(a), fr=byId("fornitori",a.fornitoreId), d="Fattura "+a.numero+" · "+(fr?fr.nome:"fornitore");
+    if(v)add(v,a.data,s*t.imp,d,"acquisti:"+a.id); else nonClass.push({k:"a",o:a,data:a.data,v:s*t.imp,descr:d}) });
+  S.movimenti.filter(m=>inAnno(m.data)).forEach(m=>{ const v=voceMovimento(m), imp=+m.importo||0;
+    if(v){ const segno=(m.tipo==="uscita")===(ceTipo(v)==="costo")?1:-1; add(v,m.data,segno*imp,(m.causale||"Movimento")+(m.descrizione?" · "+m.descrizione:"")+" · "+contoNome(m.conto),"movimenti:"+m.id) }
+    else if(movDaClassificare(m))nonClass.push({k:"m",o:m,data:m.data,v:imp,descr:(m.causale||"")+(m.descrizione?" · "+m.descrizione:"")}) });
+  S.scritture.filter(s=>inAnno(s.data)&&byId("contiec",s.contoEc)).forEach(s=>add(s.contoEc,s.data,+s.importo||0,(s.descrizione||"Registrazione senza movimento di cassa"),"scritture:"+s.id));
+  return {per,det,nonClass};
+}
+// righe del riclassificato: gruppi con le loro voci e risultati intermedi
+function righeCe(d){
+  const somma=a=>a.reduce((x,y)=>x+y,0), vett=()=>Array(12).fill(0);
+  let corr=vett(); const out=[];
+  SCHEMA_CE.forEach(x=>{
+    if(x.g){ const [k,lab,tipo]=gruppoCe(x.g); const voci=contiEc().filter(c=>c.gruppo===k).map(c=>({c,m:d.per[c.id]||vett()})).filter(v=>somma(v.m)!==0||v.c.attivo!==false);
+      const m=vett(); voci.forEach(v=>v.m.forEach((y,i)=>m[i]+=y)); corr=corr.map((y,i)=>y+(tipo==="ricavo"?m[i]:-m[i]));
+      out.push({g:k,lab,tipo,m,tot:r2(somma(m)),voci:voci.map(v=>({c:v.c,m:v.m,tot:r2(somma(v.m))}))}) }
+    else out.push({t:x.t,fin:x.fin,m:corr.slice(),tot:r2(somma(corr))});
+  });
+  return out;
+}
+function vContoEconomico(){
+  if(SENZA_TAB.contiec)return head("Conto economico","")+`<section class="panel"><h2>Aggiornamento del database necessario</h2><p>Per il conto economico il database deve avere le nuove tabelle della contabilità. Esegui lo script <b>supabase/contabilita.sql</b> nell'editor SQL di Supabase (si può rieseguire senza perdere dati), poi ricarica la pagina.</p></section>`;
+  const ys=[...new Set([...anni(S.fatture,"data"),...anni(S.acquisti,"data"),...anni(S.movimenti,"data"),...anni(S.scritture,"data"),String(today().getFullYear())])].sort().reverse();
+  const y=UI.ceAnno&&ys.includes(UI.ceAnno)?UI.ceAnno:ys[0], yp=String(+y-1), vista=UI.ceVista||"anno";
+  const d=datiCe(y), dp=datiCe(yp), R=righeCe(d), RP=righeCe(dp);
+  const ric=R.find(r=>r.t==="Valore della produzione").tot, net=R.find(r=>r.fin).tot, ricP=RP.find(r=>r.t==="Valore della produzione").tot, netP=RP.find(r=>r.fin).tot;
+  const costi=r2(ric-net), costiP=r2(ricP-netP), pers=R.find(r=>r.g==="personale").tot;
+  const pct=(v,base)=>base?(Math.round(v/base*1000)/10).toLocaleString("it-IT")+"%":"—";
+  const varz=(a,b)=>b?`${a>=b?"+":""}${(Math.round((a-b)/Math.abs(b)*1000)/10).toLocaleString("it-IT")}%`:"—";
+  const ap=UI.ceAperti||(UI.ceAperti={});
+  const v0=v=>v===0?'<span class="muted">—</span>':eur(v);
+  const MESI=["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
+  const prevG=k=>RP.find(r=>r.g===k), prevT=t=>RP.find(r=>r.t===t);
+  const cellAnno=(cur,prev,base)=>`<td class="r num">${v0(cur)}</td><td class="r small muted">${cur?pct(cur,base):""}</td><td class="r num muted">${v0(prev)}</td>`;
+  const righe=R.map(r=>{
+    if(r.t){ const p=prevT(r.t); return `<tr class="cetot${r.fin?" cefin":""}"><td><b>${esc(r.t)}</b></td>${vista==="mesi"?r.m.map(v=>`<td class="r num ${v<0?"neg":""}">${v?eur(v):"—"}</td>`).join("")+`<td class="r num ${r.tot<0?"neg":""}"><b>${eur(r.tot)}</b></td>`:`<td class="r num ${r.tot<0?"neg":""}"><b>${eur(r.tot)}</b></td><td class="r small">${pct(r.tot,ric)}</td><td class="r num muted">${eur(p.tot)}</td>`}</tr>` }
+    const p=prevG(r.g), apri=!!ap[r.g], segno=r.tipo==="ricavo"?"+":"−";
+    const gr=`<tr class="cegr click" data-cetog="${r.g}"><td><span class="muted">${apri?"▾":"▸"}</span> ${segno} ${esc(r.lab)}</td>${vista==="mesi"?r.m.map(v=>`<td class="r num">${v?eur(v):"—"}</td>`).join("")+`<td class="r num">${v0(r.tot)}</td>`:cellAnno(r.tot,p.tot,ric)}</tr>`;
+    const voci=apri?r.voci.filter(v=>v.tot!==0||(p.voci.find(x=>x.c.id===v.c.id)||{}).tot).map(v=>{const pv=(p.voci.find(x=>x.c.id===v.c.id)||{tot:0}).tot;
+      return `<tr class="cevoce click" data-cedet="${v.c.id}"><td>${esc(v.c.nome)}</td>${vista==="mesi"?v.m.map(x=>`<td class="r num small">${x?eur(x):""}</td>`).join("")+`<td class="r num">${v0(v.tot)}</td>`:cellAnno(v.tot,pv,ric)}</tr>`}).join(""):"";
+    return gr+voci });
+  const thead=vista==="mesi"?`<th>Voce</th>${MESI.map(m=>`<th class="r">${m}</th>`).join("")}<th class="r">Totale</th>`:`<th>Voce</th><th class="r">${y}</th><th class="r">% sui ricavi</th><th class="r">${yp}</th>`;
+  // grafico mensile: ricavi e costi, risultato progressivo
+  const rm=R.find(r=>r.t==="Valore della produzione").m, nm=R.find(r=>r.fin).m, cm=rm.map((v,i)=>v-nm[i]);
+  const mx=Math.max(1,...rm,...cm), W=720, H=190, bw=20, sx=i=>40+i*55;
+  let cum=0; const cumPts=nm.map((v,i)=>{cum+=v;return [sx(i)+bw,cum]}); const mnC=Math.min(0,...cumPts.map(p=>p[1])), mxC=Math.max(1,...cumPts.map(p=>p[1]));
+  const yC=v=>H-20-(v-mnC)/(mxC-mnC||1)*(H-40);
+  const svg=`<svg viewBox="0 0 ${W} ${H+18}" role="img" aria-label="Ricavi e costi per mese ${y}" style="width:100%;height:auto;max-height:240px">
+   ${rm.map((v,i)=>{const hR=v>0?v/mx*(H-40):0, hC=cm[i]>0?cm[i]/mx*(H-40):0; return `<rect x="${sx(i)}" y="${H-20-hR}" width="${bw}" height="${hR}" rx="2" fill="var(--accent)"><title>${MESI[i]}: ricavi ${eur(v)}</title></rect><rect x="${sx(i)+bw+2}" y="${H-20-hC}" width="${bw}" height="${hC}" rx="2" fill="#C2410C" opacity=".75"><title>${MESI[i]}: costi ${eur(cm[i])}</title></rect><text x="${sx(i)+bw}" y="${H-4}" text-anchor="middle" font-size="11" fill="var(--muted)">${MESI[i]}</text>`}).join("")}
+   <line x1="30" x2="${W-10}" y1="${H-20}" y2="${H-20}" stroke="var(--line)"/>
+   <polyline points="${cumPts.map(p=>`${p[0]},${yC(p[1])}`).join(" ")}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="4 3"/>
+   </svg><div class="small muted" style="display:flex;gap:16px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px"></span> Ricavi</span><span><span style="display:inline-block;width:10px;height:10px;background:#C2410C;opacity:.75;border-radius:2px"></span> Costi</span><span>- - - Risultato progressivo dell'anno</span></div>`;
+  // avvisi sulla completezza dei dati
+  const avvisi=[];
+  if(d.nonClass.length)avvisi.push(`<b>${d.nonClass.length} registrazion${d.nonClass.length>1?"i":"e"} da classificare</b> (${eur(d.nonClass.reduce((a,x)=>a+Math.abs(x.v),0))}): fatture d'acquisto senza voce o uscite ed entrate di prima nota senza voce. Finché non le classifichi non entrano nel conto economico. <button class="btn small" data-ceclass="${y}">Classifica ora</button>`);
+  if(!pers&&S.operatori.length)avvisi.push(`Non risultano <b>costi del personale</b> nel ${y}: registra stipendi e contributi da Prima nota (voci "Stipendi netti" e "Contributi INPS e INAIL"), anche ripetendoli ogni mese.`);
+  if(!R.find(r=>r.g==="ammortamenti").tot&&S.acquisti.some(a=>(a.data||"").startsWith(y)&&voceAcquisto(a)==="c_attrezzature"))avvisi.push(`Ci sono acquisti di attrezzature: se sono macchinari che durano più anni, per un bilancio più fedele registra ogni anno una quota come <b>Ammortamenti</b> con "Senza movimento di cassa".`);
+  return head("Conto economico",`Andamento dell'impresa nel ${y} · bilancio di massima`,`<select id="ceAnno" class="btn" aria-label="Anno">${ys.map(a=>`<option ${a===y?"selected":""}>${a}</option>`).join("")}</select><button class="btn" data-cenuovo="uscita">Registra un costo</button><button class="btn" data-cenuovo="entrata">Registra un ricavo</button><button class="btn" data-new="scritture">Senza movimento di cassa</button>`)+
+  `<div class="kpis"><div class="kpi"><span class="label">Ricavi ${y}</span><span class="v">${eur(ric)}</span><span class="n">${varz(ric,ricP)} sul ${yp}</span></div>
+   <div class="kpi"><span class="label">Costi ${y}</span><span class="v">${eur(costi)}</span><span class="n">${varz(costi,costiP)} sul ${yp}</span></div>
+   <div class="kpi"><span class="label">Risultato netto</span><span class="v ${net<0?"neg":""}">${eur(net)}</span><span class="n">nel ${yp}: ${eur(netP)}</span></div>
+   <div class="kpi"><span class="label">Margine sui ricavi</span><span class="v ${net<0?"neg":""}">${pct(net,ric)}</span><span class="n">risultato netto ÷ ricavi</span></div></div>
+  ${avvisi.length?`<div class="banner-warn small"><ul>${avvisi.map(a=>`<li>${a}</li>`).join("")}</ul></div>`:""}
+  <section class="panel"><div class="ph"><h2>Conto economico ${y}</h2><div class="actions"><div class="seg" role="group" aria-label="Vista"><button data-cevista="anno" aria-pressed="${vista==="anno"}">Confronto con il ${yp}</button><button data-cevista="mesi" aria-pressed="${vista==="mesi"}">Mese per mese</button></div><button class="btn small" data-ceapri="1">${Object.values(ap).some(Boolean)?"Chiudi le voci":"Apri tutte le voci"}</button><button class="btn small" data-ceexp="${y}">Esporta CSV</button></div></div>
+   <div class="tablewrap"><table class="nocards cetab"><thead><tr>${thead}</tr></thead><tbody>${righe.join("")}</tbody></table></div>
+   <p class="note">Clicca un gruppo per vedere le sue voci, e una voce per l'elenco delle registrazioni. Importi senza IVA. Vendite per data della fattura, acquisti per data del documento, costi e ricavi di prima nota per data del movimento. È una stima per seguire l'andamento: il bilancio ufficiale resta al commercialista.</p></section>
+  <section class="panel"><h2>Ricavi e costi per mese</h2>${svg}</section>`;
+}
+function vPianoConti(){
+  if(SENZA_TAB.contiec)return vContoEconomico();
+  const uso={}; const conta=id=>{if(id)uso[id]=(uso[id]||0)+1};
+  S.acquisti.forEach(a=>conta(voceAcquisto(a))); S.movimenti.forEach(m=>conta(voceMovimento(m))); S.scritture.forEach(s=>conta(s.contoEc)); if(ceVendite())uso[ceVendite()]=(uso[ceVendite()]||0)+S.fatture.length;
+  return head("Piano dei conti","Le voci di costo e di ricavo usate per il conto economico",`<button class="btn primary" data-new="contiec">Nuova voce</button>`)+
+  GRUPPI_CE.map(([k,lab,tipo])=>{const L=contiEc().filter(c=>c.gruppo===k); return `<section class="panel"><div class="ph"><h2>${esc(lab)}</h2><span class="pill ${tipo==="ricavo"?"ok":""}">${tipo==="ricavo"?"Ricavi":"Costi"}</span></div>
+   ${L.length?`<div class="tablewrap"><table><thead><tr><th>Voce</th><th class="r">Registrazioni</th><th>Stato</th><th></th></tr></thead><tbody>${L.map(c=>`<tr class="click" data-edit="contiec:${c.id}"><td><b>${esc(c.nome)}</b>${c.note?`<div class="small muted">${esc(c.note)}</div>`:""}${c.id===ceVendite()?`<div class="small muted">Riceve in automatico le fatture di vendita</div>`:""}</td><td class="r num">${uso[c.id]||0}</td><td>${c.attivo===false?'<span class="pill">Non in uso</span>':'<span class="pill ok">Attiva</span>'}</td><td class="r"><button class="btn small ghost" data-edit="contiec:${c.id}">Modifica</button></td></tr>`).join("")}</tbody></table></div>`:`<p class="muted small">Nessuna voce in questo gruppo.</p>`}</section>`}).join("")+
+  `<p class="note">Rinomina le voci come preferisci e aggiungine di nuove: per esempio "Affitto magazzino" negli Affitti o "Formazione del personale" nei Costi del personale. Una voce già usata non si elimina, ma si può mettere "Non in uso".</p>`;
+}
+function dettaglioCe(id,anno){
+  const d=datiCe(anno), L=(d.det[id]||[]).slice().sort((a,b)=>a.data.localeCompare(b.data)), tot=r2(L.reduce((a,x)=>a+x.v,0));
+  current={c:"cedet"};
+  modalShell(`${esc(ceNome(id))} · ${anno}`,`<div class="mb"><div class="full tablewrap" style="max-height:60vh;overflow:auto"><table class="nocards"><thead><tr><th>Data</th><th>Registrazione</th><th class="r">Importo</th></tr></thead><tbody>
+   ${L.map(x=>`<tr class="click" data-edit="${x.ref}"><td class="mono small">${dShort(x.data)}</td><td>${esc(x.descr)}</td><td class="r num ${x.v<0?"neg":""}">${eur2(x.v)}</td></tr>`).join("")||`<tr><td colspan="3" class="muted">Nessuna registrazione nell'anno.</td></tr>`}
+   </tbody><tfoot><tr><td colspan="2">Totale</td><td class="r num"><b>${eur2(tot)}</b></td></tr></tfoot></table></div>
+   <p class="note full">Clicca una riga per aprire la registrazione.</p></div><div class="mf"><span></span><div class="actions"><button class="btn" data-close="1">Chiudi</button></div></div>`);
+}
+// classificazione veloce delle registrazioni senza voce
+function apriClassificaCe(anno){
+  const d=datiCe(anno); current={c:"ceclass",anno,righe:d.nonClass};
+  const opt=x=>{const tipo=x.k==="a"?"costo":x.o.tipo==="uscita"?"costo":"ricavo"; const o=ceOpts(tipo); const groups=[...new Set(o.map(z=>z[2]))];
+    return `<select data-cecl="${x.k}:${x.o.id}" aria-label="Voce"><option value="">Scegli la voce…</option>${x.k==="m"?'<option value="-">Non incide (IVA, ritenute, prestiti, prelievi)</option>':""}${groups.map(g=>`<optgroup label="${esc(g)}">${o.filter(z=>z[2]===g).map(z=>`<option value="${z[0]}">${esc(z[1])}</option>`).join("")}</optgroup>`).join("")}</select>`};
+  modalShell(`Da classificare · ${anno}`,`<div class="mb"><p class="full small">Scegli la voce del conto economico per ogni registrazione. Per i movimenti che non sono costi né ricavi (pagamento dell'IVA o delle ritenute, rate di un prestito, prelievi) scegli "Non incide".</p>
+   <div class="full tablewrap" style="max-height:58vh;overflow:auto"><table class="nocards imptab"><thead><tr><th>Data</th><th>Registrazione</th><th class="r">Importo</th><th>Voce</th></tr></thead><tbody>
+   ${d.nonClass.map(x=>`<tr><td class="mono small">${dShort(x.data)}</td><td>${x.k==="a"?"Acquisto":x.o.tipo==="uscita"?"Uscita":"Entrata"} · ${esc(x.descr)}</td><td class="r num">${eur2(x.v)}</td><td>${opt(x)}</td></tr>`).join("")}</tbody></table></div><div class="err full" id="ferr"></div></div>
+   <div class="mf"><span></span><div class="actions"><button class="btn" data-close="1">Annulla</button><button class="btn primary" data-ceclsave="1">Salva</button></div></div>`);
+  $(".modal").classList.add("wide");
+}
+async function salvaClassificaCe(btn){
+  const items=[]; document.querySelectorAll("[data-cecl]").forEach(el=>{ if(!el.value)return; const [k,id]=el.dataset.cecl.split(":"); const c=k==="a"?"acquisti":"movimenti", o=byId(c,id); if(!o)return;
+    const n=Object.assign({},o); if(el.value==="-"){n.ceNo=true;n.contoEc=null} else {n.contoEc=el.value; delete n.ceNo; if(c==="acquisti")n.categoria=ceNome(el.value)} items.push({c,o:n}) });
+  if(!items.length){closeAll();return}
+  btn.disabled=true; const res=await salvaMolti(items);
+  try{ const r=await caricaDB(["acquisti","movimenti"]); S.acquisti=r.acquisti; S.movimenti=r.movimenti }catch(e){}
+  closeAll(); ver++; render(); toast(res.errori.length?`Salvate ${res.fatti}, non riuscite ${res.errori.length}`:`Classificate ${res.fatti} registrazioni`);
+}
+function esportaCe(anno){
+  const R=righeCe(datiCe(anno)), M=["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"], n=v=>(Math.round(v*100)/100).toFixed(2).replace(".",",");
+  const L=[["Voce",...M,"Totale "+anno].join(";")];
+  R.forEach(r=>{ if(r.t){L.push([r.t,...r.m.map(n),n(r.tot)].join(";"));return} L.push([(r.tipo==="ricavo"?"+ ":"- ")+r.lab,...r.m.map(n),n(r.tot)].join(";")); r.voci.filter(v=>v.tot).forEach(v=>L.push(["   "+v.c.nome,...v.m.map(n),n(v.tot)].join(";"))) });
+  scarica(`conto-economico-${anno}.csv`,new Blob(["﻿"+L.join("\r\n")],{type:"text/csv;charset=utf-8"}));
+}
+
 /* ---------- fattura elettronica: FatturaPA 1.2 (specifiche tecniche 1.9) ---------- */
 const azienda=()=>S.liste.find(x=>x.id==="azienda")||{};
 let lastDaInv=[];
@@ -3025,7 +3192,7 @@ async function importaXmlSel(){
     const sc=d.pag.filter(p=>p.data).map(p=>({data:p.data,importo:r2(sg*p.importo)}));
     const pagM=d.pag[0]?S.pagamenti.find(p=>feCode(p.strumento)===d.pag[0].mp&&String(p.rate||"").split(",").length===Math.max(1,sc.length)):null;
     const anno=parse(TODAY()).getFullYear();
-    const rec={fornitoreId:fo.id,numero:d.numero,data:d.data,dataReg:TODAY(),protocollo:nextNumero("",anno,S.acquisti,"protocollo"),categoria:fo.categoria||"",righe,ritenutaPct:d.rit&&d.rit.aliquota||0,pagamento:pagM?pagM.id:(fo.pagamento||""),fileXml:d.file,tipoDoc:d.tipo,note:d.tipo==="TD04"?"Nota di credito del fornitore":""};
+    const rec={fornitoreId:fo.id,numero:d.numero,data:d.data,dataReg:TODAY(),protocollo:nextNumero("",anno,S.acquisti,"protocollo"),categoria:fo.categoria||"",contoEc:ceDiNome(fo.categoria)||null,righe,ritenutaPct:d.rit&&d.rit.aliquota||0,pagamento:pagM?pagM.id:(fo.pagamento||""),fileXml:d.file,tipoDoc:d.tipo,note:d.tipo==="TD04"?"Nota di credito del fornitore":""};
     const t=aTot(rec);
     if(!sc.length||Math.abs(sc.reduce((a,x)=>a+x.importo,0)-t.dovuto)>0.02){ rec.scadenze=calcScadenze(pagOf(rec.pagamento)||pagSogg(fo),d.data,t.dovuto,t.iva) } else rec.scadenze=sc;
     rec.scadenza=(rec.scadenze[0]||{}).data||d.data;
@@ -3182,10 +3349,18 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garaindietro],[data-gpconf],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
+  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garaindietro],[data-gpconf],[data-cetog],[data-ceapri],[data-cevista],[data-cedet],[data-ceexp],[data-ceclass],[data-ceclsave],[data-cenuovo],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
+  if(d.cetog){const ap=UI.ceAperti||(UI.ceAperti={}); ap[d.cetog]=!ap[d.cetog]; render(); return}
+  if(d.ceapri){const ap=UI.ceAperti||(UI.ceAperti={}); const v=!Object.values(ap).some(Boolean); GRUPPI_CE.forEach(g=>ap[g[0]]=v); render(); return}
+  if(d.cevista){UI.ceVista=d.cevista; render(); return}
+  if(d.cedet){dettaglioCe(d.cedet,UI.ceAnno||String(today().getFullYear())); return}
+  if(d.ceexp){esportaCe(d.ceexp); return}
+  if(d.ceclass){apriClassificaCe(d.ceclass); return}
+  if(d.ceclsave){await salvaClassificaCe(el); return}
+  if(d.cenuovo){openForm("movimenti",null,{tipo:d.cenuovo,causale:d.cenuovo==="uscita"?"Altre spese":"Altri ricavi",contoEc:""}); return}
   if(Object.keys(d).some(k=>/^(gara|gfil|garastato|garaindietro|gpconf|impg|impgfile|impgok|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
   if(d.livadd!==undefined){$("#f_livelli").insertAdjacentHTML("beforeend",livRow({}));return}
   if(d.livrm!==undefined){const box=el.closest(".rows"); if(box.querySelectorAll(".rg").length>1)el.closest(".rg").remove(); return}
@@ -3276,6 +3451,9 @@ document.addEventListener("click",async e=>{
     if(!el.dataset.sure){el.dataset.sure="1";
       const linked=c==="fatture"?allocated("v:"+rec.id):c==="acquisti"?allocated("a:"+rec.id):0;
       el.textContent=c==="variazioni"?"Conferma: torna al turno originale":linked?"Conferma: gli abbinamenti resteranno da riassegnare":"Conferma eliminazione";return}
+    if(c==="contiec"){ const n=S.acquisti.filter(a=>voceAcquisto(a)===rec.id).length+S.movimenti.filter(m=>voceMovimento(m)===rec.id).length+S.scritture.filter(x=>x.contoEc===rec.id).length;
+      if(rec.id===ceVendite()){$("#ferr").textContent="Questa voce riceve le fatture di vendita: puoi rinominarla ma non eliminarla.";return}
+      if(n){$("#ferr").textContent=`È usata in ${n} registrazion${n>1?"i":"e"}: mettila "Non in uso" oppure sposta prima le registrazioni su un'altra voce.`;return} }
     if(c==="conti"&&DEF_CONTI.some(x=>x.id===rec.id)){$("#ferr").textContent="È uno dei due conti predefiniti (cassa e banca): non si elimina, ma puoi cambiargli nome e saldo.";return}
     // file allegati da togliere dallo spazio file, solo dopo la conferma
     const files=c==="gare"?(rec.documenti||[]).map(x=>x.file).filter(Boolean):(c==="docimpresa"||c==="modelli")&&rec.file?[rec.file]:[];
@@ -3297,7 +3475,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",async e=>{
   const id=e.target.id;
-  if((e.target.dataset&&e.target.dataset.gdocst!==undefined||id==="gsAnno"||id==="mGara"||id==="genSel"||id==="impSalta"||(current&&current.c==="garacalc"))&&await cambioGare(e.target))return;
+  if((e.target.dataset&&e.target.dataset.gdocst!==undefined||id==="gsAnno"||id==="mGara"||id==="genSel"||id==="impSalta"||id==="ceAnno"||(current&&current.c==="garacalc"))&&await cambioGare(e.target))return;
   if(id==="modGare"){const v=e.target.checked, nuovi=v?[...new Set(moduli.concat("gare"))]:moduli.filter(x=>x!=="gare");
     const {error}=await sb.from("impostazioni").update({moduli:nuovi}).eq("id",1); if(error){toast(/moduli/.test(error.message||"")?"Esegui prima in Supabase lo script supabase/modulo_gare.sql":errMsg(error));e.target.checked=!v;return}
     const prima=moduli; moduli=nuovi; try{await loadAll()}catch(err){moduli=prima; await sb.from("impostazioni").update({moduli:prima}).eq("id",1); toast("Le tabelle delle gare non ci sono: esegui in Supabase lo script supabase/modulo_gare.sql"); e.target.checked=!v; return}
@@ -3339,7 +3517,9 @@ document.addEventListener("change",async e=>{
   if(current.c==="movimenti"&&id==="f_tipo"){setCausali();current.allocInit=[];formDynamics();return}
   if(current.c==="movimenti"&&id==="f_soggetto"){current.allocInit=[];renderAlloc(false);return}
   if(current.c==="fatture"&&id==="f_clienteId"){const c=byId("clienti",e.target.value); if(c){applyTpl(c,false);$("#f_ritenuta").value=c.ritenuta?"1":"0";$("#f_pagamento").value=c.pagamento||""; if(c.cig&&$("#f_cig")&&!$("#f_cig").value)$("#f_cig").value=c.cig; if(c.rifOrdine&&$("#f_rifOrdine")&&!$("#f_rifOrdine").value)$("#f_rifOrdine").value=c.rifOrdine} current.allocInit=[];formDynamics();return}
-  if(current.c==="acquisti"&&id==="f_fornitoreId"){const f=byId("fornitori",e.target.value); if(f){if(f.categoria)$("#f_categoria").value=f.categoria; $("#f_pagamento").value=f.pagamento||""} recalcScad(false); return}
+  if(current.c==="movimenti"&&id==="f_causale"){const ce=$("#f_contoEc"); if(ce&&!current.ceTouched){const v=ceDiCausale(e.target.value); ce.value=v||(CAUSALI_NON_CE.includes(e.target.value)?"":ce.value)} return}
+  if(current.c==="movimenti"&&id==="f_contoEc"){current.ceTouched=true; return}
+  if(current.c==="acquisti"&&id==="f_fornitoreId"){const f=byId("fornitori",e.target.value); if(f){const v=ceDiNome(f.categoria); if(v&&$("#f_contoEc"))$("#f_contoEc").value=v; $("#f_pagamento").value=f.pagamento||""} recalcScad(false); return}
   if(current.c==="fatture"&&(id==="f_tipo"||id==="f_ritenuta")){formDynamics();return}
   if(current.c==="clienti"&&id==="f_codIva"){current.defCod=e.target.value; document.querySelectorAll("#f_righeAbituali .rg:not(.hd)").forEach(r=>{if(!r.querySelector("input").value)r.querySelector("select").value=e.target.value});return}
   if(e.target.closest(".rows"))updTot();
@@ -3397,9 +3577,10 @@ async function authAction(kind){
 }
 async function loadAll(){
   const manca=e=>/PGRST205|42P01/.test(e&&e.code||"")||/does not exist|Could not find the table/i.test(e&&e.message||"");
-  let r; try{ r=await caricaDB(colsAttive()) }catch(e){ if(!moduli.length||!manca(e))throw e;
-    // prima si prova senza gli archivi aggiunti dopo (modelli), poi senza il modulo
-    SENZA_TAB.modelli=true; try{ r=await caricaDB(colsAttive()) }catch(e2){ if(!manca(e2))throw e2; moduli=[]; r=await caricaDB(colsAttive()) } }
+  let r; try{ r=await caricaDB(colsAttive()) }catch(e){ if(!manca(e))throw e;
+    // archivi aggiunti dopo: se il database non ha ancora la loro tabella l'app funziona senza
+    for(const c of ["modelli","contiec","scritture"]){ try{ await caricaDB([c]) }catch(e2){ if(manca(e2))SENZA_TAB[c]=true; else throw e2 } }
+    try{ r=await caricaDB(colsAttive()) }catch(e3){ if(!manca(e3))throw e3; moduli=[]; r=await caricaDB(colsAttive()) } }
   COLS.forEach(c=>S[c]=r[c]||[]);
   const {data,error}=await sb.from("agenda").select("operatore_id,data"); if(error)throw error;
   for(const k of Object.keys(AG))delete AG[k];

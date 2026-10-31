@@ -15,6 +15,7 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 | `dipendenti/` | App dipendenti: turni di oggi e dei prossimi giorni, timbratura di inizio e fine lavoro, ore del mese |
 | `supabase/schema.sql` | Impostazioni, timbrature e permessi di base (da eseguire per primo) |
 | `supabase/schema_v2.sql` | Tabelle collegate di tutti gli archivi, funzioni di salvataggio, registro dei moduli e permessi (da eseguire dopo) |
+| `supabase/contabilita.sql` | Contabilità generale: piano dei conti di costo e ricavo, scritture senza movimento di cassa, voce del conto economico su prima nota e acquisti |
 | `supabase/modulo_gare.sql` | Modulo facoltativo Gare d'appalto: tabelle, permessi legati al modulo, spazio file per gli allegati |
 | `config.js` | Indirizzo del progetto Supabase e chiave pubblica (anon) |
 | `modelli/` | Modelli Word di base del modulo Gare (giustificazioni dell'offerta, domanda di partecipazione, clausola sociale, CAM, relazione tecnica) |
@@ -26,7 +27,8 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 1. Supabase → **SQL Editor** → **New query**.
 2. Incolla tutto il contenuto di `supabase/schema.sql` e premi **Run**. L'ultima riga mostra l'email del titolare (`luciorosalba@gmail.com`). Se vuoi usarne un'altra, cambiala nello script (sezione 1) e rilancialo.
 3. Nuova query: incolla tutto il contenuto di `supabase/schema_v2.sql` e premi **Run**. Crea le tabelle collegate e le funzioni che usa il gestionale.
-4. Solo se serve il modulo Gare: nuova query con `supabase/modulo_gare.sql` → **Run**. Il modulo parte attivo; si spegne e si riaccende da Impostazioni → Moduli.
+4. Nuova query con `supabase/contabilita.sql` → **Run** (conto economico).
+5. Solo se serve il modulo Gare: nuova query con `supabase/modulo_gare.sql` → **Run**. Il modulo parte attivo; si spegne e si riaccende da Impostazioni → Moduli.
 
 Entrambi gli script si possono rilanciare senza perdere dati. Se rilanci `schema.sql`, rilancia sempre anche `schema_v2.sql` subito dopo: il secondo aggiorna alcune funzioni del primo per farle lavorare sulle nuove tabelle.
 
@@ -107,6 +109,15 @@ Alcune funzioni sono **moduli** che si attivano per azienda, per poterle include
 Chi aveva già installato il modulo prima dei modelli Word deve rilanciare `supabase/modulo_gare.sql` (si può rieseguire senza perdere dati): finché non lo fa, il resto del modulo funziona e la pagina Modelli spiega cosa fare.
 
 I valori del costo del lavoro nei dati di esempio sono dimostrativi: vanno sostituiti con le tabelle del Ministero del Lavoro in vigore.
+
+## Conto economico (contabilità generale)
+
+In **Incassi e contabilità → Conto economico** l'impresa vede un bilancio di massima dell'anno, riclassificato: valore della produzione, valore aggiunto, margine operativo lordo, risultato operativo, risultato prima delle imposte e netto. Si può confrontare con l'anno precedente o vedere mese per mese, aprire ogni gruppo e ogni voce fino alle singole registrazioni, ed esportare in CSV.
+
+- **Da dove vengono i numeri**: fatture di vendita (imponibile, per data della fattura), fatture d'acquisto (imponibile, per data del documento, sulla loro *voce di costo*), uscite ed entrate di prima nota che hanno una *voce del conto economico* (stipendi, contributi, spese bancarie, carburante…), e le **registrazioni senza movimento di cassa** (ammortamenti, costi di competenza).
+- **Piano dei conti**: 23 voci predefinite raggruppate come nel conto economico; si rinominano, si aggiungono e si mettono "Non in uso" da *Piano dei conti*.
+- **Facile da tenere**: la voce viene proposta dalla causale di prima nota e dalla categoria del fornitore; i movimenti che si ripetono (stipendi, affitti) si registrano una volta con "Ripeti ogni mese"; le registrazioni senza voce compaiono in "Da classificare" e si sistemano tutte da un'unica finestra.
+- Incassi e pagamenti di fatture restano su "Non incide": la fattura è già nel conto economico. Gli importi sono senza IVA.
 
 ## Come funziona
 
