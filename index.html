@@ -352,7 +352,7 @@ body:has(#modalRoot .scrim){overflow:hidden}
 (function(){
 "use strict";
 const COLS=["clienti","sedi","operatori","registro","straordinari","preventivi","ispezioni","fatture","fornitori","acquisti","movimenti","conti","liste","variazioni","assenze","pagamenti","amministratori","cu","gare","docimpresa","costilavoro","modelli","contiec","scritture"];
-const S={}; COLS.forEach(c=>S[c]=[]);
+const S={}; COLS.forEach(c=>S[c]=[]); S.bandi=[];
 const loaded={};
 let mode="loading", sb=null, tab="oggi", weekStart=null, fattMese=null, ver=0;
 const UI={ammSel:"",ammAnno:"",paAmm:"",maAmm:"",scAmm:"",vAmm:"",vCli:"",aFor:"",prSel:[],scLato:"tutti",scPer:"30",scStr:"",tbData:"",agOp:"",vAnno:"",vStato:"",aStato:"",pnConto:"",pnMese:"",paLato:"c",paSel:"",paTutte:false,maSel:"",maAnno:"",ivaPer:""};
@@ -362,7 +362,7 @@ const NAV=[["oggi","Oggi",[["oggi","Oggi"]]],
            ["clienti","Clienti",[["clienti","Clienti e sedi"],["amministratori","Amministratori"],["preventivi","Preventivi"]]],
            ["personale","Personale",[["personale","Personale e timbrature"]]],
            ["fatture","Fatture",[["vendite","Vendita"],["acquisti","Acquisto"],["fornitori","Fornitori"]]],
-           ["gare","Gare",[["gare","Gare e offerte"],["docimpresa","Documenti impresa"],["costilavoro","Costo del lavoro"],["modelli","Modelli"],["garestat","Statistiche"]]],
+           ["gare","Gare",[["gare","Gare e offerte"],["bandi","Bandi suggeriti"],["docimpresa","Documenti impresa"],["costilavoro","Costo del lavoro"],["modelli","Modelli"],["garestat","Statistiche"]]],
            ["contabilita","Incassi e contabilità",[["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["contoeco","Conto economico"],["mastrini","Mastrini e IVA"],["pianoconti","Piano dei conti"]]],
            ["impostazioni","Impostazioni",[["impostazioni","Generali e app dipendenti"],["pagamenti","Tipi di pagamento"]]]];
 const navAttivo=()=>NAV.filter(g=>g[0]!=="gare"||moduloOn("gare"));
@@ -1058,7 +1058,7 @@ function render(){
   const m=$("#main");
   const empty=!S.clienti.length&&!S.sedi.length&&!S.operatori.length&&!S.fornitori.length;
   if(empty&&["oggi","piano","clienti"].includes(tab)){m.innerHTML=emptyView();return}
-  const V={gare:vGare,gara:vGara,docimpresa:vDocImpresa,costilavoro:vCostiLavoro,modelli:vModelli,garestat:vGareStat,contoeco:vContoEconomico,pianoconti:vPianoConti,amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
+  const V={gare:vGare,bandi:vBandi,gara:vGara,docimpresa:vDocImpresa,costilavoro:vCostiLavoro,modelli:vModelli,garestat:vGareStat,contoeco:vContoEconomico,pianoconti:vPianoConti,amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
   const sub=G[2].length>1?`<div class="subnav" role="navigation" aria-label="${esc(G[1])}">${G[2].map(([k,l])=>`<button data-tab="${k}" ${tab===k||(tab==="gara"&&k==="gare")?'aria-current="page"':""}>${esc(l)}</button>`).join("")}</div>`:"";
   m.innerHTML=sub+V[tab](al);
   schedeTabelle(m);
@@ -2045,7 +2045,9 @@ async function submitForm(){
       const o=Object.assign({},obj,{id:rid(),data:iso(d),alloc:[]}); copie.push({c:"movimenti",o}) }
     const res=await salvaMolti(copie); try{ const r=await caricaDB(["movimenti"]); S.movimenti=r.movimenti }catch(e){}
     closeModal(); ver++; render(); toast(`Registrati ${1+res.fatti} movimenti, uno al mese`); return }
-  if(c==="gare"&&!rec){closeModal(); UI.garaSel=id; tab="gara"; render();
+  if(c==="gare"&&!rec){closeModal(); UI.garaSel=id; tab="gara";
+    const bd=obj.link&&(S.bandi||[]).find(x=>x.url===obj.link); if(bd)await segnaBando(bd,"gara",id,true);
+    render();
     if(["aggiudicata","persa","esclusa"].includes(obj.stato)){openEsitoGara(id); toast("Gara registrata: inserisci l'esito per le statistiche"); return}
     toast(GARA_APERTA.includes(obj.stato)?"Gara registrata: completa date, documenti e calcolo":"Gara registrata"); return}
   if(c==="fatture"&&!rec&&obj.preventivi) for(const pid of obj.preventivi){const pv=byId("preventivi",pid); if(pv&&pv.stato!=="Fatturato")await save("preventivi",Object.assign({},pv,{stato:"Fatturato"}))}
@@ -2165,6 +2167,8 @@ function avvisiGare(a){
   S.gare.filter(g=>GARA_APERTA.includes(g.stato)&&g.scadChiarimenti).forEach(g=>{const x=giorniA(g.scadChiarimenti); if(x>=0&&x<=3)a.push(["warn",`Gara "${g.oggetto}": richieste di chiarimento entro ${quando(g.scadChiarimenti)}.`,"gare"])});
   const ko=S.docimpresa.filter(d=>d.scadenza&&d.scadenza<TODAY()), presto=S.docimpresa.filter(d=>d.scadenza&&d.scadenza>=TODAY()&&giorniA(d.scadenza)<=30);
   if(ko.length)a.push(["bad",`${ko.length} document${ko.length>1?"i":"o"} dell'impresa scadut${ko.length>1?"i":"o"} (${ko.map(d=>d.tipo).join(", ")}).`,"docimpresa"]);
+  const bn=bandiDaValutare().filter(x=>x.b.stato==="nuovo"&&x.v.punti>=70);
+  if(bn.length)a.push(["warn",`${bn.length} nuov${bn.length>1?"i bandi adatti":"o bando adatto"} alla tua impresa: ${bn.slice(0,2).map(x=>{const t=titoloBando(x.b.titolo); return t.length>60?t.slice(0,57)+"…":t}).join("; ")}${bn.length>2?"…":""}.`,"bandi"]);
   if(presto.length)a.push(["warn",`${presto.length} document${presto.length>1?"i":"o"} dell'impresa in scadenza entro 30 giorni (${presto.map(d=>d.tipo+" il "+dShort(d.scadenza)).join(", ")}).`,"docimpresa"]);
   S.gare.forEach(g=>{[["garProv","Garanzia provvisoria"],["cauzDef","Cauzione definitiva"]].forEach(([k,l])=>{const d=g[k+"Scadenza"]; if(d&&!g[k+"Svincolata"]&&+g[k+"Importo"]>0){const x=giorniA(d); if(x<=30)a.push([x<0?"bad":"warn",`${l} della gara "${g.oggetto}" ${x<0?"scaduta":"in scadenza"} il ${dShort(d)}.`,"gare"])}})});
   S.gare.filter(g=>g.stato==="contratto"&&g.dataFine).forEach(g=>{const x=giorniA(g.dataFine); if(x>=0&&x<=90)a.push(["warn",`Contratto "${g.oggetto}" in scadenza il ${dShort(g.dataFine)}: valuta rinnovo o nuova gara.`,"gare"])});
@@ -2428,6 +2432,13 @@ async function clicGare(d,el,e){
     const probl=controlliPassoGara(g,dest);
     if(probl.length||dest==="rinuncia"||dest==="conclusa"){confermaPassoGara(g,dest,probl);return true}
     await cambiaStatoGara(g,dest); return true}
+  if(d.bfil){UI.bFil=d.bfil;render();return true}
+  if(d.bando){e.stopPropagation();apriBando(d.bando);return true}
+  if(d.bstato){const[id,st]=d.bstato.split("|"); const b=(S.bandi||[]).find(x=>x.id===id); if(b){closeAll(); await segnaBando(b,st); toast(st==="scartato"?"Avviso scartato":st==="seguito"?"Avviso tra i seguiti":"Fatto")} return true}
+  if(d.bgara){const[id,i]=d.bgara.split("|"); garaDaBando(id,i); return true}
+  if(d.bcerca){await cercaBandi(el,d.bcerca);return true}
+  if(d.bprof){apriProfiloBandi();return true}
+  if(d.bprofsave){await salvaProfiloBandi(el);return true}
   if(d.impg){apriImportGare();return true}
   if(d.impgfile){await sceltaImportGare();return true}
   if(d.impgok){await confermaImportGare(el);return true}
@@ -2819,6 +2830,199 @@ async function confermaImportGare(btn){
   try{ const r=await caricaDB(["gare"]); S.gare=r.gare||S.gare }catch(e){}
   if(res.errori.length){ btn.disabled=false; btn.textContent="Riprova"; $("#ferr").textContent=`Importate ${res.fatti}; non riuscite ${res.errori.length}: ${res.errori.slice(0,3).join(" · ")}`; ver++; render(); return }
   closeAll(); UI.gFil="tutte"; tab="gare"; ver++; render(); toast(`Importate ${res.fatti} gare dallo storico`);
+}
+
+// ---------- bandi suggeriti: avvisi ANAC confrontati con il profilo dell'impresa ----------
+// province italiane: sigla, nomi (anche come li scrive ANAC), regione
+const PROVINCE=`TO:Torino:Piemonte|VC:Vercelli:Piemonte|NO:Novara:Piemonte|CN:Cuneo:Piemonte|AT:Asti:Piemonte|AL:Alessandria:Piemonte|BI:Biella:Piemonte|VB:Verbano-Cusio-Ossola:Piemonte
+|AO:Aosta;Valle d'Aosta;Vallée d'Aoste:Valle d'Aosta|VA:Varese:Lombardia|CO:Como:Lombardia|SO:Sondrio:Lombardia|MI:Milano:Lombardia|BG:Bergamo:Lombardia|BS:Brescia:Lombardia|PV:Pavia:Lombardia
+|CR:Cremona:Lombardia|MN:Mantova:Lombardia|LC:Lecco:Lombardia|LO:Lodi:Lombardia|MB:Monza e della Brianza;Monza e Brianza;Monza:Lombardia|BZ:Bolzano;Bozen;Alto Adige:Trentino-Alto Adige
+|TN:Trento:Trentino-Alto Adige|VR:Verona:Veneto|VI:Vicenza:Veneto|BL:Belluno:Veneto|TV:Treviso:Veneto|VE:Venezia:Veneto|PD:Padova:Veneto|RO:Rovigo:Veneto|UD:Udine:Friuli-Venezia Giulia
+|GO:Gorizia:Friuli-Venezia Giulia|TS:Trieste:Friuli-Venezia Giulia|PN:Pordenone:Friuli-Venezia Giulia|IM:Imperia:Liguria|SV:Savona:Liguria|GE:Genova:Liguria|SP:La Spezia:Liguria
+|PC:Piacenza:Emilia-Romagna|PR:Parma:Emilia-Romagna|RE:Reggio nell'Emilia;Reggio Emilia:Emilia-Romagna|MO:Modena:Emilia-Romagna|BO:Bologna:Emilia-Romagna|FE:Ferrara:Emilia-Romagna
+|RA:Ravenna:Emilia-Romagna|FC:Forlì-Cesena;Forlì;Cesena:Emilia-Romagna|RN:Rimini:Emilia-Romagna|MS:Massa-Carrara;Massa Carrara;Massa;Carrara:Toscana|LU:Lucca:Toscana|PT:Pistoia:Toscana
+|FI:Firenze:Toscana|LI:Livorno:Toscana|PI:Pisa:Toscana|AR:Arezzo:Toscana|SI:Siena:Toscana|GR:Grosseto:Toscana|PO:Prato:Toscana|PG:Perugia:Umbria|TR:Terni:Umbria
+|PU:Pesaro e Urbino;Pesaro;Urbino:Marche|AN:Ancona:Marche|MC:Macerata:Marche|AP:Ascoli Piceno:Marche|FM:Fermo:Marche|VT:Viterbo:Lazio|RI:Rieti:Lazio|RM:Roma:Lazio|LT:Latina:Lazio
+|FR:Frosinone:Lazio|AQ:L'Aquila:Abruzzo|TE:Teramo:Abruzzo|PE:Pescara:Abruzzo|CH:Chieti:Abruzzo|CB:Campobasso:Molise|IS:Isernia:Molise|CE:Caserta:Campania|BN:Benevento:Campania
+|NA:Napoli:Campania|AV:Avellino:Campania|SA:Salerno:Campania|FG:Foggia:Puglia|BA:Bari:Puglia|TA:Taranto:Puglia|BR:Brindisi:Puglia|LE:Lecce:Puglia|BT:Barletta-Andria-Trani;Barletta;Andria;Trani:Puglia
+|PZ:Potenza:Basilicata|MT:Matera:Basilicata|CS:Cosenza:Calabria|CZ:Catanzaro:Calabria|RC:Reggio di Calabria;Reggio Calabria:Calabria|KR:Crotone:Calabria|VV:Vibo Valentia:Calabria
+|TP:Trapani:Sicilia|PA:Palermo:Sicilia|ME:Messina:Sicilia|AG:Agrigento:Sicilia|CL:Caltanissetta:Sicilia|EN:Enna:Sicilia|CT:Catania:Sicilia|RG:Ragusa:Sicilia|SR:Siracusa:Sicilia
+|SS:Sassari:Sardegna|NU:Nuoro:Sardegna|CA:Cagliari:Sardegna|OR:Oristano:Sardegna|SU:Sud Sardegna:Sardegna|OT:Gallura Nord-Est Sardegna;Olbia-Tempio;Gallura:Sardegna|OG:Ogliastra:Sardegna
+|VS:Medio Campidano:Sardegna|CI:Sulcis Iglesiente;Carbonia-Iglesias:Sardegna`.split("|").map(s=>{const [sigla,nomi,regione]=s.trim().split(":"); const al=nomi.split(";"); return {sigla,nome:al[0],alias:al.map(normTxt),regione}});
+const REGIONI=[...new Set(PROVINCE.map(p=>p.regione))];
+const REG_ALIAS={"friuli venezia giulia":"Friuli-Venezia Giulia","trentino alto adige":"Trentino-Alto Adige","trentino alto adige sudtirol":"Trentino-Alto Adige","emilia romagna":"Emilia-Romagna","valle d aosta vallee d aoste":"Valle d'Aosta"};
+const provDiSigla=s=>PROVINCE.find(p=>p.sigla===String(s||"").toUpperCase().trim());
+// un luogo scritto da ANAC (provincia, regione, "ITALIA" o comune) → {prov, regione}
+function luogoBando(nome){
+  const n=normTxt(nome); if(!n)return {};
+  if(n==="italia"||n==="italy")return {italia:true};
+  const reg=REGIONI.find(r=>normTxt(r)===n)||REG_ALIAS[n]; if(reg&&!PROVINCE.some(p=>p.alias.includes(n)&&p.sigla!=="AO"))return {regione:reg};
+  const parti=[n,...String(nome).split("/").map(normTxt)];
+  const p=PROVINCE.find(p=>parti.some(x=>p.alias.includes(x))); return p?{prov:p,regione:p.regione}:{};
+}
+function luogoLotto(l){ const a=luogoBando(l.provincia); if(a.prov||a.regione||a.italia)return a; return luogoBando(l.comune) }
+// fasce di classificazione delle imprese di pulizia (DM 274/1997): limite di volume d'affari annuo
+const FASCE={a:51646,b:206583,c:361520,d:516457,e:1032914,f:2065828,g:4131655,h:6197483,i:8263310,l:Infinity};
+function limiteFascia(txt){ const s=String(txt||""); const m=s.match(/(\d{1,3}(?:\.\d{3})+|\d{4,})(?:,\d+)?/); if(m)return +m[1].replace(/\./g,""); const l=(s.trim().match(/^([a-il])\b/i)||[])[1]; return l?FASCE[l.toLowerCase()]:null }
+const BANDI_ESCLUDI=["cassonetti","contenitori carrellati","disinfestazione","derattizzazione","spurgo","caditoie","fognature","spiagge","arenili","neve"];
+function profiloBandi(){
+  const p=S.liste.find(x=>x.id==="bandiRicerca")||{}, sede=provDiSigla(azienda().provincia);
+  return {configurato:!!p.id, regioni:Array.isArray(p.regioni)?p.regioni:(sede?[sede.regione]:[]), province:Array.isArray(p.province)?p.province:(sede?[sede.sigla]:[]),
+    importoMin:+p.importoMin||0, importoMax:+p.importoMax||0, escludi:Array.isArray(p.escludi)?p.escludi:BANDI_ESCLUDI, cpv:Array.isArray(p.cpv)&&p.cpv.length?p.cpv:["909"], esiti:p.esiti!==false};
+}
+// valutazione di un avviso: punteggio 0-100, motivi leggibili, lotto migliore
+function valutaBando(b,P){
+  P=P||profiloBandi(); const mot=[]; let pt=40;
+  const lotti=(b.lotti&&b.lotti.length?b.lotti:[{valore:b.valore,provincia:b.provincia,comune:b.comune,scadenza:b.scadenza}]);
+  const tutteZone=!P.regioni.length&&!P.province.length;
+  // zona: il lotto più vicino conta
+  const zona=lotti.map((l,i)=>{const z=luogoLotto(l); const inProv=z.prov&&P.province.includes(z.prov.sigla), inReg=z.regione&&(P.regioni.includes(z.regione)||P.province.some(s=>(provDiSigla(s)||{}).regione===z.regione));
+    return {i,z,liv:inProv?3:inReg?2:z.italia||(!z.prov&&!z.regione)?1:0}}).sort((a,b)=>b.liv-a.liv)[0];
+  const z=zona.z, nomeZona=z.prov?`provincia di ${z.prov.nome}`:z.regione?z.regione:z.italia?"tutta Italia":"zona non indicata";
+  let inZona=true;
+  if(tutteZone){ mot.push(["",`Luogo: ${z.prov?z.prov.nome:z.regione||"non indicato"}`]) }
+  else if(zona.liv===3){pt+=30; mot.push(["ok",`In ${nomeZona}`])}
+  else if(zona.liv===2){pt+=20; mot.push(["ok",`In ${z.regione}${z.prov?" ("+z.prov.nome+")":""}`])}
+  else if(zona.liv===1){pt+=5; mot.push(["warn",z.italia?"Più sedi in tutta Italia":"Luogo non indicato: controlla nel bando"])}
+  else {inZona=false; pt-=30; mot.push(["bad",`Fuori zona: ${nomeZona}`])}
+  const L=lotti[zona.i]||lotti[0], val=+L.valore||0;
+  // importo
+  if(val){ if(P.importoMax&&val>P.importoMax){pt-=15; mot.push(["warn",`Importo ${eur(val)} oltre il tuo massimo`])}
+    else if(P.importoMin&&val<P.importoMin){pt-=10; mot.push(["warn",`Importo ${eur(val)} sotto il tuo minimo`])}
+    else if(P.importoMin||P.importoMax){pt+=10; mot.push(["ok",`Importo ${eur(val)} nei tuoi limiti`])}
+    const lim=limiteFascia((azienda().fascia)), annuo=L.durata>12?val/L.durata*12:val;
+    if(lim){ if(annuo>lim){pt-=20; mot.push(["bad",`Importo annuo ${eur(annuo)}: oltre la tua fascia di classificazione (${eur(lim)})`])} else {pt+=10; mot.push(["ok",`Importo annuo ${eur(annuo)} nella tua fascia`])} } }
+  // parole che indicano un altro mestiere
+  const testo=normTxt([b.titolo,b.descrizione,...lotti.map(l=>l.descrizione)].join(" "));
+  const esc_=P.escludi.map(w=>normTxt(w)).filter(w=>w&&new RegExp("\\b"+w).test(testo));
+  if(esc_.length){pt-=35; mot.push(["bad",`Contiene: ${esc_.slice(0,3).join(", ")}`])}
+  else if(/\b(uffic|scuol|condomin|sanificaz|igiene ambientale|immobil|sedi)/.test(testo)){pt+=5}
+  // scadenza
+  const sc=L.scadenza||b.scadenza, g=giorniA(sc);
+  if(b.momento!=="esito"){ if(g==null)mot.push(["warn","Scadenza non indicata"]);
+    else if(g<0){pt-=40; mot.push(["bad","Scaduta"])}
+    else if(g<=7){pt-=5; mot.push(["warn",`Scade ${quando(sc)}`])}
+    else {pt+=5; mot.push(["ok",`Scade ${quando(sc)}`])} }
+  // documenti dell'impresa scaduti alla data dell'offerta
+  if(b.momento!=="esito"){ const rif=sc&&g>=0?sc:TODAY(); const ko=S.docimpresa.filter(d=>d.scadenza&&d.scadenza<rif);
+    if(ko.length)mot.push(["warn",`Documenti dell'impresa scaduti a quella data: ${ko.slice(0,3).map(d=>d.tipo).join(", ")}${ko.length>3?"…":""}`]) }
+  if(b.momento==="indagine")mot.push(["","Manifestazione d'interesse: si risponde per essere invitati"]);
+  const gia=S.gare.find(x=>(x.link&&x.link===b.url)||(x.cig&&lotti.some(l=>l.cig&&l.cig===x.cig)));
+  if(gia)mot.unshift(["ok","Già nelle tue gare"]);
+  return {punti:Math.max(0,Math.min(100,Math.round(pt))),mot,inZona,lotto:zona.i,scadenza:sc,giorni:g,gia,escluso:esc_.length>0};
+}
+// i titoli scritti tutti in maiuscolo diventano leggibili; restano le sigle
+const SIGLE_BANDI=new Set(["ASL","ASP","ASST","ATS","AUSL","AOU","ASUR","IRCCS","RSA","CAM","ARIA","INPS","INAIL","ATER","ALER","IACP","ARPA","ANAS","ACI","CCIAA","ITIS","IIS","ICS","CPIA","USR","UST","ERSU","ADSU","DPCM","SPA","SRL","S.P.A.","S.R.L.","UE","PNRR","II","III","IV"]);
+function titoloBando(t){ const s=String(t||""), lett=s.replace(/[^A-Za-zÀ-ÿ]/g,""); if(!lett||(s.replace(/[^a-zà-ÿ]/g,"").length>lett.length*0.2))return s;
+  const r=s.split(/(\s+)/).map(w=>{const nud=w.replace(/[^A-Za-zÀ-ÿ.]/g,""); return SIGLE_BANDI.has(nud)||/^([A-Z]\.){2,}$/.test(nud)?w:w.toLowerCase()}).join("");
+  return r.charAt(0).toUpperCase()+r.slice(1) }
+const giudizioBando=v=>v.punti>=70?["ok","Adatto"]:v.punti>=45?["warn","Da valutare"]:["bad","Poco adatto"];
+function bandiDaValutare(){ const P=profiloBandi(); return (S.bandi||[]).filter(b=>b.momento!=="esito"&&!["scartato","gara"].includes(b.stato)).map(b=>({b,v:valutaBando(b,P)})).filter(x=>x.v.inZona&&!x.v.escluso&&!x.v.gia&&(x.v.giorni==null||x.v.giorni>=0)) }
+async function caricaBandi(){
+  if(!moduloOn("gare")||SENZA_TAB.bandi)return;
+  const {data,error}=await sb.from("bandi").select("*").gte("pubblicazione",iso(addDays(today(),-180))).order("pubblicazione",{ascending:false});
+  if(error){ if(tabellaMancante(error)){SENZA_TAB.bandi=true;return} throw error }
+  S.bandi=data||[];
+  const r=await sb.from("bandi_ricerche").select("*").order("quando",{ascending:false}).limit(1); UI.bandiUltima=(r.data||[])[0]||null;
+}
+const tabellaMancante=e=>/PGRST205|42P01/.test(e&&e.code||"")||/does not exist|Could not find the table/i.test(e&&e.message||"");
+function vBandi(){
+  if(SENZA_TAB.bandi)return head("Bandi suggeriti","")+`<section class="panel"><h2>Aggiornamento del database necessario</h2><p>Per cercare i bandi ogni mattina il database deve avere la nuova tabella. Esegui lo script <b>supabase/bandi.sql</b> nell'editor SQL di Supabase (si può rieseguire senza perdere dati), poi ricarica la pagina.</p></section>`;
+  const P=profiloBandi(), f=UI.bFil||"valutare", ult=UI.bandiUltima;
+  const tutti=(S.bandi||[]).map(b=>({b,v:valutaBando(b,P)}));
+  const sets={valutare:x=>x.b.momento!=="esito"&&!["scartato","gara"].includes(x.b.stato)&&x.v.inZona&&!x.v.escluso&&!x.v.gia&&(x.v.giorni==null||x.v.giorni>=0),
+    seguiti:x=>x.b.stato==="seguito",italia:x=>x.b.momento!=="esito"&&x.b.stato!=="scartato"&&(x.v.giorni==null||x.v.giorni>=0),esiti:x=>x.b.momento==="esito"&&x.v.inZona,scartati:x=>x.b.stato==="scartato"||(x.b.momento!=="esito"&&x.v.escluso&&x.v.inZona)};
+  const list=tutti.filter(sets[f]||sets.valutare).sort((a,b)=>f==="esiti"?String(b.b.pubblicazione).localeCompare(String(a.b.pubblicazione)):b.v.punti-a.v.punti||String(a.v.scadenza||"9999").localeCompare(String(b.v.scadenza||"9999")));
+  const nVal=tutti.filter(sets.valutare), nuovi=nVal.filter(x=>x.b.stato==="nuovo").length;
+  const zonaTxt=P.province.length||P.regioni.length?[...P.province.map(s=>(provDiSigla(s)||{nome:s}).nome),...P.regioni].join(", "):"tutta Italia";
+  const sub=`Avvisi pubblici dei servizi di pulizia da ANAC · zona: ${esc(zonaTxt)}${ult?` · ultimo aggiornamento ${dShort(iso(new Date(ult.quando)))} alle ${String(new Date(ult.quando).toTimeString()).slice(0,5)}${ult.errore?` <span class="neg">(${esc(ult.errore)})</span>`:""}`:""}`;
+  const es=list.filter(x=>x.b.momento==="esito"&&+x.b.valore>0&&+x.b.valore_vincente>0).map(x=>(1-x.b.valore_vincente/x.b.valore)*100).filter(r=>r>=0&&r<80);
+  const riga=({b,v})=>{const [cl,lab]=giudizioBando(v), L=(b.lotti||[])[v.lotto]||{}, z=luogoLotto(L);
+    return `<tr class="click" data-bando="${esc(b.id)}"><td><b>${esc(titoloBando(b.titolo))}</b>${b.stato==="nuovo"?' <span class="pill acc">Nuovo</span>':""}${b.stato==="seguito"?' <span class="pill">Seguito</span>':""}
+      <div class="small muted">${esc(b.ente||"")}${(b.lotti||[]).length>1?` · ${b.lotti.length} lotti`:""} · ${b.momento==="indagine"?"Indagine di mercato":b.momento==="preavviso"?"Preavviso":b.procedura?esc(/procedura/i.test(b.procedura)?b.procedura:"Procedura "+b.procedura.toLowerCase()):"Bando di gara"}</div>
+      <div class="chips" style="margin-top:6px">${v.mot.filter(m=>m[0]).slice(0,4).map(([c,t])=>`<span class="pill ${c}">${esc(t)}</span>`).join("")}</div></td>
+      <td class="small">${esc(z.prov?z.prov.nome:L.comune||b.comune||z.regione||"—")}${L.comune&&z.prov&&normTxt(L.comune)!==normTxt(z.prov.nome)?`<div class="muted">${esc(L.comune)}</div>`:""}</td>
+      <td class="r num">${b.valore?eur(b.valore):"—"}</td><td class="mono small ${v.giorni!=null&&v.giorni<=7?"neg":""}">${v.scadenza?dShort(v.scadenza)+(b.ora_scadenza?" "+esc(b.ora_scadenza):""):"—"}${v.giorni!=null&&v.giorni>=0?`<div class="muted">${quando(v.scadenza)}</div>`:""}</td>
+      <td><span class="pill ${cl}">${lab} · ${v.punti}</span></td></tr>`};
+  const rigaEsito=({b})=>{const rib=+b.valore>0&&+b.valore_vincente>0?(1-b.valore_vincente/b.valore)*100:null, L=(b.lotti||[])[0]||{}, z=luogoLotto(L);
+    return `<tr class="click" data-bando="${esc(b.id)}"><td><b>${esc(titoloBando(b.titolo))}</b><div class="small muted">${esc(b.ente||"")} · ${dShort(b.pubblicazione)}</div></td><td class="small">${esc(z.prov?z.prov.nome:L.comune||"—")}</td><td class="r num">${b.valore?eur(b.valore):"—"}</td><td class="r num">${b.valore_vincente?eur(b.valore_vincente):"—"}</td><td class="r num">${rib!=null&&rib>=0?pctTxt(Math.round(rib*100)/100):"—"}</td><td class="small">${esc(b.aggiudicatari||"—")}</td></tr>`};
+  return head("Bandi suggeriti",sub,`<button class="btn" data-bprof="1">Criteri di ricerca</button><button class="btn primary" data-bcerca="${(S.bandi||[]).length?3:30}">Cerca ora</button>`)+
+  `<div class="kpis"><div class="kpi"><span class="label">Da valutare</span><span class="v">${nVal.length}</span><span class="n">${nuovi?nuovi+" nuov"+(nuovi>1?"i":"o"):"nella tua zona, non scaduti"}</span></div>
+   <div class="kpi"><span class="label">Adatti</span><span class="v">${nVal.filter(x=>x.v.punti>=70).length}</span><span class="n">punteggio 70 o più</span></div>
+   <div class="kpi"><span class="label">In scadenza 7 giorni</span><span class="v">${nVal.filter(x=>x.v.giorni!=null&&x.v.giorni<=7).length}</span><span class="n">da decidere subito</span></div>
+   <div class="kpi"><span class="label">Esiti in zona</span><span class="v">${tutti.filter(sets.esiti).length}</span><span class="n">${es.length?"ribasso medio "+pctTxt(Math.round(es.reduce((a,x)=>a+x,0)/es.length*10)/10):"gare aggiudicate di recente"}</span></div></div>
+  ${!P.configurato?`<div class="banner-warn small">Zona impostata dalla sede dell'impresa (${esc(zonaTxt)}). Apri <b>Criteri di ricerca</b> per scegliere province e regioni, importi e parole da escludere. <button class="btn small" data-bprof="1">Imposta i criteri</button></div>`:""}
+  <section class="panel"><div class="ph"><div class="seg" role="group" aria-label="Filtro">${[["valutare","Da valutare"],["seguiti","Seguiti"],["esiti","Esiti in zona"],["italia","Tutta Italia"],["scartati","Scartati"]].map(([k,l])=>`<button data-bfil="${k}" aria-pressed="${f===k}">${l}</button>`).join("")}</div><span class="small muted">${list.length} avvisi</span></div>
+  ${list.length?`<div class="tablewrap"><table>${f==="esiti"?`<thead><tr><th>Gara aggiudicata</th><th>Luogo</th><th class="r">Base</th><th class="r">Aggiudicata a</th><th class="r">Ribasso</th><th>Aggiudicatario</th></tr></thead><tbody>${list.map(rigaEsito).join("")}`
+    :`<thead><tr><th>Avviso</th><th>Luogo</th><th class="r">Valore</th><th>Scadenza</th><th>Valutazione</th></tr></thead><tbody>${list.map(riga).join("")}`}</tbody></table></div>`
+   :`<div class="empty"><h2>${(S.bandi||[]).length?"Nessun avviso in questo elenco":"Nessun bando scaricato"}</h2><p>${(S.bandi||[]).length?"Prova un altro filtro o allarga la zona nei criteri di ricerca.":"Ogni mattina l'app scarica da ANAC i bandi, le indagini di mercato e gli esiti dei servizi di pulizia pubblicati in tutta Italia, e ti mostra quelli adatti alla tua impresa. Avvia ora la prima ricerca sugli ultimi 30 giorni."}</p>${(S.bandi||[]).length?"":`<button class="btn primary" data-bcerca="30">Cerca gli ultimi 30 giorni</button>`}</div>`}</section>
+  <p class="note">Fonte: Piattaforma di pubblicità a valore legale di ANAC, dove dal 2024 si pubblicano tutti i bandi pubblici italiani. La valutazione considera zona, importo, fascia di classificazione, scadenza e documenti dell'impresa: leggi sempre il disciplinare prima di decidere.</p>`;
+}
+function apriBando(id){
+  const b=(S.bandi||[]).find(x=>x.id===id); if(!b)return; const v=valutaBando(b), [cl,lab]=giudizioBando(v);
+  if(b.stato==="nuovo")segnaBando(b,"visto",null,true);
+  current={c:"bando",id};
+  const lotti=b.lotti||[], esito=b.momento==="esito";
+  modalShell(esc(b.momento==="indagine"?"Indagine di mercato":esito?"Esito di gara":"Bando di gara"),`<div class="mb">
+   <div class="full"><h3 style="margin:0 0 4px">${esc(titoloBando(b.titolo))}</h3><div class="small muted">${esc(b.ente||"")}${b.ente_cf?" · CF "+esc(b.ente_cf):""} · pubblicato il ${dShort(b.pubblicazione)}</div></div>
+   ${esito?"":`<div class="full"><span class="pill ${cl}">${lab} · ${v.punti}/100</span><ul class="small" style="margin:8px 0 0;padding-left:18px">${v.mot.map(([c,t])=>`<li class="${c==="bad"?"neg":c==="ok"?"pos":""}">${esc(t)}</li>`).join("")}</ul></div>`}
+   ${b.descrizione&&normTxt(b.descrizione)!==normTxt(b.titolo)?`<p class="full small">${esc(b.descrizione)}</p>`:""}
+   <div class="full small">${[b.procedura?"Procedura: "+esc(b.procedura):"",b.criterio?"Criterio: "+esc(b.criterio==="Qualità"?"offerta economicamente più vantaggiosa":b.criterio==="Prezzo"?"prezzo più basso":b.criterio):"",!esito&&b.scadenza?`Scadenza: <b>${dShort(b.scadenza)}${b.ora_scadenza?" ore "+esc(b.ora_scadenza):""}</b>`:""].filter(Boolean).join(" · ")}</div>
+   <div class="full tablewrap"><table class="nocards"><thead><tr><th>Lotto</th><th>Luogo</th><th class="r">Valore</th>${esito?`<th class="r">Aggiudicato</th><th>Aggiudicatario</th>`:`<th>Durata</th>`}</tr></thead><tbody>
+   ${lotti.map((l,i)=>{const z=luogoLotto(l); return `<tr><td><span class="small">${esc(l.descrizione||"Lotto "+(i+1))}</span>${l.cig?`<div class="small muted mono">CIG ${esc(l.cig)}</div>`:""}${!esito&&lotti.length>1?`<button class="btn small" style="margin-top:6px" data-bgara="${esc(b.id)}|${i}">Aggiungi questo lotto</button>`:""}</td><td class="small">${esc([l.comune,z.prov?z.prov.nome:l.provincia].filter((x,j,a)=>x&&a.findIndex(y=>normTxt(y)===normTxt(x))===j).join(", ")||"—")}</td><td class="r num">${l.valore?eur(l.valore):"—"}</td>
+     ${esito?`<td class="r num">${l.vincente?eur(l.vincente):"—"}</td><td class="small">${esc(l.aggiudicatari||"—")}</td>`:`<td class="small">${l.durata?l.durata+" mesi":"—"}</td>`}</tr>`}).join("")}</tbody></table></div>
+   <p class="full small"><a href="${esc(b.url)}" target="_blank" rel="noopener">Avviso su ANAC</a>${b.link_documenti?` · <a href="${esc(b.link_documenti)}" target="_blank" rel="noopener">Documenti di gara (piattaforma dell'ente)</a>`:""}${b.link_ted?` · <a href="${esc(b.link_ted)}" target="_blank" rel="noopener">Avviso europeo (TED)</a>`:""}</p></div>
+   <div class="mf">${esito?"<span></span>":`<button type="button" class="btn ghost" data-bstato="${esc(b.id)}|${b.stato==="scartato"?"visto":"scartato"}">${b.stato==="scartato"?"Ripristina":"Scarta"}</button>`}<div class="actions"><button class="btn" data-close="1">Chiudi</button>${esito?"":v.gia?`<button class="btn primary" data-gara="${esc(v.gia.id)}">Apri la gara</button>`:`<button class="btn" data-bstato="${esc(b.id)}|${b.stato==="seguito"?"visto":"seguito"}">${b.stato==="seguito"?"Non seguire più":"Segui"}</button><button class="btn primary" data-bgara="${esc(b.id)}|${v.lotto}">Aggiungi alle mie gare</button>`}</div></div>`);
+  $(".modal").classList.add("wide");
+}
+async function segnaBando(b,stato,garaId,silenzioso){
+  const patch={stato}; if(garaId!==undefined&&garaId!==null)patch.gara_id=garaId;
+  const {error}=await sb.from("bandi").update(patch).eq("id",b.id);
+  if(error){ if(!silenzioso)toast(errMsg(error)); return false }
+  Object.assign(b,patch); if(!silenzioso){ver++;render()} return true;
+}
+// dal bando al modulo della nuova gara, già compilato
+function garaDaBando(id,i){
+  const b=(S.bandi||[]).find(x=>x.id===id); if(!b)return; const L=(b.lotti||[])[+i||0]||{}, multi=(b.lotti||[]).length>1;
+  const pr=normTxt(b.procedura), proc=b.momento==="indagine"?"negoziata":/aperta/.test(pr)?"aperta":/ristretta/.test(pr)?"ristretta":/negoziata/.test(pr)?"negoziata":/acquistinretepa/.test(b.link_documenti||"")?"mepa":"";
+  const cr=L.criterio||b.criterio, sc=L.scadenza||b.scadenza;
+  const ogg=titoloBando(b.titolo||"")+(multi?` – ${L.descrizione&&L.descrizione.length<80?L.descrizione:"lotto "+((+i||0)+1)}`:"");
+  closeAll();
+  openForm("gare",null,{oggetto:ogg.length>300?ogg.slice(0,297)+"…":ogg,tipo:"pubblica",stato:"individuata",ente:b.ente||"",enteCf:b.ente_cf||"",cig:L.cig||"",piattaforma:b.link_documenti||"",link:b.url,
+    procedura:proc,criterio:cr==="Prezzo"?"prezzo":cr==="Qualità"?"oepv":"",importoBase:L.valore||(multi?"":b.valore)||"",durataMesi:L.durata||"",dataPubblicazione:b.pubblicazione||"",scadOfferta:sc&&giorniA(sc)>=0?sc:"",oraOfferta:b.ora_scadenza||"",
+    note:[b.momento==="indagine"?"Indagine di mercato: manifestare interesse per essere invitati.":"",L.descrizione&&multi?"Lotto: "+L.descrizione:"","Avviso ANAC: "+b.url].filter(Boolean).join("\n")});
+}
+async function cercaBandi(btn,giorni){
+  btn.disabled=true; const t0=btn.textContent; btn.textContent="Ricerca in corso…";
+  const {data,error}=await sb.rpc("cerca_bandi",{p_giorni:+giorni||3});
+  btn.disabled=false; btn.textContent=t0;
+  if(error){toast(/cerca_bandi/.test(error.message||"")&&/not find|does not exist/i.test(error.message||"")?"Il database non è aggiornato: esegui in Supabase lo script bandi.sql.":errMsg(error));return}
+  try{ await caricaBandi() }catch(e){}
+  ver++; render();
+  toast(data&&data.errore?"Ricerca non riuscita: "+data.errore:`Ricerca completata: ${data.nuovi} nuov${data.nuovi===1?"o avviso":"i avvisi"} su ${data.letti} lett${data.letti===1?"o":"i"}`);
+}
+function apriProfiloBandi(){
+  const P=profiloBandi(); current={c:"bprof"};
+  modalShell("Criteri di ricerca dei bandi",`<form id="frm" novalidate><div class="mb">
+   <div class="fld full"><span class="lb">Regioni</span><div class="chips">${REGIONI.map(r=>`<label><input type="checkbox" name="breg" value="${esc(r)}" ${P.regioni.includes(r)?"checked":""}>${esc(r)}</label>`).join("")}</div></div>
+   <div class="fld full"><label for="b_prov">Province (sigle, separate da virgola)</label><input id="b_prov" value="${esc(P.province.join(", "))}" placeholder="Es. MI, MB, LO"><span class="hint">Le gare nelle province indicate valgono di più. Senza regioni né province si cerca in tutta Italia.</span></div>
+   <div class="fld"><label for="b_min">Importo minimo (€)</label><input id="b_min" type="number" min="0" step="1000" value="${P.importoMin||""}"><span class="hint">Valore complessivo della gara</span></div>
+   <div class="fld"><label for="b_max">Importo massimo (€)</label><input id="b_max" type="number" min="0" step="1000" value="${P.importoMax||""}"><span class="hint">Vuoto per nessun limite</span></div>
+   <div class="fld full"><label for="b_esc">Parole da escludere</label><input id="b_esc" value="${esc(P.escludi.join(", "))}"><span class="hint">Avvisi di altri mestieri che usano gli stessi codici: cassonetti, disinfestazione, spurgo…</span></div>
+   <div class="fld full"><label for="b_cpv">Codici CPV da cercare</label><input id="b_cpv" value="${esc(P.cpv.join(", "))}"><span class="hint">909 = tutti i servizi di pulizia. Aggiungi per esempio 79993 per il facility management. Valgono dalla prossima ricerca.</span></div>
+   <p class="full note">Fascia di classificazione dell'impresa: <b>${esc(azienda().fascia||"non indicata")}</b> (si imposta in Impostazioni → Dati della tua impresa). Serve a segnalare le gare con un importo annuo troppo alto.</p>
+   <div class="err full" id="ferr"></div></div>
+   <div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-bprofsave="1">Salva</button></div></div></form>`);
+}
+async function salvaProfiloBandi(btn){
+  const lista=s=>String(s||"").split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean);
+  const prov=lista($("#b_prov").value).map(x=>x.toUpperCase()), ko=prov.filter(x=>!provDiSigla(x));
+  if(ko.length){$("#ferr").textContent="Sigle di provincia non riconosciute: "+ko.join(", ");return}
+  const cpv=lista($("#b_cpv").value).map(x=>x.replace(/\D/g,"")).filter(x=>x.length>=3&&x.length<=8);
+  const o=Object.assign({},S.liste.find(x=>x.id==="bandiRicerca")||{},{id:"bandiRicerca",valori:[],regioni:[...document.querySelectorAll("[name=breg]:checked")].map(x=>x.value),province:prov,
+    importoMin:+$("#b_min").value||0,importoMax:+$("#b_max").value||0,escludi:lista($("#b_esc").value),cpv:cpv.length?cpv:["909"]});
+  btn.disabled=true; const ok=await save("liste",o); btn.disabled=false; if(!ok)return;
+  closeAll(); ver++; render(); toast("Criteri salvati");
 }
 
 // ---------- contabilità generale: conto economico di massima ----------
@@ -3349,7 +3553,7 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garaindietro],[data-gpconf],[data-cetog],[data-ceapri],[data-cevista],[data-cedet],[data-ceexp],[data-ceclass],[data-ceclsave],[data-cenuovo],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
+  const el=e.target.closest("[data-bfil],[data-bando],[data-bstato],[data-bgara],[data-bcerca],[data-bprof],[data-bprofsave],[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garaindietro],[data-gpconf],[data-cetog],[data-ceapri],[data-cevista],[data-cedet],[data-ceexp],[data-ceclass],[data-ceclsave],[data-cenuovo],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
@@ -3361,7 +3565,7 @@ document.addEventListener("click",async e=>{
   if(d.ceclass){apriClassificaCe(d.ceclass); return}
   if(d.ceclsave){await salvaClassificaCe(el); return}
   if(d.cenuovo){openForm("movimenti",null,{tipo:d.cenuovo,causale:d.cenuovo==="uscita"?"Altre spese":"Altri ricavi",contoEc:""}); return}
-  if(Object.keys(d).some(k=>/^(gara|gfil|garastato|garaindietro|gpconf|impg|impgfile|impgok|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
+  if(Object.keys(d).some(k=>/^(bfil|bando|bstato|bgara|bcerca|bprof|bprofsave|gara|gfil|garastato|garaindietro|gpconf|impg|impgfile|impgok|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
   if(d.livadd!==undefined){$("#f_livelli").insertAdjacentHTML("beforeend",livRow({}));return}
   if(d.livrm!==undefined){const box=el.closest(".rows"); if(box.querySelectorAll(".rg").length>1)el.closest(".rg").remove(); return}
   if(d.auth){authAction(d.auth);return}
@@ -3585,6 +3789,7 @@ async function loadAll(){
   const {data,error}=await sb.from("agenda").select("operatore_id,data"); if(error)throw error;
   for(const k of Object.keys(AG))delete AG[k];
   (data||[]).forEach(x=>AG[x.operatore_id]=JSON.stringify(stripGen(x.data)));
+  try{ await caricaBandi() }catch(e){ console.warn("bandi",e) }
 }
 async function loadTimb(){
   const out=[];

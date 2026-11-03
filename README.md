@@ -17,6 +17,7 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 | `supabase/schema_v2.sql` | Tabelle collegate di tutti gli archivi, funzioni di salvataggio, registro dei moduli e permessi (da eseguire dopo) |
 | `supabase/contabilita.sql` | Contabilità generale: piano dei conti di costo e ricavo, scritture senza movimento di cassa, voce del conto economico su prima nota e acquisti |
 | `supabase/modulo_gare.sql` | Modulo facoltativo Gare d'appalto: tabelle, permessi legati al modulo, spazio file per gli allegati |
+| `supabase/bandi.sql` | Bandi suggeriti: ricerca automatica ogni mattina degli avvisi ANAC dei servizi di pulizia (estensioni `http` e `pg_cron`) |
 | `config.js` | Indirizzo del progetto Supabase e chiave pubblica (anon) |
 | `modelli/` | Modelli Word di base del modulo Gare (giustificazioni dell'offerta, domanda di partecipazione, clausola sociale, CAM, relazione tecnica) |
 | `vendor/` | Librerie Supabase, JSZip, PizZip e docxtemplater (tutte MIT), incluse per non dipendere da CDN esterni |
@@ -29,6 +30,7 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 3. Nuova query: incolla tutto il contenuto di `supabase/schema_v2.sql` e premi **Run**. Crea le tabelle collegate e le funzioni che usa il gestionale.
 4. Nuova query con `supabase/contabilita.sql` → **Run** (conto economico).
 5. Solo se serve il modulo Gare: nuova query con `supabase/modulo_gare.sql` → **Run**. Il modulo parte attivo; si spegne e si riaccende da Impostazioni → Moduli.
+6. Con il modulo Gare, per i bandi suggeriti: nuova query con `supabase/bandi.sql` → **Run**, poi `select public.cerca_bandi(30);` per la prima ricerca sugli ultimi 30 giorni.
 
 Entrambi gli script si possono rilanciare senza perdere dati. Se rilanci `schema.sql`, rilancia sempre anche `schema_v2.sql` subito dopo: il secondo aggiorna alcune funzioni del primo per farle lavorare sulle nuove tabelle.
 
@@ -104,6 +106,13 @@ Alcune funzioni sono **moduli** che si attivano per azienda, per poterle include
 - **Avvisi** in Oggi per scadenze di offerte, sopralluoghi, chiarimenti, documenti, garanzie e contratti.
 - **Percorso guidato dello stato**: nella scheda si avanza di una fase alla volta, con conferma se mancano documenti, requisiti o il calcolo; si può tornare indietro di un passo. Nel modulo Nuova gara lo stato resta libero per registrare gare passate.
 - **Importa storico**: le gare degli anni passati si caricano da Excel (.xlsx) o CSV con anteprima, controllo degli errori e dei doppioni. Il modello da compilare è `modelli/storico-gare.xlsx` (fogli Gare, Esempio, Istruzioni).
+- **Bandi suggeriti**: ogni mattina alle 6:20 il database scarica dalla Piattaforma di pubblicità a valore legale di ANAC (dove dal 2024 si pubblicano tutti i bandi pubblici italiani) i bandi, le indagini di mercato e gli esiti dei servizi di pulizia (codici CPV 909…) di tutta Italia. Nessuna password: sono dati pubblici. L'app li valuta per l'impresa e mostra un punteggio con i motivi:
+  - zona: province e regioni scelte nei **Criteri di ricerca** (all'inizio quelle della sede dell'impresa);
+  - importo rispetto ai limiti indicati e alla **fascia di classificazione** (DM 274/1997, importo annuo);
+  - parole che indicano un altro mestiere (cassonetti, disinfestazione, spurgo…), modificabili;
+  - giorni alla scadenza e documenti dell'impresa che a quella data saranno scaduti.
+
+  Da un bando, con **Aggiungi alle mie gare** (anche un solo lotto) si apre la nuova gara già compilata: ente, CIG, procedura, criterio, base di gara, durata, scadenza e ora, piattaforma e link all'avviso. La scheda **Esiti in zona** mostra le gare aggiudicate vicine, con aggiudicatario e ribasso. In Oggi compare l'avviso dei nuovi bandi adatti. La ricerca si può anche avviare a mano (**Cerca ora**). Il servizio di ricerca di ANAC non è un'interfaccia documentata ufficialmente: se cambiasse, la pagina mostra l'errore dell'ultima ricerca.
 - **Modelli Word**: dalla scheda di una gara si genera un documento Word già compilato con i dati dell'impresa, della gara e del calcolo dell'offerta (importi anche in lettere). Ci sono cinque modelli di base nella cartella `modelli/`; l'impresa può caricare i propri (tabella `modelli_gara`, file nello spazio `allegati`). Nei modelli i dati si indicano con segnaposto tra graffe, ad esempio `{impresa.denominazione}`, `{gara.cig}`, `{offerta.totale}`; le righe ripetute con `{#voci}…{/voci}`. L'elenco completo è in Gare → Modelli. La compilazione avviene nel browser, senza server aggiuntivi.
 
 Chi aveva già installato il modulo prima dei modelli Word deve rilanciare `supabase/modulo_gare.sql` (si può rieseguire senza perdere dati): finché non lo fa, il resto del modulo funziona e la pagina Modelli spiega cosa fare.
