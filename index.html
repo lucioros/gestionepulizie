@@ -2864,7 +2864,7 @@ function luogoLotto(l){ const a=luogoBando(l.provincia); if(a.prov||a.regione||a
 // fasce di classificazione delle imprese di pulizia (DM 274/1997): limite di volume d'affari annuo
 const FASCE={a:51646,b:206583,c:361520,d:516457,e:1032914,f:2065828,g:4131655,h:6197483,i:8263310,l:Infinity};
 function limiteFascia(txt){ const s=String(txt||""); const m=s.match(/(\d{1,3}(?:\.\d{3})+|\d{4,})(?:,\d+)?/); if(m)return +m[1].replace(/\./g,""); const l=(s.trim().match(/^([a-il])\b/i)||[])[1]; return l?FASCE[l.toLowerCase()]:null }
-const BANDI_ESCLUDI=["cassonetti","contenitori carrellati","disinfestazione","derattizzazione","spurgo","caditoie","fognature","spiagge","arenili","neve"];
+const BANDI_ESCLUDI=["cassonetti","contenitori carrellati","disinfestazione","derattizzazione","spurgo","caditoie","fognature","spiagge","arenili","neve","vigilanza armata"];
 function profiloBandi(){
   const p=S.liste.find(x=>x.id==="bandiRicerca")||{}, sede=provDiSigla(azienda().provincia);
   return {configurato:!!p.id, regioni:Array.isArray(p.regioni)?p.regioni:(sede?[sede.regione]:[]), province:Array.isArray(p.province)?p.province:(sede?[sede.sigla]:[]),
@@ -2878,19 +2878,22 @@ function valutaBando(b,P){
   // zona: il lotto più vicino conta
   const zona=lotti.map((l,i)=>{const z=luogoLotto(l); const inProv=z.prov&&P.province.includes(z.prov.sigla), inReg=z.regione&&(P.regioni.includes(z.regione)||P.province.some(s=>(provDiSigla(s)||{}).regione===z.regione));
     return {i,z,liv:inProv?3:inReg?2:z.italia||(!z.prov&&!z.regione)?1:0}}).sort((a,b)=>b.liv-a.liv)[0];
+  if(zona.liv===1&&!zona.z.italia&&!tutteZone){ const tx=" "+normTxt([b.ente,b.titolo,b.descrizione].join(" "))+" ";
+    const nomi=[...P.province.flatMap(s=>(provDiSigla(s)||{alias:[]}).alias),...P.regioni.map(normTxt)].filter(n=>n.length>3);
+    if(!nomi.some(n=>tx.includes(" "+n+" ")))zona.liv=0 }
   const z=zona.z, nomeZona=z.prov?`provincia di ${z.prov.nome}`:z.regione?z.regione:z.italia?"tutta Italia":"zona non indicata";
   let inZona=true;
   if(tutteZone){ mot.push(["",`Luogo: ${z.prov?z.prov.nome:z.regione||"non indicato"}`]) }
   else if(zona.liv===3){pt+=30; mot.push(["ok",`In ${nomeZona}`])}
   else if(zona.liv===2){pt+=20; mot.push(["ok",`In ${z.regione}${z.prov?" ("+z.prov.nome+")":""}`])}
   else if(zona.liv===1){pt+=5; mot.push(["warn",z.italia?"Più sedi in tutta Italia":"Luogo non indicato: controlla nel bando"])}
-  else {inZona=false; pt-=30; mot.push(["bad",`Fuori zona: ${nomeZona}`])}
+  else {inZona=false; pt-=30; mot.push(["bad",z.prov||z.regione?`Fuori zona: ${nomeZona}`:`Luogo non indicato${L0(lotti).comune?" ("+L0(lotti).comune+")":""}: fuori dalla tua zona?`])}
   const L=lotti[zona.i]||lotti[0], val=+L.valore||0;
   // importo
   if(val){ if(P.importoMax&&val>P.importoMax){pt-=15; mot.push(["warn",`Importo ${eur(val)} oltre il tuo massimo`])}
     else if(P.importoMin&&val<P.importoMin){pt-=10; mot.push(["warn",`Importo ${eur(val)} sotto il tuo minimo`])}
     else if(P.importoMin||P.importoMax){pt+=10; mot.push(["ok",`Importo ${eur(val)} nei tuoi limiti`])}
-    const lim=limiteFascia((azienda().fascia)), annuo=L.durata>12?val/L.durata*12:val;
+    const lim=limiteFascia((azienda().fascia)), annuo=L.durata>12&&L.durata<=120?val/L.durata*12:val;
     if(lim){ if(annuo>lim){pt-=20; mot.push(["bad",`Importo annuo ${eur(annuo)}: oltre la tua fascia di classificazione (${eur(lim)})`])} else {pt+=10; mot.push(["ok",`Importo annuo ${eur(annuo)} nella tua fascia`])} } }
   // parole che indicano un altro mestiere
   const testo=normTxt([b.titolo,b.descrizione,...lotti.map(l=>l.descrizione)].join(" "));
@@ -2916,8 +2919,14 @@ const SIGLE_BANDI=new Set(["ASL","ASP","ASST","ATS","AUSL","AOU","ASUR","IRCCS",
 function titoloBando(t){ const s=String(t||""), lett=s.replace(/[^A-Za-zÀ-ÿ]/g,""); if(!lett||(s.replace(/[^a-zà-ÿ]/g,"").length>lett.length*0.2))return s;
   const r=s.split(/(\s+)/).map(w=>{const nud=w.replace(/[^A-Za-zÀ-ÿ.]/g,""); return SIGLE_BANDI.has(nud)||/^([A-Z]\.){2,}$/.test(nud)?w:w.toLowerCase()}).join("");
   return r.charAt(0).toUpperCase()+r.slice(1) }
+const L0=lotti=>lotti[0]||{};
+// rettifiche e proroghe ripubblicano lo stesso appalto: resta l'avviso più recente
+function bandiUnici(list){ const m=new Map();
+  list.forEach(x=>{const b=x.b||x, l=(b.lotti||[])[0]||{}, k=b.momento+"|"+(l.cig||normTxt(b.ente+" "+b.titolo)); const p=m.get(k);
+    if(!p||String(b.pubblicazione)>String((p.b||p).pubblicazione)){ if(p)(x.b||x)._rett=true; m.set(k,x) } else (p.b||p)._rett=true });
+  return [...m.values()] }
 const giudizioBando=v=>v.punti>=70?["ok","Adatto"]:v.punti>=45?["warn","Da valutare"]:["bad","Poco adatto"];
-function bandiDaValutare(){ const P=profiloBandi(); return (S.bandi||[]).filter(b=>b.momento!=="esito"&&!["scartato","gara"].includes(b.stato)).map(b=>({b,v:valutaBando(b,P)})).filter(x=>x.v.inZona&&!x.v.escluso&&!x.v.gia&&(x.v.giorni==null||x.v.giorni>=0)) }
+function bandiDaValutare(){ const P=profiloBandi(); return bandiUnici(S.bandi||[]).filter(b=>b.momento!=="esito"&&!["scartato","gara"].includes(b.stato)).map(b=>({b,v:valutaBando(b,P)})).filter(x=>x.v.inZona&&!x.v.escluso&&!x.v.gia&&(x.v.giorni==null||x.v.giorni>=0)) }
 async function caricaBandi(){
   if(!moduloOn("gare")||SENZA_TAB.bandi)return;
   const {data,error}=await sb.from("bandi").select("*").gte("pubblicazione",iso(addDays(today(),-180))).order("pubblicazione",{ascending:false});
@@ -2929,23 +2938,23 @@ const tabellaMancante=e=>/PGRST205|42P01/.test(e&&e.code||"")||/does not exist|C
 function vBandi(){
   if(SENZA_TAB.bandi)return head("Bandi suggeriti","")+`<section class="panel"><h2>Aggiornamento del database necessario</h2><p>Per cercare i bandi ogni mattina il database deve avere la nuova tabella. Esegui lo script <b>supabase/bandi.sql</b> nell'editor SQL di Supabase (si può rieseguire senza perdere dati), poi ricarica la pagina.</p></section>`;
   const P=profiloBandi(), f=UI.bFil||"valutare", ult=UI.bandiUltima;
-  const tutti=(S.bandi||[]).map(b=>({b,v:valutaBando(b,P)}));
+  const tutti=bandiUnici(S.bandi||[]).map(b=>({b,v:valutaBando(b,P)}));
   const sets={valutare:x=>x.b.momento!=="esito"&&!["scartato","gara"].includes(x.b.stato)&&x.v.inZona&&!x.v.escluso&&!x.v.gia&&(x.v.giorni==null||x.v.giorni>=0),
-    seguiti:x=>x.b.stato==="seguito",italia:x=>x.b.momento!=="esito"&&x.b.stato!=="scartato"&&(x.v.giorni==null||x.v.giorni>=0),esiti:x=>x.b.momento==="esito"&&x.v.inZona,scartati:x=>x.b.stato==="scartato"||(x.b.momento!=="esito"&&x.v.escluso&&x.v.inZona)};
+    seguiti:x=>x.b.stato==="seguito",italia:x=>x.b.momento!=="esito"&&x.b.stato!=="scartato"&&(x.v.giorni==null||x.v.giorni>=0),esiti:x=>x.b.momento==="esito"&&x.v.inZona&&!x.v.escluso,scartati:x=>x.b.stato==="scartato"||(x.b.momento!=="esito"&&x.v.escluso&&x.v.inZona)};
   const list=tutti.filter(sets[f]||sets.valutare).sort((a,b)=>f==="esiti"?String(b.b.pubblicazione).localeCompare(String(a.b.pubblicazione)):b.v.punti-a.v.punti||String(a.v.scadenza||"9999").localeCompare(String(b.v.scadenza||"9999")));
   const nVal=tutti.filter(sets.valutare), nuovi=nVal.filter(x=>x.b.stato==="nuovo").length;
   const zonaTxt=P.province.length||P.regioni.length?[...P.province.map(s=>(provDiSigla(s)||{nome:s}).nome),...P.regioni].join(", "):"tutta Italia";
   const sub=`Avvisi pubblici dei servizi di pulizia da ANAC · zona: ${esc(zonaTxt)}${ult?` · ultimo aggiornamento ${dShort(iso(new Date(ult.quando)))} alle ${String(new Date(ult.quando).toTimeString()).slice(0,5)}${ult.errore?` <span class="neg">(${esc(ult.errore)})</span>`:""}`:""}`;
-  const es=list.filter(x=>x.b.momento==="esito"&&+x.b.valore>0&&+x.b.valore_vincente>0).map(x=>(1-x.b.valore_vincente/x.b.valore)*100).filter(r=>r>=0&&r<80);
+  const es=list.filter(x=>x.b.momento==="esito"&&+x.b.valore>0&&+x.b.valore_vincente>0).map(x=>(1-x.b.valore_vincente/x.b.valore)*100).filter(r=>r>=0&&r<=40);
   const riga=({b,v})=>{const [cl,lab]=giudizioBando(v), L=(b.lotti||[])[v.lotto]||{}, z=luogoLotto(L);
-    return `<tr class="click" data-bando="${esc(b.id)}"><td><b>${esc(titoloBando(b.titolo))}</b>${b.stato==="nuovo"?' <span class="pill acc">Nuovo</span>':""}${b.stato==="seguito"?' <span class="pill">Seguito</span>':""}
+    return `<tr class="click" data-bando="${esc(b.id)}"><td><b>${esc(titoloBando(b.titolo))}</b>${b.stato==="nuovo"?' <span class="pill acc">Nuovo</span>':""}${b.stato==="seguito"?' <span class="pill">Seguito</span>':""}${b._rett?' <span class="pill" title="Avviso rettificato o prorogato: vale l\'ultima versione">Rettificato</span>':""}
       <div class="small muted">${esc(b.ente||"")}${(b.lotti||[]).length>1?` · ${b.lotti.length} lotti`:""} · ${b.momento==="indagine"?"Indagine di mercato":b.momento==="preavviso"?"Preavviso":b.procedura?esc(/procedura/i.test(b.procedura)?b.procedura:"Procedura "+b.procedura.toLowerCase()):"Bando di gara"}</div>
       <div class="chips" style="margin-top:6px">${v.mot.filter(m=>m[0]).slice(0,4).map(([c,t])=>`<span class="pill ${c}">${esc(t)}</span>`).join("")}</div></td>
       <td class="small">${esc(z.prov?z.prov.nome:L.comune||b.comune||z.regione||"—")}${L.comune&&z.prov&&normTxt(L.comune)!==normTxt(z.prov.nome)?`<div class="muted">${esc(L.comune)}</div>`:""}</td>
       <td class="r num">${b.valore?eur(b.valore):"—"}</td><td class="mono small ${v.giorni!=null&&v.giorni<=7?"neg":""}">${v.scadenza?dShort(v.scadenza)+(b.ora_scadenza?" "+esc(b.ora_scadenza):""):"—"}${v.giorni!=null&&v.giorni>=0?`<div class="muted">${quando(v.scadenza)}</div>`:""}</td>
       <td><span class="pill ${cl}">${lab} · ${v.punti}</span></td></tr>`};
   const rigaEsito=({b})=>{const rib=+b.valore>0&&+b.valore_vincente>0?(1-b.valore_vincente/b.valore)*100:null, L=(b.lotti||[])[0]||{}, z=luogoLotto(L);
-    return `<tr class="click" data-bando="${esc(b.id)}"><td><b>${esc(titoloBando(b.titolo))}</b><div class="small muted">${esc(b.ente||"")} · ${dShort(b.pubblicazione)}</div></td><td class="small">${esc(z.prov?z.prov.nome:L.comune||"—")}</td><td class="r num">${b.valore?eur(b.valore):"—"}</td><td class="r num">${b.valore_vincente?eur(b.valore_vincente):"—"}</td><td class="r num">${rib!=null&&rib>=0?pctTxt(Math.round(rib*100)/100):"—"}</td><td class="small">${esc(b.aggiudicatari||"—")}</td></tr>`};
+    return `<tr class="click" data-bando="${esc(b.id)}"><td><b>${esc(titoloBando(b.titolo))}</b><div class="small muted">${esc(b.ente||"")} · ${dShort(b.pubblicazione)}</div></td><td class="small">${esc(z.prov?z.prov.nome:L.comune||"—")}</td><td class="r num">${b.valore?eur(b.valore):"—"}</td><td class="r num">${b.valore_vincente?eur(b.valore_vincente):"—"}</td><td class="r num">${rib!=null&&rib>=0&&rib<=40?pctTxt(Math.round(rib*100)/100):rib>40?'<span class="muted" title="La base comprende rinnovi e opzioni: il ribasso non è confrontabile">n.c.</span>':"—"}</td><td class="small">${esc(b.aggiudicatari||"—")}</td></tr>`};
   return head("Bandi suggeriti",sub,`<button class="btn" data-bprof="1">Criteri di ricerca</button><button class="btn primary" data-bcerca="${(S.bandi||[]).length?3:30}">Cerca ora</button>`)+
   `<div class="kpis"><div class="kpi"><span class="label">Da valutare</span><span class="v">${nVal.length}</span><span class="n">${nuovi?nuovi+" nuov"+(nuovi>1?"i":"o"):"nella tua zona, non scaduti"}</span></div>
    <div class="kpi"><span class="label">Adatti</span><span class="v">${nVal.filter(x=>x.v.punti>=70).length}</span><span class="n">punteggio 70 o più</span></div>

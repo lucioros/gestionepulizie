@@ -84,7 +84,7 @@ end $$;
 revoke all on function public.bandi_scarica(text) from public, anon, authenticated;
 
 -- una data dell'API: "2026-12-09+01:00" oppure "2026-12-09T14:00:00.000+00:00"
-create or replace function public.bandi_data(v text) returns date language sql immutable as $$
+create or replace function public.bandi_data(v text) returns date language sql immutable set search_path = public as $$
   select case when v is null or v = '' then null
               when v ~ 'T' then (v::timestamptz at time zone 'Europe/Rome')::date
               else left(v, 10)::date end
@@ -92,7 +92,7 @@ $$;
 
 -- da un avviso ANAC al record della tabella bandi (null se non interessa)
 create or replace function public.bandi_normalizza(x jsonb) returns public.bandi
-language plpgsql stable as $$
+language plpgsql stable set search_path = public as $$
 declare
   tpl jsonb := x->'templates'->0->'template';
   sa jsonb; gen jsonb; items jsonb; b public.bandi; lotti jsonb;
