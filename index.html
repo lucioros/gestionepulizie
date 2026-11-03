@@ -2920,6 +2920,10 @@ function titoloBando(t){ const s=String(t||""), lett=s.replace(/[^A-Za-zÀ-ÿ]/g
   const r=s.split(/(\s+)/).map(w=>{const nud=w.replace(/[^A-Za-zÀ-ÿ.]/g,""); return SIGLE_BANDI.has(nud)||/^([A-Z]\.){2,}$/.test(nud)?w:w.toLowerCase()}).join("");
   return r.charAt(0).toUpperCase()+r.slice(1) }
 const L0=lotti=>lotti[0]||{};
+// nome leggibile di un lotto: spesso ANAC ripete il titolo del bando in ogni lotto
+function nomeLotto(l,i,lotti){ const d=String(l.descrizione||"").replace(/\s+/g," ").trim(), n=lotti.length;
+  if(n<2)return d||"Lotto unico"; const uguali=lotti.filter(x=>String(x.descrizione||"").replace(/\s+/g," ").trim()===d).length>1;
+  return !d||d.length>90||uguali?"Lotto "+(i+1):d }
 // rettifiche e proroghe ripubblicano lo stesso appalto: resta l'avviso più recente
 function bandiUnici(list){ const m=new Map();
   list.forEach(x=>{const b=x.b||x, l=(b.lotti||[])[0]||{}, k=b.momento+"|"+(l.cig||normTxt(b.ente+" "+b.titolo)); const p=m.get(k);
@@ -2978,7 +2982,7 @@ function apriBando(id){
    ${b.descrizione&&normTxt(b.descrizione)!==normTxt(b.titolo)?`<p class="full small">${esc(b.descrizione)}</p>`:""}
    <div class="full small">${[b.procedura?"Procedura: "+esc(b.procedura):"",b.criterio?"Criterio: "+esc(b.criterio==="Qualità"?"offerta economicamente più vantaggiosa":b.criterio==="Prezzo"?"prezzo più basso":b.criterio):"",!esito&&b.scadenza?`Scadenza: <b>${dShort(b.scadenza)}${b.ora_scadenza?" ore "+esc(b.ora_scadenza):""}</b>`:""].filter(Boolean).join(" · ")}</div>
    <div class="full tablewrap"><table class="nocards"><thead><tr><th>Lotto</th><th>Luogo</th><th class="r">Valore</th>${esito?`<th class="r">Aggiudicato</th><th>Aggiudicatario</th>`:`<th>Durata</th>`}</tr></thead><tbody>
-   ${lotti.map((l,i)=>{const z=luogoLotto(l); return `<tr><td><span class="small">${esc(l.descrizione||"Lotto "+(i+1))}</span>${l.cig?`<div class="small muted mono">CIG ${esc(l.cig)}</div>`:""}${!esito&&lotti.length>1?`<button class="btn small" style="margin-top:6px" data-bgara="${esc(b.id)}|${i}">Aggiungi questo lotto</button>`:""}</td><td class="small">${esc([l.comune,z.prov?z.prov.nome:l.provincia].filter((x,j,a)=>x&&a.findIndex(y=>normTxt(y)===normTxt(x))===j).join(", ")||"—")}</td><td class="r num">${l.valore?eur(l.valore):"—"}</td>
+   ${lotti.map((l,i)=>{const z=luogoLotto(l); return `<tr><td><span class="small">${esc(nomeLotto(l,i,lotti))}</span>${l.cig?`<div class="small muted mono">CIG ${esc(l.cig)}</div>`:""}${!esito&&lotti.length>1?`<button class="btn small" style="margin-top:6px" data-bgara="${esc(b.id)}|${i}">Aggiungi questo lotto</button>`:""}</td><td class="small">${esc([l.comune,z.prov?z.prov.nome:l.provincia].filter((x,j,a)=>x&&a.findIndex(y=>normTxt(y)===normTxt(x))===j).join(", ")||"—")}</td><td class="r num">${l.valore?eur(l.valore):"—"}</td>
      ${esito?`<td class="r num">${l.vincente?eur(l.vincente):"—"}</td><td class="small">${esc(l.aggiudicatari||"—")}</td>`:`<td class="small">${l.durata?l.durata+" mesi":"—"}</td>`}</tr>`}).join("")}</tbody></table></div>
    <p class="full small"><a href="${esc(b.url)}" target="_blank" rel="noopener">Avviso su ANAC</a>${b.link_documenti?` · <a href="${esc(b.link_documenti)}" target="_blank" rel="noopener">Documenti di gara (piattaforma dell'ente)</a>`:""}${b.link_ted?` · <a href="${esc(b.link_ted)}" target="_blank" rel="noopener">Avviso europeo (TED)</a>`:""}</p></div>
    <div class="mf">${esito?"<span></span>":`<button type="button" class="btn ghost" data-bstato="${esc(b.id)}|${b.stato==="scartato"?"visto":"scartato"}">${b.stato==="scartato"?"Ripristina":"Scarta"}</button>`}<div class="actions"><button class="btn" data-close="1">Chiudi</button>${esito?"":v.gia?`<button class="btn primary" data-gara="${esc(v.gia.id)}">Apri la gara</button>`:`<button class="btn" data-bstato="${esc(b.id)}|${b.stato==="seguito"?"visto":"seguito"}">${b.stato==="seguito"?"Non seguire più":"Segui"}</button><button class="btn primary" data-bgara="${esc(b.id)}|${v.lotto}">Aggiungi alle mie gare</button>`}</div></div>`);
@@ -2995,11 +2999,11 @@ function garaDaBando(id,i){
   const b=(S.bandi||[]).find(x=>x.id===id); if(!b)return; const L=(b.lotti||[])[+i||0]||{}, multi=(b.lotti||[]).length>1;
   const pr=normTxt(b.procedura), proc=b.momento==="indagine"?"negoziata":/aperta/.test(pr)?"aperta":/ristretta/.test(pr)?"ristretta":/negoziata/.test(pr)?"negoziata":/acquistinretepa/.test(b.link_documenti||"")?"mepa":"";
   const cr=L.criterio||b.criterio, sc=L.scadenza||b.scadenza;
-  const ogg=titoloBando(b.titolo||"")+(multi?` – ${L.descrizione&&L.descrizione.length<80?L.descrizione:"lotto "+((+i||0)+1)}`:"");
+  const nl=nomeLotto(L,+i||0,b.lotti||[]); const ogg=titoloBando(b.titolo||"")+(multi?` – ${/^Lotto \d+$/.test(nl)?nl.toLowerCase():nl}`:"");
   closeAll();
   openForm("gare",null,{oggetto:ogg.length>300?ogg.slice(0,297)+"…":ogg,tipo:"pubblica",stato:"individuata",ente:b.ente||"",enteCf:b.ente_cf||"",cig:L.cig||"",piattaforma:b.link_documenti||"",link:b.url,
     procedura:proc,criterio:cr==="Prezzo"?"prezzo":cr==="Qualità"?"oepv":"",importoBase:L.valore||(multi?"":b.valore)||"",durataMesi:L.durata||"",dataPubblicazione:b.pubblicazione||"",scadOfferta:sc&&giorniA(sc)>=0?sc:"",oraOfferta:b.ora_scadenza||"",
-    note:[b.momento==="indagine"?"Indagine di mercato: manifestare interesse per essere invitati.":"",L.descrizione&&multi?"Lotto: "+L.descrizione:"","Avviso ANAC: "+b.url].filter(Boolean).join("\n")});
+    note:[b.momento==="indagine"?"Indagine di mercato: manifestare interesse per essere invitati.":"",L.descrizione&&multi&&L.descrizione.length<=300&&!/^Lotto \d+$/.test(nl)?"Lotto: "+L.descrizione:"","Avviso ANAC: "+b.url].filter(Boolean).join("\n")});
 }
 async function cercaBandi(btn,giorni){
   btn.disabled=true; const t0=btn.textContent; btn.textContent="Ricerca in corso…";
