@@ -18,6 +18,7 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 | `supabase/contabilita.sql` | Contabilità generale: piano dei conti di costo e ricavo, scritture senza movimento di cassa, voce del conto economico su prima nota e acquisti |
 | `supabase/modulo_gare.sql` | Modulo facoltativo Gare d'appalto: tabelle, permessi legati al modulo, spazio file per gli allegati |
 | `supabase/bandi.sql` | Bandi suggeriti: ricerca automatica ogni mattina degli avvisi ANAC dei servizi di pulizia (estensioni `http` e `pg_cron`) |
+| `supabase/collaboratori.sql` | Collaboratori con nome utente e password e permessi per modulo su ogni tabella; va eseguito per ultimo |
 | `config.js` | Indirizzo del progetto Supabase e chiave pubblica (anon) |
 | `modelli/` | Modelli Word di base del modulo Gare (giustificazioni dell'offerta, domanda di partecipazione, clausola sociale, CAM, relazione tecnica) |
 | `vendor/` | Librerie Supabase, JSZip, PizZip e docxtemplater (tutte MIT), incluse per non dipendere da CDN esterni |
@@ -31,6 +32,7 @@ I dati stanno nel database Supabase. Il codice di questo repository non contiene
 4. Nuova query con `supabase/contabilita.sql` → **Run** (conto economico).
 5. Solo se serve il modulo Gare: nuova query con `supabase/modulo_gare.sql` → **Run**. Il modulo parte attivo; si spegne e si riaccende da Impostazioni → Moduli.
 6. Con il modulo Gare, per i bandi suggeriti: nuova query con `supabase/bandi.sql` → **Run**, poi `select public.cerca_bandi(30);` per la prima ricerca sugli ultimi 30 giorni.
+7. Per i collaboratori: nuova query con `supabase/collaboratori.sql` → **Run**. Va eseguito **per ultimo**: sostituisce le regole "solo titolare" con quelle per modulo. Se rilanci uno degli script precedenti, rilancia poi anche questo.
 
 Entrambi gli script si possono rilanciare senza perdere dati. Se rilanci `schema.sql`, rilancia sempre anche `schema_v2.sql` subito dopo: il secondo aggiorna alcune funzioni del primo per farle lavorare sulle nuove tabelle.
 
@@ -48,7 +50,14 @@ GitHub → repository → **Settings → Pages** → *Build and deployment*: **D
 2. Conferma l'email dal messaggio ricevuto, poi torna al gestionale ed entra.
 3. Per portare i dati dall'app su Claude: lì premi **Esporta dati per il nuovo gestionale** (in basso a sinistra), poi qui vai in **Impostazioni e app dipendenti → Importa dati**.
 
-### 5. Dipendenti
+### 5. Collaboratori
+Persone dell'ufficio che lavorano nel gestionale solo su alcuni moduli.
+1. **Impostazioni → Collaboratori → Nuovo collaboratore**: nome, nome utente, password e moduli (Lavori e turni, Clienti, Personale, Fatture, Gare, Incassi e contabilità).
+2. Consegna i dati di accesso che compaiono dopo il salvataggio. Il collaboratore apre lo stesso indirizzo del gestionale e scrive il **nome utente** al posto dell'email. Non serve un'email: l'account è creato direttamente nel database con l'indirizzo interno `<nomeutente>@utenti.invalid`, che non riceve mai messaggi.
+3. Vede la pagina Oggi e solo i suoi moduli; le Impostazioni restano del titolare. Può cambiarsi la password; se la dimentica, il titolare ne imposta una nuova. Disattivato, non entra più e viene fatto uscire dai dispositivi.
+4. I limiti valgono nel database (tabella `permessi_archivi`): clienti, sedi, dipendenti, fornitori e turni li consultano tutti i collaboratori, ma li modifica solo chi ha il modulo relativo; fatture, incassi, contabilità, timbrature e gare restano invisibili a chi non ha quel modulo.
+
+### 6. Dipendenti
 1. Nella scheda di ogni dipendente compila **Email per l'app dipendenti**.
 2. Manda al dipendente il link dell'app dipendenti. Lui sceglie **Prima volta? Crea account** con quella email, conferma l'email ed entra.
 3. Sul telefono: Android/Chrome → **Installa app**; iPhone/Safari → **Condividi → Aggiungi alla schermata Home**.
