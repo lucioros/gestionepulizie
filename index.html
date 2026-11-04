@@ -201,6 +201,8 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);border-bottom:0}
 .withadd select{flex:1;min-width:0}
 .addbtn{border-style:dashed;color:var(--accent);font-weight:600}
 .chips .addbtn{border-radius:14px}
+.radiorow{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-top:6px;font-weight:500;cursor:pointer;background:var(--bg)}
+.radiorow input{width:auto;margin:3px 0 0;accent-color:var(--accent)}
 table.est tr.ph-row td{background:var(--sunk);border-top:2px solid var(--line)}
 table.est tr.sub td:nth-child(2){padding-left:24px;position:relative}
 table.est tr.sub td:nth-child(2)::before{content:"";position:absolute;left:10px;top:0;bottom:50%;width:8px;border-left:1px solid var(--muted);border-bottom:1px solid var(--muted);opacity:.6}
@@ -570,7 +572,7 @@ const DBS={
   modelli:{t:"modelli_gara",c:"nome categoria descrizione file nomeFile note esempio:b"},
   contiec:{t:"conti_economici",c:"nome tipo gruppo ordine:i attivo:b note esempio:b"},
   scritture:{t:"scritture",c:"data:d contoEc:r importo:n descrizione note esempio:b"},
-  gare:{t:"gare",c:"oggetto tipo ente enteCf enteCodice entePec cig cup piattaforma link procedura criterio:r puntiTecnici:n puntiEconomici:n formula coeffX:n importoBase:n manodoperaSa:n oneriSicurezza:n durataMesi:i rinnovoMesi:i dataPubblicazione:d sopralluogo:d sopralluogoObbl:b scadChiarimenti:d scadOfferta:d oraOfferta aperturaBuste:d cam:b clausolaSociale:b requisiti:at stato motivo note clienteId:r costiLavoroId:r livelloBase materialiPct:n attrezzatureAnno:n sicurezzaAnno:n generaliPct:n utilePct:n ribassoMaxAtteso:n ribassoMedioAtteso:n tecnicoStimato:n importoOfferto:n ribassoOfferto:n dataEsito:d aggiudicatario ribassoAggiudicazione:n punteggioTecnico:n punteggioEconomico:n posizione:i garProvImporto:n garProvScadenza:d garProvEmittente garProvSvincolata:b cauzDefImporto:n cauzDefScadenza:d cauzDefEmittente cauzDefSvincolata:b dataStipula:d dataInizio:d dataFine:d revisionePrezzi penali esempio:b",
+  gare:{t:"gare",c:"oggetto tipo ente enteCf enteCodice entePec cig cup piattaforma link procedura criterio:r puntiTecnici:n puntiEconomici:n formula coeffX:n importoBase:n manodoperaSa:n oneriSicurezza:n durataMesi:i rinnovoMesi:i dataPubblicazione:d sopralluogo:d sopralluogoObbl:b scadChiarimenti:d scadOfferta:d oraOfferta aperturaBuste:d cam:b clausolaSociale:b requisiti:at stato motivo note clienteId:r costiLavoroId:r livelloBase materialiPct:n attrezzatureAnno:n sicurezzaAnno:n generaliPct:n utilePct:n ribassoMaxAtteso:n ribassoMedioAtteso:n tecnicoStimato:n importoOfferto:n ribassoOfferto:n ribassoSu dataEsito:d aggiudicatario ribassoAggiudicazione:n punteggioTecnico:n punteggioEconomico:n posizione:i garProvImporto:n garProvScadenza:d garProvEmittente garProvSvincolata:b cauzDefImporto:n cauzDefScadenza:d cauzDefEmittente cauzDefSvincolata:b dataStipula:d dataInizio:d dataFine:d revisionePrezzi penali esempio:b",
     f:{voci:FIGLI("gare_voci",[["lotto"],["descr"],["mq","n"],["passaggi","n"],["resa","n"],["oreExtra","n","ore_extra"],["livello"]]),personale:FIGLI("gare_personale",[["nome"],["livello"],["oreSett","n","ore_sett"]]),
        documenti:FIGLI("gare_documenti",[["nome"],["stato"],["file"],["nomeFile","t","nome_file"],["note"]],"nome"),concorrenti:FIGLI("gare_concorrenti",[["nome"],["ribasso","n"],["puntiTecnici","n","punti_tecnici"],["puntiTotali","n","punti_totali"],["aggiudicatario","b"]],"nome")}},
   azienda:{t:"azienda",c:"denominazione piva cf regimeFiscale indirizzo cap comune provincia tel email pec iban reaUfficio reaNumero capitaleSociale:n socioUnico tipoRitenuta causaleRitenuta feDal:d progressivo:i"}
@@ -2111,6 +2113,19 @@ const pctTxt=v=>v==null||!isFinite(v)?"—":(Math.round(v*1000)/1000).toLocaleSt
 // ---------- costo del lavoro ----------
 const tabCosti=g=>byId("costilavoro",g&&g.costiLavoroId)||S.costilavoro[0]||null;
 function costoOrario(tab,liv){ if(!tab||!liv)return null; const l=(tab.livelli||[]).find(x=>String(x.livello)===String(liv)); return l?+l.costoOrario:null }
+// ---------- regola del ribasso: parte ribassabile o tutta l'offerta ----------
+const MODI_RIBASSO={ribassabile:"sulla parte ribassabile",totale:"su tutta l'offerta"};
+function regolaRibasso(){ const r=S.liste.find(x=>x.id==="ribassoGare")||{}; return {tutte:!!r.tutte,enti:Array.isArray(r.enti)?r.enti:[]} }
+function enteRibassoTotale(ente){ const n=normTxt(ente); return !!n&&regolaRibasso().enti.some(x=>normTxt(x)===n) }
+// modo applicato alla gara e perché
+function modoRibasso(g){
+  if(g.ribassoSu==="ribassabile"||g.ribassoSu==="totale")return {modo:g.ribassoSu,perche:"scelto per questa gara"};
+  const R=regolaRibasso();
+  if(R.tutte)return {modo:"totale",perche:"regola generale dell'impresa"};
+  if(enteRibassoTotale(g.ente))return {modo:"totale",perche:"regola per l'ente "+g.ente};
+  return {modo:"ribassabile",perche:"regola generale dell'impresa"};
+}
+function modoRibassoAuto(g){ return modoRibasso(Object.assign({},g,{ribassoSu:""})) }
 // ---------- calcolo dell'offerta ----------
 function calcGara(g){
   const tab=tabCosti(g), lb=g.livelloBase||((tab&&tab.livelli&&tab.livelli[0])||{}).livello, cb=costoOrario(tab,lb);
@@ -2129,8 +2144,9 @@ function calcGara(g){
   const annuo=r2(baseCosti+generali+utile), anni=(+g.durataMesi||12)/12, oneri=+g.oneriSicurezza||0;
   const totale=r2(annuo*anni+oneri), manodoperaTot=r2(manodopera*anni);
   const base=+g.importoBase||0, mSa=+g.manodoperaSa||0;
+  const mr=modoRibasso(g), escluso=mr.modo==="totale"?oneri:mSa+oneri;
   let ribassabile=null, ribasso=null;
-  if(base>0){ ribassabile=r2(base-mSa-oneri); if(ribassabile>0)ribasso=r2((1-(totale-mSa-oneri)/ribassabile)*100*1000)/1000 }
+  if(base>0){ ribassabile=r2(base-escluso); if(ribassabile>0)ribasso=r2((1-(totale-escluso)/ribassabile)*100*1000)/1000 }
   if(base>0&&totale>base)avvisi.push("Il prezzo supera l'importo a base di gara: l'offerta non sarebbe ammessa.");
   if(mSa>0&&manodoperaTot>0&&manodoperaTot<mSa*0.98)avvisi.push(`Il tuo costo della manodopera (${eur(manodoperaTot)}) è inferiore alla stima dell'ente (${eur(mSa)}): andrà giustificato con un'organizzazione più efficiente.`);
   if(mSa>0&&manodoperaTot>mSa*1.02)avvisi.push(`Il tuo costo della manodopera (${eur(manodoperaTot)}) supera la stima dell'ente (${eur(mSa)}): il margine si riduce.`);
@@ -2143,7 +2159,7 @@ function calcGara(g){
     pe=r2(Math.min(pmax,pe));
   }
   const pt=g.criterio==="oepv"?(+g.tecnicoStimato||0):null;
-  return {tab,lb,cb,voci,pers,oreRich,oreAss,oreNuove,costoVoci,costoPers,manodopera,materiali,attrezz,sicur,generali,utile,annuo,anni,oneri,totale,manodoperaTot,ribassabile,ribasso,pe,pt,tot:pe!=null?r2(pe+(pt||0)):null,margine:r2(utile*anni),addetti:r2(oreRich/1500),avvisi};
+  return {tab,lb,cb,voci,pers,oreRich,oreAss,oreNuove,costoVoci,costoPers,manodopera,materiali,attrezz,sicur,generali,utile,annuo,anni,oneri,totale,manodoperaTot,ribassabile,ribasso,pe,pt,modoRib:mr.modo,percheRib:mr.perche,tot:pe!=null?r2(pe+(pt||0)):null,margine:r2(utile*anni),addetti:r2(oreRich/1500),avvisi};
 }
 // requisiti della gara confrontati con i documenti dell'impresa
 function requisitiGara(g){
@@ -2182,7 +2198,7 @@ function vGare(){
   const y=String(today().getFullYear()), pres=S.gare.filter(g=>GARA_PRESENTATA.includes(g.stato)&&(g.dataEsito||g.scadOfferta||"").startsWith(y)), vinte=pres.filter(g=>GARA_VINTA.includes(g.stato));
   const sett=S.gare.filter(g=>GARA_APERTA.includes(g.stato)&&g.scadOfferta&&giorniA(g.scadOfferta)>=0&&giorniA(g.scadOfferta)<=7).length;
   const esGare=S.gare.some(g=>g.esempio);
-  return head("Gare d'appalto",`${corso.length} in corso · ${eur(corso.reduce((a,g)=>a+(+g.importoBase||0),0))} a base di gara`,`${esGare?"":`<button class="btn" data-act="loadExGare">Carica gare di esempio</button>`}<button class="btn" data-impg="1">Importa storico</button><button class="btn primary" data-new="gare">Nuova gara</button>`)+
+  return head("Gare d'appalto",`${corso.length} in corso · ${eur(corso.reduce((a,g)=>a+(+g.importoBase||0),0))} a base di gara`,`${esGare?"":`<button class="btn" data-act="loadExGare">Carica gare di esempio</button>`}<button class="btn" data-impg="1">Importa storico</button><button class="btn" data-gribreg="1">Regole del ribasso</button><button class="btn primary" data-new="gare">Nuova gara</button>`)+
   `<div class="kpis"><div class="kpi"><span class="label">In corso</span><span class="v">${corso.length}</span><span class="n">da preparare o in attesa di esito</span></div>
    <div class="kpi"><span class="label">Scadenze 7 giorni</span><span class="v ${sett?"neg":""}">${sett}</span><span class="n">offerte da presentare</span></div>
    <div class="kpi"><span class="label">Vinte ${y}</span><span class="v">${vinte.length}/${pres.length}</span><span class="n">${pres.length?Math.round(vinte.length/pres.length*100)+"% delle offerte presentate":"nessuna offerta presentata"}</span></div>
@@ -2232,7 +2248,7 @@ function vGara(){
     ${riga("Costo della manodopera all'anno",eur(c.manodopera))}
     ${riga("Prezzo annuo",eur(c.annuo))}
     ${riga(`Totale offerta (${n1(c.anni*12)} mesi${c.oneri?" + oneri sicurezza":""})`,"<b>"+eur(c.totale)+"</b>")}
-    ${c.ribasso!=null?riga("Ribasso sulla parte ribassabile",pctTxt(c.ribasso),c.ribasso<0?"neg":""):""}
+    ${c.ribasso!=null?riga("Ribasso "+MODI_RIBASSO[c.modoRib],pctTxt(c.ribasso),c.ribasso<0?"neg":""):""}
     ${riga("Utile sull'intero contratto",eur(c.margine))}
     ${c.tot!=null?riga("Punteggio stimato",`${n1(c.tot)} / ${n1((+g.puntiTecnici||0)+(+g.puntiEconomici||0))} <span class="muted">(tecnico ${n1(c.pt)} + economico ${n1(c.pe)})</span>`):""}
    </tbody></table>${c.avvisi.length?`<div class="banner-warn small"><ul>${c.avvisi.map(a=>`<li>${esc(a)}</li>`).join("")}</ul></div>`:""}`:`<p class="muted">Inserisci superfici, frequenze e rese per calcolare ore, costo del lavoro, prezzo, ribasso e punteggio.</p>`}</section>
@@ -2279,6 +2295,32 @@ function vGareStat(){
   <div class="grid2"><section class="panel"><h2>Concorrenti incontrati</h2>${Object.keys(conc).length?`<div class="tablewrap"><table><thead><tr><th>Impresa</th><th class="r">Gare</th><th class="r">Vinte</th><th class="r">Ribasso medio</th></tr></thead><tbody>${Object.entries(conc).sort((a,b)=>b[1].n-a[1].n).slice(0,15).map(([k,o])=>`<tr><td>${esc(k)}</td><td class="r num">${o.n}</td><td class="r num">${o.v}</td><td class="r num">${pctTxt(avg(o.r))}</td></tr>`).join("")}</tbody></table></div>`:`<p class="muted">Inserisci i concorrenti nell'esito delle gare per vederli qui.</p>`}</section>
   <section class="panel"><h2>Perché non abbiamo vinto o partecipato</h2>${motivi.length?`<div class="list">${motivi.map(g=>`<div class="row" data-gara="${g.id}" style="cursor:pointer"><span class="t">${dShort(g.dataEsito||g.scadOfferta)}</span><span style="flex:1"><b>${esc(g.oggetto)}</b><br><span class="small muted">${esc(statoGara(g.stato)[1])}: ${esc(g.motivo)}</span></span></div>`).join("")}</div>`:`<p class="muted">Nessun motivo registrato.</p>`}</section></div>`;
 }
+// ---------- regole del ribasso: finestra ----------
+function apriRegoleRibasso(){
+  const R=regolaRibasso(); current={c:"gribreg"};
+  const visti={}; [...S.gare.map(g=>g.ente),...R.enti].forEach(e=>{const n=normTxt(e); if(n&&!visti[n])visti[n]=String(e).trim()});
+  const enti=Object.values(visti).sort((a,b)=>a.localeCompare(b,"it"));
+  const scelti=new Set(R.enti.map(normTxt));
+  modalShell("Regole del ribasso",`<form id="frm" novalidate><div class="mb">
+   <div class="fld full"><span class="lb">Per tutte le gare</span>
+    <label class="radiorow"><input type="radio" name="rr_tutte" value="0" ${R.tutte?"":"checked"}> Ribasso sulla parte ribassabile: dalla base di gara si tolgono la manodopera stimata dall'ente e gli oneri della sicurezza</label>
+    <label class="radiorow"><input type="radio" name="rr_tutte" value="1" ${R.tutte?"checked":""}> Ribasso su tutta l'offerta: dalla base di gara si tolgono solo gli oneri della sicurezza</label></div>
+   <div class="fld full" id="rr_enti" ${R.tutte?'hidden':""}><span class="lb">Enti per cui fai il ribasso su tutta l'offerta</span>
+    ${enti.length?`<div class="chips">${enti.map(e=>`<label><input type="checkbox" name="rr_ente" value="${esc(e)}" ${scelti.has(normTxt(e))?"checked":""}>${esc(e)}</label>`).join("")}</div>`:`<p class="small muted">Non ci sono ancora gare con un ente: scrivi qui sotto i nomi.</p>`}
+    <label for="rr_altri" style="margin-top:8px">Altri enti (uno per riga)</label><textarea id="rr_altri" rows="3" placeholder="Es. Comune di Monza"></textarea>
+    <span class="hint">Il nome deve essere uguale a quello scritto nella gara; maiuscole, accenti e punteggiatura non contano.</span></div>
+   <p class="full note">In ogni gara puoi comunque scegliere un modo diverso dalla regola, nel calcolo dell'offerta. Il prezzo offerto non cambia: cambia solo la percentuale di ribasso da scrivere nell'offerta.</p>
+   <div class="err full" id="ferr"></div></div>
+   <div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-gribsave="1">Salva</button></div></div></form>`);
+}
+async function salvaRegoleRibasso(btn){
+  const tutte=($("[name=rr_tutte]:checked")||{}).value==="1";
+  const enti=[...document.querySelectorAll("[name=rr_ente]:checked")].map(x=>x.value).concat(String($("#rr_altri").value||"").split(/\n+/).map(x=>x.trim()).filter(Boolean));
+  const visti=new Set(), uniche=enti.filter(e=>{const n=normTxt(e); if(!n||visti.has(n))return false; visti.add(n); return true});
+  const o=Object.assign({},S.liste.find(x=>x.id==="ribassoGare")||{},{id:"ribassoGare",valori:[],tutte,enti:uniche});
+  btn.disabled=true; const ok=await save("liste",o); btn.disabled=false; if(!ok)return;
+  closeAll(); ver++; render(); toast(tutte?"Ribasso su tutta l'offerta per tutte le gare":uniche.length?`Ribasso su tutta l'offerta per ${uniche.length} ent${uniche.length>1?"i":"e"}`:"Ribasso sulla parte ribassabile per tutte le gare");
+}
 // ---------- calcolo offerta: finestra ----------
 function openCalcGara(id){ const g=byId("gare",id); if(!g)return; current={c:"garacalc",id,g:JSON.parse(JSON.stringify(g))}; if(!current.g.voci||!current.g.voci.length)current.g.voci=[{lotto:"Lotto unico",descr:"",mq:"",passaggi:"",resa:"",oreExtra:"",livello:""}]; renderCalcGara() }
 function livOpts(tab,v,vuoto){ return (vuoto?`<option value="">${vuoto}</option>`:"")+((tab&&tab.livelli)||[]).map(l=>`<option value="${esc(l.livello)}" ${String(v)===String(l.livello)?"selected":""}>${esc(l.livello)}${l.descrizione?" · "+esc(l.descrizione):""}</option>`).join("") }
@@ -2292,6 +2334,7 @@ function renderCalcGara(){
    ${fld("Durata (mesi)",num("durataMesi",g.durataMesi||12,"1"))}
    ${fld("Costo manodopera stimato dall'ente (€)",num("manodoperaSa",g.manodoperaSa,"0.01"))}
    ${fld("Oneri della sicurezza non ribassabili (€)",num("oneriSicurezza",g.oneriSicurezza,"0.01"))}
+   ${(()=>{const a=modoRibassoAuto(g); return fld("Ribasso calcolato",`<select data-gc="ribassoSu"><option value="" ${!g.ribassoSu?"selected":""}>Come da regola: ${MODI_RIBASSO[a.modo]}</option><option value="ribassabile" ${g.ribassoSu==="ribassabile"?"selected":""}>Sulla parte ribassabile (senza manodopera e oneri)</option><option value="totale" ${g.ribassoSu==="totale"?"selected":""}>Su tutta l'offerta (esclusi solo gli oneri)</option></select><span class="hint">Regola applicata: ${esc(a.perche)}. Si cambia in Gare → Regole del ribasso.</span>`)})()}
    <div class="fld full"><span class="lb">Ambienti e frequenze</span><div class="tablewrap"><table class="altab gcalc"><thead><tr><th>Lotto</th><th>Ambiente</th><th>m²</th><th>Passaggi l'anno</th><th>Resa m²/h</th><th>Ore extra l'anno</th><th>Livello</th><th class="r">Ore</th><th></th></tr></thead><tbody>
     ${c.voci.map((v,i)=>`<tr><td><input data-gv="${i}:lotto" value="${esc(v.lotto||"")}" aria-label="Lotto"></td><td><input data-gv="${i}:descr" value="${esc(v.descr||"")}" aria-label="Ambiente" placeholder="es. aule, uffici, bagni"></td><td><input type="number" inputmode="decimal" data-gv="${i}:mq" value="${esc(v.mq??"")}" aria-label="Metri quadri"></td><td><input type="number" inputmode="decimal" data-gv="${i}:passaggi" value="${esc(v.passaggi??"")}" aria-label="Passaggi l'anno" placeholder="es. 250"></td><td><input type="number" inputmode="decimal" data-gv="${i}:resa" value="${esc(v.resa??"")}" aria-label="Resa oraria" placeholder="es. 200"></td><td><input type="number" inputmode="decimal" data-gv="${i}:oreExtra" value="${esc(v.oreExtra??"")}" aria-label="Ore extra"></td><td><select data-gv="${i}:livello" aria-label="Livello">${livOpts(tab,v.livello,"predef.")}</select></td><td class="r num">${n1(v.ore)}</td><td><button type="button" class="btn small ghost" data-gvrm="${i}" aria-label="Togli riga">✕</button></td></tr>`).join("")}
    </tbody></table></div><div class="actions"><button type="button" class="btn small" data-gvadd="1">+ Ambiente</button></div>
@@ -2324,11 +2367,11 @@ function risCalcGara(g,c){
    ${r("Manodopera",eur(c.manodopera))}${r("Materiali e prodotti",eur(c.materiali))}${c.attrezz?r("Attrezzature",eur(c.attrezz)):""}${c.sicur?r("Sicurezza aziendale",eur(c.sicur)):""}
    ${r("Spese generali",eur(c.generali))}${r("Utile",eur(c.utile))}${r("Prezzo annuo",eur(c.annuo),1)}
    ${r(`Totale offerta per ${n1(c.anni*12)} mesi${c.oneri?" (con "+eur(c.oneri)+" di oneri per la sicurezza)":""}`,eur(c.totale),1)}
-   ${c.ribassabile!=null?r("Parte ribassabile della base di gara",eur(c.ribassabile)):""}
+   ${c.ribassabile!=null?r(c.modoRib==="totale"?"Importo soggetto a ribasso (tutta la base di gara"+(c.oneri?", senza oneri":"")+")":"Parte ribassabile della base di gara",eur(c.ribassabile)):""}
    ${c.ribasso!=null?r("Ribasso da offrire",`<span class="${c.ribasso<0?"neg":""}">${pctTxt(c.ribasso)}</span>`,1):""}
    ${c.tot!=null?r("Punteggio stimato",`${n1(c.tot)} (tecnico ${n1(c.pt)} + economico ${n1(c.pe)})`,1):""}
   </tbody></table>${c.avvisi.length?`<div class="banner-warn small" style="margin-top:8px"><ul>${c.avvisi.map(a=>`<li>${esc(a)}</li>`).join("")}</ul></div>`:""}
-  <p class="note">Il ribasso si calcola solo sulla parte ribassabile: dall'importo a base di gara si tolgono il costo della manodopera stimato dall'ente e gli oneri della sicurezza (art. 41 c. 14 del Codice dei contratti). La formula del punteggio è una simulazione: usa quella esatta del disciplinare.</p>`;
+  <p class="note">${c.modoRib==="totale"?"Il ribasso è calcolato su tutta l'offerta, manodopera compresa: dall'importo a base di gara si tolgono solo gli oneri della sicurezza, che non sono mai ribassabili. Usalo quando il disciplinare chiede il ribasso sull'importo complessivo.":"Il ribasso si calcola solo sulla parte ribassabile: dall'importo a base di gara si tolgono il costo della manodopera stimato dall'ente e gli oneri della sicurezza (art. 41 c. 14 del Codice dei contratti)."} Il prezzo offerto è lo stesso nei due casi: cambia solo la percentuale da scrivere nell'offerta. La formula del punteggio è una simulazione: usa quella esatta del disciplinare.</p>`;
 }
 function leggiCalcGara(){
   const g=current.g;
@@ -2342,7 +2385,7 @@ async function salvaCalcGara(){
   if(c.totale>0){g.importoOfferto=c.totale; g.ribassoOfferto=c.ribasso}
   const orig=byId("gare",g.id); const obj=Object.assign({},orig,{costiLavoroId:g.costiLavoroId,livelloBase:g.livelloBase,importoBase:g.importoBase,durataMesi:g.durataMesi,manodoperaSa:g.manodoperaSa,oneriSicurezza:g.oneriSicurezza,
     materialiPct:g.materialiPct,attrezzatureAnno:g.attrezzatureAnno,sicurezzaAnno:g.sicurezzaAnno,generaliPct:g.generaliPct,utilePct:g.utilePct,criterio:g.criterio,puntiTecnici:g.puntiTecnici,puntiEconomici:g.puntiEconomici,formula:g.formula,coeffX:g.coeffX,
-    ribassoMaxAtteso:g.ribassoMaxAtteso,ribassoMedioAtteso:g.ribassoMedioAtteso,tecnicoStimato:g.tecnicoStimato,voci:g.voci,personale:g.personale,importoOfferto:g.importoOfferto,ribassoOfferto:g.ribassoOfferto});
+    ribassoMaxAtteso:g.ribassoMaxAtteso,ribassoMedioAtteso:g.ribassoMedioAtteso,tecnicoStimato:g.tecnicoStimato,voci:g.voci,personale:g.personale,importoOfferto:g.importoOfferto,ribassoOfferto:g.ribassoOfferto,ribassoSu:g.ribassoSu||null});
   if(GARA_APERTA.includes(obj.stato)&&obj.stato!=="preparazione")obj.stato="preparazione";
   if(await save("gare",obj)){closeAll();toast("Calcolo salvato")}
 }
@@ -2425,6 +2468,8 @@ async function apriAllegato(path){ const {data,error}=await sb.storage.from("all
 async function clicGare(d,el,e){
   if(d.gara){e.stopPropagation();UI.garaSel=d.gara;tab="gara";closeAll();render();window.scrollTo(0,0);return true}
   if(d.gfil){UI.gFil=d.gfil;render();return true}
+  if(d.gribreg){apriRegoleRibasso();return true}
+  if(d.gribsave){await salvaRegoleRibasso(el);return true}
   if(d.garastato){const g=byId("gare",UI.garaSel); if(!g||g.stato===d.garastato)return true; const dest=d.garastato, {avanti,uscite}=passiGara(g);
     if(!avanti.includes(dest)&&!uscite.includes(dest)){toast("Questa fase non segue quella attuale");return true}
     if(["aggiudicata","persa","esclusa"].includes(dest)){openEsitoGara(g.id,dest);return true}
@@ -2483,6 +2528,7 @@ function confermaPassoGara(g,dest,probl,indietro){
   modalShell(indietro?"Tornare alla fase precedente?":"Passare a: "+esc(lab)+"?",`<div class="mb">${testo}</div><div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-gpconf="1">${indietro?"Torna a "+esc(lab):probl.length?"Prosegui comunque":"Conferma"}</button></div></div>`);
 }
 async function cambioGare(t){
+  if(t.name==="rr_tutte"){const b=$("#rr_enti"); if(b)b.hidden=t.value==="1"; return true}
   if(t.dataset&&t.dataset.gdocst!==undefined){const g=byId("gare",UI.garaSel); if(!g)return true; const docs=(g.documenti||[]).map((x,i)=>i===+t.dataset.gdocst?Object.assign({},x,{stato:t.value}):x); await save("gare",Object.assign({},g,{documenti:docs})); return true}
   if(t.id==="gsAnno"){UI.gsAnno=t.value;render();return true}
   if(t.id==="mGara"){UI.mGara=t.value;render();return true}
@@ -3566,7 +3612,7 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-bfil],[data-bando],[data-bstato],[data-bgara],[data-bcerca],[data-bprof],[data-bprofsave],[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-garastato],[data-garaindietro],[data-gpconf],[data-cetog],[data-ceapri],[data-cevista],[data-cedet],[data-ceexp],[data-ceclass],[data-ceclsave],[data-cenuovo],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
+  const el=e.target.closest("[data-bfil],[data-bando],[data-bstato],[data-bgara],[data-bcerca],[data-bprof],[data-bprofsave],[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-gribreg],[data-gribsave],[data-garastato],[data-garaindietro],[data-gpconf],[data-cetog],[data-ceapri],[data-cevista],[data-cedet],[data-ceexp],[data-ceclass],[data-ceclsave],[data-cenuovo],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
@@ -3578,7 +3624,7 @@ document.addEventListener("click",async e=>{
   if(d.ceclass){apriClassificaCe(d.ceclass); return}
   if(d.ceclsave){await salvaClassificaCe(el); return}
   if(d.cenuovo){openForm("movimenti",null,{tipo:d.cenuovo,causale:d.cenuovo==="uscita"?"Altre spese":"Altri ricavi",contoEc:""}); return}
-  if(Object.keys(d).some(k=>/^(bfil|bando|bstato|bgara|bcerca|bprof|bprofsave|gara|gfil|garastato|garaindietro|gpconf|impg|impgfile|impgok|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
+  if(Object.keys(d).some(k=>/^(bfil|bando|bstato|bgara|bcerca|bprof|bprofsave|gara|gfil|gribreg|gribsave|garastato|garaindietro|gpconf|impg|impgfile|impgok|garacalc|garaesito|garacli|gform|gvadd|gvrm|gpadd|gprm|gcsave|gqadd|gqrm|gesave|gksave|gdocadd|gdocrm|gdocup|docup|fopen|ggen|mgen|mup|mrep|mcopy)$/.test(k))&&await clicGare(d,el,e))return;
   if(d.livadd!==undefined){$("#f_livelli").insertAdjacentHTML("beforeend",livRow({}));return}
   if(d.livrm!==undefined){const box=el.closest(".rows"); if(box.querySelectorAll(".rg").length>1)el.closest(".rg").remove(); return}
   if(d.auth){authAction(d.auth);return}
@@ -3692,7 +3738,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",async e=>{
   const id=e.target.id;
-  if((e.target.dataset&&e.target.dataset.gdocst!==undefined||id==="gsAnno"||id==="mGara"||id==="genSel"||id==="impSalta"||id==="ceAnno"||(current&&current.c==="garacalc"))&&await cambioGare(e.target))return;
+  if((e.target.dataset&&e.target.dataset.gdocst!==undefined||id==="gsAnno"||id==="mGara"||id==="genSel"||id==="impSalta"||id==="ceAnno"||e.target.name==="rr_tutte"||(current&&current.c==="garacalc"))&&await cambioGare(e.target))return;
   if(id==="modGare"){const v=e.target.checked, nuovi=v?[...new Set(moduli.concat("gare"))]:moduli.filter(x=>x!=="gare");
     const {error}=await sb.from("impostazioni").update({moduli:nuovi}).eq("id",1); if(error){toast(/moduli/.test(error.message||"")?"Esegui prima in Supabase lo script supabase/modulo_gare.sql":errMsg(error));e.target.checked=!v;return}
     const prima=moduli; moduli=nuovi; try{await loadAll()}catch(err){moduli=prima; await sb.from("impostazioni").update({moduli:prima}).eq("id",1); toast("Le tabelle delle gare non ci sono: esegui in Supabase lo script supabase/modulo_gare.sql"); e.target.checked=!v; return}

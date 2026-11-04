@@ -116,6 +116,7 @@ create table if not exists public.gare (
   -- offerta presentata ed esito
   importo_offerto      numeric(14,2),
   ribasso_offerto      numeric(6,3),
+  ribasso_su           text check (ribasso_su in ('ribassabile','totale')),
   data_esito           date,
   aggiudicatario       text,
   ribasso_aggiudicazione numeric(6,3),
@@ -280,6 +281,9 @@ begin
     end loop;
   end if;
 end $$;
+
+-- ribasso calcolato sulla parte ribassabile o su tutta l'offerta (vuoto = regola dell'impresa)
+alter table public.gare add column if not exists ribasso_su text check (ribasso_su in ('ribassabile','totale'));
 
 -- Fatto. Verifica: deve comparire "gare" tra i moduli attivi.
 select moduli from public.impostazioni;

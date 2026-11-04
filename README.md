@@ -98,7 +98,7 @@ Alcune funzioni sono **moduli** che si attivano per azienda, per poterle include
 - **Calcolo dell'offerta**:
   - ore per ambiente (m² × passaggi ÷ resa) e costo del lavoro dalle tabelle per livello;
   - personale da assorbire (clausola sociale), materiali, spese generali e utile;
-  - ribasso calcolato sulla sola parte ribassabile, con avvisi rispetto alla stima dell'ente;
+  - ribasso calcolato sulla parte ribassabile (senza manodopera e oneri) oppure su tutta l'offerta: si sceglie in Gare → Regole del ribasso per tutte le gare o solo per alcuni enti, e si può cambiare nella singola gara; avvisi rispetto alla stima dell'ente;
   - simulazione del punteggio economico (lineare, bilineare, proporzionale inversa).
 - **Esito** con concorrenti, ribassi e punteggi. **Garanzie** (provvisoria e definitiva) e **contratto** con scadenze.
 - Dalla gara vinta si crea **cliente e sedi** con un clic: codice ufficio PA, scissione dei pagamenti e CIG riportato nelle fatture.
