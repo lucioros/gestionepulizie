@@ -203,6 +203,8 @@ tfoot td{font-weight:600;border-top:2px solid var(--line);border-bottom:0}
 .chips .addbtn{border-radius:14px}
 .radiorow{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-top:6px;font-weight:500;cursor:pointer;background:var(--bg)}
 .radiorow input{width:auto;margin:3px 0 0;accent-color:var(--accent)}
+.modgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:0 10px}
+.btn.danger{color:var(--bad,#b42318);border-color:currentColor}
 table.est tr.ph-row td{background:var(--sunk);border-top:2px solid var(--line)}
 table.est tr.sub td:nth-child(2){padding-left:24px;position:relative}
 table.est tr.sub td:nth-child(2)::before{content:"";position:absolute;left:10px;top:0;bottom:50%;width:8px;border-left:1px solid var(--muted);border-bottom:1px solid var(--muted);opacity:.6}
@@ -366,8 +368,13 @@ const NAV=[["oggi","Oggi",[["oggi","Oggi"]]],
            ["fatture","Fatture",[["vendite","Vendita"],["acquisti","Acquisto"],["fornitori","Fornitori"]]],
            ["gare","Gare",[["gare","Gare e offerte"],["bandi","Bandi suggeriti"],["docimpresa","Documenti impresa"],["costilavoro","Costo del lavoro"],["modelli","Modelli"],["garestat","Statistiche"]]],
            ["contabilita","Incassi e contabilità",[["primanota","Prima nota"],["partite","Partite aperte"],["scadenzario","Scadenzario"],["contoeco","Conto economico"],["mastrini","Mastrini e IVA"],["pianoconti","Piano dei conti"]]],
-           ["impostazioni","Impostazioni",[["impostazioni","Generali e app dipendenti"],["pagamenti","Tipi di pagamento"]]]];
-const navAttivo=()=>NAV.filter(g=>g[0]!=="gare"||moduloOn("gare"));
+           ["impostazioni","Impostazioni",[["impostazioni","Generali e app dipendenti"],["pagamenti","Tipi di pagamento"],["collaboratori","Collaboratori"]]]];
+// collaboratori: entrano con nome utente e password e vedono solo i moduli assegnati dal titolare
+const MODULI_COLLAB=[["lavori","Lavori e turni","pianificazione, agenda dei dipendenti, qualità"],["clienti","Clienti","clienti, sedi, amministratori, preventivi"],["personale","Personale","dipendenti, assenze, timbrature"],["fatture","Fatture","vendita, acquisto, fornitori, fattura elettronica"],["gare","Gare","gare d'appalto e bandi"],["contabilita","Incassi e contabilità","prima nota, partite aperte, scadenzario, conto economico"]];
+const isTit=()=>!profilo||profilo.ruolo==="titolare";
+const puoGrp=g=>g==="oggi"||isTit()||(g!=="impostazioni"&&(profilo.moduli||[]).includes(g));
+const puoTab=t=>puoGrp(gruppoDi(t)[0]);
+const navAttivo=()=>NAV.filter(g=>(g[0]!=="gare"||moduloOn("gare"))&&puoGrp(g[0]));
 const gruppoDi=t=>t==="gara"?NAV.find(g=>g[0]==="gare"):NAV.find(g=>g[2].some(x=>x[0]===t))||NAV[0];
 const ultimaScheda={};
 const GIORNI=["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
@@ -1052,15 +1059,16 @@ function alerts(){
 /* ---------- render ---------- */
 function render(){
   if(mode!=="db"){ $("#nav").innerHTML=""; $("#foot").innerHTML=""; $("#main").innerHTML=authView(); return }
-  const al=alerts(); const bad=al.filter(x=>x[0]==="bad").length;
+  const al=alerts().filter(x=>puoTab(x[2])); const bad=al.filter(x=>x[0]==="bad").length;
   if(!moduloOn("gare")&&gruppoDi(tab)[0]==="gare")tab="oggi";
+  if(!puoTab(tab))tab="oggi";
   const G=gruppoDi(tab); ultimaScheda[G[0]]=tab==="gara"?"gare":tab;
   $("#nav").innerHTML=navAttivo().map(([g,l])=>`<button data-grp="${g}" ${G[0]===g?'aria-current="page"':""}>${l}${g==="oggi"&&bad?`<span class="badge">${bad}</span>`:""}</button>`).join("");
-  $("#foot").innerHTML=`<span>${esc(me&&me.email||"")}</span><button class="btn small" data-act="logout">Esci</button>`;
+  $("#foot").innerHTML=isTit()?`<span>${esc(me&&me.email||"")}</span><button class="btn small" data-act="logout">Esci</button>`:`<span>${esc(profilo.nome||"")}<br><span class="muted">${esc(profilo.utente||"")}</span></span><button class="btn small" data-act="miapw">Cambia password</button><button class="btn small" data-act="logout">Esci</button>`;
   const m=$("#main");
   const empty=!S.clienti.length&&!S.sedi.length&&!S.operatori.length&&!S.fornitori.length;
-  if(empty&&["oggi","piano","clienti"].includes(tab)){m.innerHTML=emptyView();return}
-  const V={gare:vGare,bandi:vBandi,gara:vGara,docimpresa:vDocImpresa,costilavoro:vCostiLavoro,modelli:vModelli,garestat:vGareStat,contoeco:vContoEconomico,pianoconti:vPianoConti,amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
+  if(empty&&isTit()&&["oggi","piano","clienti"].includes(tab)){m.innerHTML=emptyView();return}
+  const V={collaboratori:vCollaboratori,gare:vGare,bandi:vBandi,gara:vGara,docimpresa:vDocImpresa,costilavoro:vCostiLavoro,modelli:vModelli,garestat:vGareStat,contoeco:vContoEconomico,pianoconti:vPianoConti,amministratori:vAmministratori,scadenzario:vScadenzario,pagamenti:vPagamenti,impostazioni:vImpostazioni,oggi:vOggi,piano:vPiano,agenda:vAgenda,clienti:vClienti,personale:vPersonale,preventivi:vPreventivi,qualita:vQualita,vendite:vVendite,acquisti:vAcquisti,fornitori:vFornitori,primanota:vPrimaNota,partite:vPartite,mastrini:vMastrini};
   const sub=G[2].length>1?`<div class="subnav" role="navigation" aria-label="${esc(G[1])}">${G[2].map(([k,l])=>`<button data-tab="${k}" ${tab===k||(tab==="gara"&&k==="gare")?'aria-current="page"':""}>${esc(l)}</button>`).join("")}</div>`:"";
   m.innerHTML=sub+V[tab](al);
   schedeTabelle(m);
@@ -1098,27 +1106,27 @@ function vOggi(al){
   const crediti=S.fatture.reduce((a,f)=>a+residuoV(f),0), debiti=S.acquisti.reduce((a,x)=>a+residuoA(x),0);
   const liq=conti().reduce((a,c)=>a+saldoConto(c.id),0);
   const ranked=attive.map(s=>({s,m:marginePct(s)})).filter(x=>x.m!=null).sort((a,b)=>b.m-a.m);
-  return head("Oggi",esc(cap(dLong(t))),`<button class="btn" data-new="straordinari">Intervento straordinario</button><button class="btn" data-new="movimenti">Registra movimento</button>`)+
+  return head("Oggi",esc(cap(dLong(t))),`${puoGrp("lavori")?'<button class="btn" data-new="straordinari">Intervento straordinario</button>':""}${puoGrp("contabilita")||puoGrp("fatture")?'<button class="btn" data-new="movimenti">Registra movimento</button>':""}`)+
   `<div class="kpis">
     <div class="kpi"><span class="label">Turni di oggi</span><span class="v">${done}/${occ.length}</span><span class="n">svolti / pianificati</span></div>
-    <div class="kpi"><span class="label">Canoni mensili</span><span class="v">${eur(ric)}</span><span class="n">margine stimato ${marg==null?"—":marg+"%"}</span></div>
-    <div class="kpi"><span class="label">Crediti da incassare</span><span class="v">${eur(crediti)}</span><span class="n">debiti verso fornitori ${eur(debiti)}</span></div>
-    <div class="kpi"><span class="label">Liquidità</span><span class="v ${liq<0?"neg":""}">${eur(liq)}</span><span class="n">cassa e banche</span></div>
+    ${puoGrp("clienti")||puoGrp("fatture")||puoGrp("contabilita")?`<div class="kpi"><span class="label">Canoni mensili</span><span class="v">${eur(ric)}</span><span class="n">margine stimato ${marg==null?"—":marg+"%"}</span></div>`:""}
+    ${puoGrp("fatture")||puoGrp("contabilita")?`<div class="kpi"><span class="label">Crediti da incassare</span><span class="v">${eur(crediti)}</span><span class="n">debiti verso fornitori ${eur(debiti)}</span></div>`:""}
+    ${puoGrp("fatture")||puoGrp("contabilita")?`<div class="kpi"><span class="label">Liquidità</span><span class="v ${liq<0?"neg":""}">${eur(liq)}</span><span class="n">cassa e banche</span></div>`:""}
   </div>
   <div class="grid2">
-    <section class="panel"><div class="ph"><h2>Turni di oggi</h2><button class="btn small ghost" data-tab="piano">Settimana →</button></div>
+    <section class="panel"><div class="ph"><h2>Turni di oggi</h2>${puoGrp("lavori")?'<button class="btn small ghost" data-tab="piano">Settimana →</button>':""}</div>
       <div class="list">${occ.length?occ.map(occRow).join(""):`<p class="muted">Nessun intervento pianificato per oggi.</p>`}</div></section>
     <div class="col">
       <section class="panel"><h2>Da guardare</h2><div class="list">${al.length?al.map(([c,tx,go])=>`<div class="alert"><span class="dot ${c}"></span><span style="flex:1">${esc(tx)}</span><button class="btn small ghost" data-tab="${go}">Apri</button></div>`).join(""):`<div class="alert"><span class="dot ok"></span><span>Tutto in ordine: nessun conflitto, nessuna scadenza superata.</span></div>`}</div></section>
-      <section class="panel"><h2>Margine per sede</h2>${ranked.length?`<table><tbody>${ranked.map(({s,m})=>`<tr class="click" data-edit="sedi:${s.id}"><td style="width:45%">${esc(s.nome)}</td><td><div class="bar"><i class="${m<10?"bad":m<20?"warn":""}" style="width:${Math.max(2,Math.min(100,m))}%"></i></div></td><td class="r num">${Math.round(m)}%</td></tr>`).join("")}</tbody></table><p class="note">Canone mensile meno ore pianificate × costo orario degli operatori assegnati. Materiali e spese generali esclusi.</p>`:`<p class="muted">Inserisci canone e operatori nelle sedi per vedere i margini.</p>`}</section>
+      ${puoGrp("clienti")||puoGrp("fatture")||puoGrp("contabilita")?`<section class="panel"><h2>Margine per sede</h2>${ranked.length?`<table><tbody>${ranked.map(({s,m})=>`<tr class="click" data-edit="sedi:${s.id}"><td style="width:45%">${esc(s.nome)}</td><td><div class="bar"><i class="${m<10?"bad":m<20?"warn":""}" style="width:${Math.max(2,Math.min(100,m))}%"></i></div></td><td class="r num">${Math.round(m)}%</td></tr>`).join("")}</tbody></table><p class="note">Canone mensile meno ore pianificate × costo orario degli operatori assegnati. Materiali e spese generali esclusi.</p>`:`<p class="muted">Inserisci canone e operatori nelle sedi per vedere i margini.</p>`}</section>`:""}
     </div>
   </div>`;
 }
 const stPill=st=>st==="svolto"?'<span class="pill ok">Svolto</span>':st==="saltato"?'<span class="pill bad">Saltato</span>':'<span class="pill">Pianificato</span>';
 function occRow(o){
   const cli=byId("clienti",o.sede.clienteId);
-  return `<div class="row"><span class="t">${esc(o.ora)}</span><div class="b"><b>${esc(o.sede.nome)}</b> ${o.kind==="extra"?'<span class="pill acc">Straordinario</span>':""} ${o.conflitto?'<span class="pill warn">Sovrapposto</span>':""} ${o.scoperto?'<span class="pill bad">Da coprire</span>':""} ${o.var?'<span class="pill">Variato</span>':""}<div class="small muted">${esc(cli?cli.nome:"")}${o.sede.indirizzo?" · "+esc(o.sede.indirizzo):""} · ${n1(o.durata)} h · ${opNamesHtml(o)}${o.nota?" · "+esc(o.nota):""}</div>${timbLine(o)}</div>
-  <div class="act"><button class="btn small ghost" ${o.kind==="extra"?`data-edit="straordinari:${o.id}"`:`data-turno="${o.id}"`}>Modifica</button>${o.stato==="pianificato"?`<button class="btn small" data-mark="${o.kind}|${o.id}|svolto">Svolto</button><button class="btn small" data-mark="${o.kind}|${o.id}|saltato">Saltato</button>`:`${stPill(o.stato)} <button class="btn small ghost" data-mark="${o.kind}|${o.id}|pianificato">Annulla</button>`}</div></div>`;
+  return `<div class="row"><span class="t">${esc(o.ora)}</span><div class="b"><b>${esc(o.sede.nome)}</b> ${o.kind==="extra"?'<span class="pill acc">Straordinario</span>':""} ${o.conflitto?'<span class="pill warn">Sovrapposto</span>':""} ${o.scoperto?'<span class="pill bad">Da coprire</span>':""} ${o.var?'<span class="pill">Variato</span>':""}<div class="small muted">${esc(cli?cli.nome:"")}${o.sede.indirizzo?" · "+esc(o.sede.indirizzo):""} · ${n1(o.durata)} h · ${opNamesHtml(o)}${o.nota?" · "+esc(o.nota):""}</div>${puoGrp("personale")||puoGrp("lavori")?timbLine(o):""}</div>
+  ${!puoGrp("lavori")?`<div class="act">${o.stato!=="pianificato"?stPill(o.stato):""}</div>`:`<div class="act"><button class="btn small ghost" ${o.kind==="extra"?`data-edit="straordinari:${o.id}"`:`data-turno="${o.id}"`}>Modifica</button>${o.stato==="pianificato"?`<button class="btn small" data-mark="${o.kind}|${o.id}|svolto">Svolto</button><button class="btn small" data-mark="${o.kind}|${o.id}|saltato">Saltato</button>`:`${stPill(o.stato)} <button class="btn small ghost" data-mark="${o.kind}|${o.id}|pianificato">Annulla</button>`}</div>`}</div>`;
 }
 function vPiano(){
   const occ=occForRange(weekStart,7), tk=TODAY(), end=addDays(weekStart,6);
@@ -1307,7 +1315,98 @@ function vImpostazioni(){
     <section class="panel"><h2>Moduli</h2><div class="chips"><label><input type="checkbox" id="modGare" ${moduloOn("gare")?"checked":""}> Gare d'appalto</label></div>
     <p class="note">Gare pubbliche e richieste di offerta: scadenze, documenti, calcolo dell'offerta con il costo del lavoro, esiti e statistiche. Spento, il menu Gare sparisce e il database blocca i suoi dati, che restano conservati. Nella versione per più aziende lo attiverà il fornitore dell'app per ogni azienda, secondo l'abbonamento.</p></section>
     ${docsN>0?`<section class="panel"><h2>Vecchia tabella "docs"</h2><p class="note">Contiene ancora ${docsN} record del vecchio formato, già trasferiti nelle nuove tabelle. Non viene più usata. Se qualche record non era stato trasferito puoi ripetere il trasferimento: vengono aggiunti solo i record che mancano, quelli già nelle nuove tabelle non vengono toccati.</p><div class="actions"><button class="btn" data-act="rimigra">Ripeti il trasferimento</button></div></section>`:""}
-    <section class="panel"><h2>Account</h2><p class="note">Sei entrato come <b>${esc(me&&me.email||"")}</b>, titolare. Per cambiare password usa "Password dimenticata" nella pagina di accesso.</p></section></div></div>`;
+    <section class="panel"><h2>Account</h2><p class="note">Sei entrato come <b>${esc(me&&me.email||"")}</b>, titolare. Per cambiare password usa "Password dimenticata" nella pagina di accesso.</p><p class="note">Per dare accesso ad altre persone, ognuna solo su alcuni moduli: <a href="#" data-tab="collaboratori">Collaboratori</a>.</p></section></div></div>`;
+}
+// ---------- collaboratori (solo il titolare) ----------
+const nomeModulo=k=>(MODULI_COLLAB.find(x=>x[0]===k)||[k,k])[1];
+const moduliAssegnabili=()=>MODULI_COLLAB.filter(m=>m[0]!=="gare"||moduloOn("gare"));
+const indirizzoApp=()=>location.href.split("#")[0].split("?")[0];
+const msgRpc=e=>e&&/^(22023|23505|P0002)$/.test(e.code||"")?String(e.message||""):errMsg(e);
+async function caricaCollab(){
+  const {data,error}=await sb.rpc("elenco_collaboratori");
+  if(error){ UI.collab=[]; UI.collabErr=error.code==="PGRST202"||/elenco_collaboratori/.test(error.message||"")?"manca":errMsg(error) }
+  else { UI.collab=data||[]; UI.collabErr="" }
+  ver++; render();
+}
+function vCollaboratori(){
+  if(UI.collab==null){ UI.collab=undefined; if(!vCollaboratori._c){vCollaboratori._c=1; caricaCollab().finally(()=>vCollaboratori._c=0)} return head("Collaboratori","Caricamento…","") }
+  const L=UI.collab, att=L.filter(c=>c.attivo).length;
+  const pills=c=>(c.moduli||[]).length?(c.moduli||[]).map(m=>`<span class="pill">${esc(nomeModulo(m))}</span>`).join(" "):'<span class="muted small">nessun modulo</span>';
+  return head("Collaboratori",`${att} attiv${att===1?"o":"i"}${L.length>att?` · ${L.length-att} disattivat${L.length-att===1?"o":"i"}`:""}`,`<button class="btn primary" data-act="collNuovo" ${UI.collabErr==="manca"?"disabled":""}>Nuovo collaboratore</button>`)+
+  (UI.collabErr==="manca"?`<div class="banner-warn">Per usare i collaboratori il database va aggiornato: in Supabase apri SQL Editor, incolla lo script <b>supabase/collaboratori.sql</b> del repository e premi Run. Poi ricarica questa pagina.</div>`:UI.collabErr?`<div class="banner-warn">${esc(UI.collabErr)}</div>`:"")+
+  (L.length?`<section class="panel"><div class="tablewrap"><table><thead><tr><th>Collaboratore</th><th>Nome utente</th><th>Moduli</th><th>Ultimo accesso</th><th>Stato</th></tr></thead><tbody>${L.map(c=>`<tr class="click" data-coll="${esc(c.id)}"><td><b>${esc(c.nome)}</b></td><td class="mono small">${esc(c.utente)}</td><td>${pills(c)}</td><td class="small">${c.ultimo_accesso?dShort(String(c.ultimo_accesso).slice(0,10))+" "+String(new Date(c.ultimo_accesso).toTimeString()).slice(0,5):'<span class="muted">mai</span>'}</td><td>${c.attivo?'<span class="pill ok">Attivo</span>':'<span class="pill bad">Disattivato</span>'}</td></tr>`).join("")}</tbody></table></div></section>`:
+   UI.collabErr?"":`<div class="empty"><h2>Nessun collaboratore</h2><p>Dai accesso al gestionale a chi lavora con te in ufficio: ognuno entra con il suo nome utente e la sua password e vede solo i moduli che gli assegni, per esempio solo le fatture o solo i turni.</p><button class="btn primary" data-act="collNuovo">Nuovo collaboratore</button></div>`)+
+  `<div class="grid2"><section class="panel"><h2>Come entrano</h2><p>Aprono lo stesso indirizzo del gestionale e scrivono il loro <b>nome utente</b> al posto dell'email, poi la password.</p>
+    <div class="withadd"><input id="collUrl" class="btn" readonly value="${esc(indirizzoApp())}" style="flex:1;min-width:0" aria-label="Indirizzo del gestionale"><button class="btn" data-act="collCopia">Copia</button></div>
+    <p class="note">Se un collaboratore dimentica la password la reimposti tu da qui: non serve nessuna email. Disattivandolo non può più entrare e viene fatto uscire subito da tutti i dispositivi.</p></section>
+   <section class="panel"><h2>Cosa vede un collaboratore</h2><ul class="small">
+    <li>La pagina <b>Oggi</b> e solo i moduli che gli assegni; le <b>Impostazioni</b> restano solo tue.</li>
+    <li>Clienti, sedi, dipendenti, fornitori e turni li può <b>consultare</b> da qualsiasi modulo (servono per scegliere il cliente di una fattura o la squadra di un turno), ma li <b>modifica</b> solo chi ha il modulo relativo.</li>
+    <li>Fatture, incassi, contabilità, timbrature e gare restano invisibili a chi non ha quel modulo.</li>
+    <li>I limiti valgono nel database, non solo nei menu: non si aggirano dall'esterno.</li></ul></section></div>`;
+}
+function apriCollab(id){
+  const c=id?(UI.collab||[]).find(x=>x.id===id):null; if(id&&!c)return;
+  current={c:"collab",id:id||null};
+  const mods=c?c.moduli||[]:[];
+  modalShell(c?esc(c.nome):"Nuovo collaboratore",`<form id="frm" novalidate><div class="mb">
+   <div class="fld"><label for="co_nome">Nome e cognome</label><input id="co_nome" value="${esc(c?c.nome:"")}" autocomplete="off"></div>
+   <div class="fld"><label for="co_utente">Nome utente</label><input id="co_utente" value="${esc(c?c.utente:"")}" ${c?"disabled":""} autocapitalize="none" spellcheck="false" autocomplete="off" placeholder="es. anna.bianchi"><span class="hint">${c?"Il nome utente non si cambia: per cambiarlo crea un nuovo collaboratore.":"Da 3 a 30 caratteri: lettere minuscole, numeri, punto o trattino, senza spazi."}</span></div>
+   <div class="fld"><label for="co_pw">${c?"Nuova password":"Password"}</label><input id="co_pw" type="text" autocomplete="new-password" spellcheck="false" placeholder="${c?"Lascia vuoto per non cambiarla":"almeno 8 caratteri"}"><span class="hint">${c?"Se la cambi, il collaboratore viene fatto uscire e rientra con la nuova.":"Comunicala al collaboratore: potrà cambiarla lui dopo il primo accesso."}</span></div>
+   ${c?`<div class="fld"><span class="lb">Stato</span><div class="chips"><label><input type="checkbox" id="co_attivo" ${c.attivo?"checked":""}> Può entrare nel gestionale</label></div></div>`:'<div class="fld"></div>'}
+   <div class="fld full"><span class="lb">Moduli su cui può lavorare</span><div class="modgrid">${moduliAssegnabili().map(([k,l,dsc])=>`<label class="radiorow"><input type="checkbox" name="co_mod" value="${k}" ${mods.includes(k)?"checked":""}><span><b>${esc(l)}</b><br><span class="small muted">${esc(dsc)}</span></span></label>`).join("")}</div>
+    <span class="hint">La pagina Oggi la vedono tutti; le Impostazioni solo tu.</span></div>
+   <div class="err full" id="ferr"></div></div>
+   <div class="mf"><span>${c?'<button type="button" class="btn ghost" data-act="collElimina">Elimina</button>':""}</span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-act="collSalva">${c?"Salva":"Crea il collaboratore"}</button></div></div></form>`);
+  setTimeout(()=>{const f=$(c?"#co_nome":"#co_nome"); if(f)f.focus()},30);
+}
+async function salvaCollab(btn){
+  const err=t=>{$("#ferr").textContent=t; return false};
+  const nome=$("#co_nome").value.trim(), pw=$("#co_pw").value, mods=[...document.querySelectorAll("[name=co_mod]:checked")].map(x=>x.value);
+  if(!nome)return err("Scrivi nome e cognome.");
+  if(pw&&pw.length<8)return err("La password deve avere almeno 8 caratteri.");
+  btn.disabled=true;
+  try{
+    if(!current.id){
+      const ut=$("#co_utente").value.trim().toLowerCase();
+      if(!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(ut)){btn.disabled=false; return err("Nome utente non valido: da 3 a 30 caratteri tra lettere minuscole, numeri, punto e trattino, senza spazi.")}
+      if(!pw){btn.disabled=false; return err("Scegli una password di almeno 8 caratteri.")}
+      const {error}=await sb.rpc("crea_collaboratore",{p_utente:ut,p_nome:nome,p_password:pw,p_moduli:mods}); if(error)throw error;
+      closeAll(); UI.collab=null; ver++; render();
+      mostraTesto("Dati di accesso di "+nome,`Indirizzo: ${indirizzoApp()}\nNome utente: ${ut}\nPassword: ${pw}\nModuli: ${mods.length?mods.map(nomeModulo).join(", "):"nessuno (vede solo la pagina Oggi)"}`,"Copia questi dati e consegnali al collaboratore. La password non sarà più visibile: se la dimentica, ne imposti una nuova da questa pagina.");
+      toast("Collaboratore creato");
+      return true;
+    }
+    const att=$("#co_attivo").checked;
+    let {error}=await sb.rpc("aggiorna_collaboratore",{p_id:current.id,p_nome:nome,p_moduli:mods,p_attivo:att}); if(error)throw error;
+    if(pw){ ({error}=await sb.rpc("password_collaboratore",{p_id:current.id,p_password:pw})); if(error)throw error }
+    closeAll(); UI.collab=null; ver++; render(); toast(pw?"Salvato, con la nuova password":"Collaboratore aggiornato");
+    return true;
+  }catch(e){ btn.disabled=false; return err(msgRpc(e)) }
+}
+async function eliminaCollab(btn){
+  const c=(UI.collab||[]).find(x=>x.id===current.id); if(!c)return;
+  if(!btn.dataset.sure){btn.dataset.sure="1"; btn.textContent="Conferma: elimina "+c.nome; btn.classList.add("danger"); return}
+  btn.disabled=true; const {error}=await sb.rpc("elimina_collaboratore",{p_id:c.id});
+  if(error){btn.disabled=false; $("#ferr").textContent=msgRpc(error); return}
+  closeAll(); UI.collab=null; ver++; render(); toast(c.nome+" eliminato: non può più entrare");
+}
+// il collaboratore cambia la propria password
+function apriMiaPassword(){
+  current={c:"miapw"};
+  modalShell("Cambia password",`<form id="frm" novalidate><div class="mb">
+   <div class="fld full"><label for="mp_1">Nuova password (almeno 8 caratteri)</label><input id="mp_1" type="password" autocomplete="new-password"></div>
+   <div class="fld full"><label for="mp_2">Ripeti la nuova password</label><input id="mp_2" type="password" autocomplete="new-password"></div>
+   <div class="err full" id="ferr"></div></div>
+   <div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Annulla</button><button type="button" class="btn primary" data-act="miapwSalva">Salva</button></div></div></form>`);
+}
+async function salvaMiaPassword(btn){
+  const a=$("#mp_1").value, b=$("#mp_2").value;
+  if(a.length<8){$("#ferr").textContent="La password deve avere almeno 8 caratteri.";return}
+  if(a!==b){$("#ferr").textContent="Le due password non sono uguali.";return}
+  btn.disabled=true; const {error}=await sb.auth.updateUser({password:a}); btn.disabled=false;
+  if(error){$("#ferr").textContent=traduci(error.message);return}
+  closeAll(); toast("Password cambiata");
 }
 function vAgenda(){
   const ops=S.operatori.filter(o=>o.attivo!==false).sort((a,b)=>a.nome.localeCompare(b.nome));
@@ -1454,8 +1553,8 @@ function estrattoCondominio(c,anno){
   const DA=v=>{const x=r2(v);return eur2(Math.abs(x))+(x>0?" a nostro credito":x<0?" a vostro credito":"")};
   return `Estratto conto ${anno}\n${condNome(c)}${(c.cf||c.piva)?" (C.F. "+(c.cf||c.piva)+")":""}${am?"\nAmministratore: "+am.nome:""}\n\nSaldo al 1/1/${anno}: ${DA(m.ap)}\n\nFatture e note di credito\n${fs.map(f=>{const t=vTot(f);return `  ${vLabel(f)} del ${dShort(f.data)}: totale ${eur2((f.tipo==="nc"?-1:1)*t.tot)}${t.rit?", ritenuta 4% "+eur2(t.rit)+", netto "+eur2(t.dovuto):""}`}).join("\n")||"  nessuna"}\n\nPagamenti ricevuti\n${inc.map(x=>`  ${dShort(x.data)}: ${eur2(x.importo)}${x.descrizione?" ("+x.descrizione+")":""}`).join("\n")||"  nessuno"}\n\nRitenute 4% sui pagamenti dell'anno: ${eur2(ritIncassi(c.id,anno))}\nSaldo al ${dShort(TODAY()<anno+"-12-31"?TODAY():anno+"-12-31")}: ${DA(m.fin)}`;
 }
-function mostraTesto(titolo,testo){
-  modalShell(esc(titolo),`<div class="mb"><pre class="copy full" id="lettera">${esc(testo)}</pre><p class="note full">Copia il testo nella tua email o PEC, oppure in un documento su carta intestata.</p></div><div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Chiudi</button><button type="button" class="btn primary" data-copylet="1">Copia testo</button></div></div>`);
+function mostraTesto(titolo,testo,nota){
+  modalShell(esc(titolo),`<div class="mb"><pre class="copy full" id="lettera">${esc(testo)}</pre><p class="note full">${esc(nota||"Copia il testo nella tua email o PEC, oppure in un documento su carta intestata.")}</p></div><div class="mf"><span></span><div class="actions"><button type="button" class="btn" data-close="1">Chiudi</button><button type="button" class="btn primary" data-copylet="1">Copia testo</button></div></div>`);
   current={c:"lettera"};
 }
 function vQualita(){
@@ -3326,7 +3425,12 @@ ${rate.length?`<DatiPagamento><CondizioniPagamento>${rate.length>1?"TP01":"TP02"
 </p:FatturaElettronica>`;
   return {xml,err,warn,filename:`IT${ap}_${prog}.xml`,bollo,totDoc,cod,pa,riep,lines,mp,rate,iban,id,c,A,t,coll};
 }
-async function nuovoProgressivo(){ const A=azienda(), n=(+A.progressivo||0)+1; await save("liste",Object.assign({},A,{id:"azienda",progressivo:n})); return n.toString(36).toUpperCase().padStart(5,"0") }
+async function nuovoProgressivo(){ const A=azienda(); let n;
+  const {data,error}=await sb.rpc("prossimo_progressivo");
+  if(!error&&data){ n=data; A.progressivo=n }
+  else if(isTit()){ n=(+A.progressivo||0)+1; await save("liste",Object.assign({},A,{id:"azienda",progressivo:n})) }
+  else throw new Error(error?errMsg(error):"Numero progressivo non disponibile");
+  return n.toString(36).toUpperCase().padStart(5,"0") }
 function scarica(nome,dati,tipo){ const b=dati instanceof Blob?dati:new Blob([dati],{type:tipo||"application/xml"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=nome; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},3000) }
 async function preparaXml(f){
   const chk=buildFE(f,"00000"); if(chk.err.length)return {err:chk.err};
@@ -3612,7 +3716,7 @@ async function removeExamples(btn){
 /* ---------- eventi ---------- */
 function openMovimento(prefill){openForm("movimenti",null,prefill)}
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("[data-bfil],[data-bando],[data-bstato],[data-bgara],[data-bcerca],[data-bprof],[data-bprofsave],[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-gribreg],[data-gribsave],[data-garastato],[data-garaindietro],[data-gpconf],[data-cetog],[data-ceapri],[data-cevista],[data-cedet],[data-ceexp],[data-ceclass],[data-ceclsave],[data-cenuovo],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
+  const el=e.target.closest("[data-coll],[data-bfil],[data-bando],[data-bstato],[data-bgara],[data-bcerca],[data-bprof],[data-bprofsave],[data-grp],[data-tab],[data-new],[data-edit],[data-mark],[data-week],[data-act],[data-close],[data-del],[data-newsede],[data-tosede],[data-incassa],[data-paga],[data-copytxt],[data-addrow],[data-rmrow],[data-autoalloc],[data-vstato],[data-astato],[data-pnconto],[data-editconto],[data-palato],[data-pasel],[data-abbina],[data-mastrino],[data-addnew],[data-tplrows],[data-turno],[data-pickop],[data-agop],[data-tbedit],[data-copyurl],[data-auth],[data-addscad],[data-rmscad],[data-ricalc],[data-sclato],[data-wiz],[data-wzconto],[data-wzall],[data-wzsave],[data-prsel],[data-prfatt],[data-prfattsel],[data-prpick],[data-ppcrea],[data-ammsel],[data-ammest],[data-ammlettera],[data-copylet],[data-fe],[data-fexml],[data-fecort],[data-fevedi],[data-fesalva],[data-impxok],[data-gara],[data-gfil],[data-gribreg],[data-gribsave],[data-garastato],[data-garaindietro],[data-gpconf],[data-cetog],[data-ceapri],[data-cevista],[data-cedet],[data-ceexp],[data-ceclass],[data-ceclsave],[data-cenuovo],[data-impg],[data-impgfile],[data-impgok],[data-garacalc],[data-garaesito],[data-garacli],[data-gform],[data-gvadd],[data-gvrm],[data-gpadd],[data-gprm],[data-gcsave],[data-gqadd],[data-gqrm],[data-gesave],[data-gksave],[data-gdocadd],[data-gdocrm],[data-gdocup],[data-docup],[data-fopen],[data-ggen],[data-mgen],[data-mup],[data-mrep],[data-mcopy],[data-livadd],[data-livrm]");
   if(!el)return;
   const d=el.dataset;
   if(d.close!==undefined){ if(e.target===el||el.tagName==="BUTTON")closeModal(); return }
@@ -3629,6 +3733,13 @@ document.addEventListener("click",async e=>{
   if(d.livrm!==undefined){const box=el.closest(".rows"); if(box.querySelectorAll(".rg").length>1)el.closest(".rg").remove(); return}
   if(d.auth){authAction(d.auth);return}
   if(d.act==="logout"){await sb.auth.signOut(); location.reload(); return}
+  if(d.coll){apriCollab(d.coll);return}
+  if(d.act==="collNuovo"){apriCollab(null);return}
+  if(d.act==="collSalva"){await salvaCollab(el);return}
+  if(d.act==="collElimina"){await eliminaCollab(el);return}
+  if(d.act==="collCopia"){const v=$("#collUrl").value;try{await navigator.clipboard.writeText(v);toast("Indirizzo copiato")}catch{$("#collUrl").select();toast("Seleziona e copia l'indirizzo")}return}
+  if(d.act==="miapw"){apriMiaPassword();return}
+  if(d.act==="miapwSalva"){await salvaMiaPassword(el);return}
   if(d.act==="migra"){eseguiMigrazione();return}
   if(d.act==="migraExport"){const D=await leggiDocs(); const blob=new Blob([JSON.stringify({app:"registro-pulizie",versione:1,esportato:new Date().toISOString(),dati:D},null,1)],{type:"application/json"}); scarica("registro-pulizie-backup-"+TODAY()+".json",blob); toast("Backup scaricato");return}
   if(d.act==="migraFine"){migra=null; docsN=await contaDocs(); avviaDb(); return}
@@ -3794,6 +3905,8 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&current)closeModal(
 const CFG=window.RP_CONFIG||{};
 let T=[];                 // timbrature caricate (ultimi 62 giorni)
 const AG={};              // agende pubblicate per dipendente (per non riscriverle se uguali)
+const DOMINIO_COLLAB="@utenti.invalid";
+let profilo=null;          // {ruolo:"titolare"} o {ruolo:"collaboratore",nome,utente,moduli}
 let me=null, gpsOn=false, recovery=false, authMsg="", authOk="", importBuf=null, docsN=null;
 function scheduleRender(){clearTimeout(scheduleRender._t);scheduleRender._t=setTimeout(()=>{ver++;render()},150)}
 const stripGen=d=>{const x=Object.assign({},d);delete x.generato;return x};
@@ -3801,20 +3914,22 @@ const stripGen=d=>{const x=Object.assign({},d);delete x.generato;return x};
 function authView(){
   if(mode==="loading")return `<div class="authbox"><h1>Gestione impresa pulizie</h1><p class="muted">Caricamento dei dati…</p></div>`;
   if(mode==="migra")return migraView();
-  if(mode==="notowner")return `<div class="authbox panel"><h1>Accesso riservato</h1><p>Sei entrato come <b>${esc(me&&me.email||"")}</b>, che non è l'account del titolare.</p><p class="note">Se sei un dipendente usa l'app dipendenti: <a href="dipendenti/">apri l'app dipendenti</a>.</p><div class="actions"><button class="btn" data-act="logout">Esci</button></div></div>`;
+  if(mode==="notowner"&&profilo&&profilo.ruolo==="disattivato")return `<div class="authbox panel"><h1>Accesso disattivato</h1><p>Il tuo accesso al gestionale, ${esc(profilo.nome||"")}, è stato disattivato dal titolare.</p><div class="actions"><button class="btn" data-act="logout">Esci</button></div></div>`;
+  if(mode==="notowner")return `<div class="authbox panel"><h1>Accesso riservato</h1><p>Sei entrato come <b>${esc(me&&me.email||"")}</b>, che non è l'account del titolare né di un collaboratore.</p><p class="note">Se sei un dipendente usa l'app dipendenti: <a href="dipendenti/">apri l'app dipendenti</a>.</p><div class="actions"><button class="btn" data-act="logout">Esci</button></div></div>`;
   const msg=(authMsg?`<p class="err" role="alert">${esc(authMsg)}</p>`:"")+(authOk?`<p class="ok-msg" role="status">${esc(authOk)}</p>`:"");
   if(recovery)return `<div class="authbox panel"><h1>Nuova password</h1><form id="authForm" data-def="newpw" novalidate>
     <div class="fld"><label for="a_pw">Nuova password (almeno 8 caratteri)</label><input id="a_pw" type="password" autocomplete="new-password"></div>${msg}
     <div class="actions"><button class="btn primary" type="submit">Salva la nuova password</button></div></form></div>`;
-  return `<div class="authbox panel"><h1>Gestione impresa pulizie</h1><p class="muted">Gestionale del titolare</p><form id="authForm" data-def="login" novalidate>
-    <div class="fld"><label for="a_email">Email</label><input id="a_email" type="email" autocomplete="username" inputmode="email"></div>
+  return `<div class="authbox panel"><h1>Gestione impresa pulizie</h1><p class="muted">Gestionale dell'impresa</p><form id="authForm" data-def="login" novalidate>
+    <div class="fld"><label for="a_email">Email o nome utente</label><input id="a_email" type="text" autocomplete="username" autocapitalize="none" spellcheck="false"><span class="hint">I collaboratori entrano con il nome utente che ha dato loro il titolare.</span></div>
     <div class="fld"><label for="a_pw">Password</label><input id="a_pw" type="password" autocomplete="current-password"></div>${msg}
     <div class="actions"><button class="btn primary" type="submit">Entra</button><button class="btn" type="button" data-auth="signup">Crea account</button><button class="btn ghost" type="button" data-auth="reset">Password dimenticata?</button></div>
     <p class="note">La prima volta premi "Crea account" con l'email del titolare indicata nello script del database, poi conferma l'email dal messaggio che ricevi.</p></form></div>`;
 }
 function traduci(m){
   m=String(m||"");
-  if(/Invalid login credentials/i.test(m))return"Email o password non corretti.";
+  if(/Invalid login credentials/i.test(m))return"Email, nome utente o password non corretti.";
+  if(/banned/i.test(m))return"Il tuo accesso è stato disattivato dal titolare.";
   if(/Email not confirmed/i.test(m))return"Devi prima confermare l'email: apri il messaggio che ti abbiamo mandato.";
   if(/already registered|already exists/i.test(m))return"Esiste già un account con questa email: premi Entra.";
   if(/Password should be/i.test(m))return"La password deve avere almeno 8 caratteri.";
@@ -3830,12 +3945,15 @@ async function authAction(kind){
     if(kind==="newpw"){ if(pw.length<8){authMsg="La password deve avere almeno 8 caratteri.";return render()}
       const {error}=await sb.auth.updateUser({password:pw}); if(error)throw error;
       recovery=false; const {data:{session}}=await sb.auth.getSession(); if(session)return enter(session); authOk="Password aggiornata: ora puoi entrare."; return render() }
-    if(!email){authMsg="Scrivi la tua email.";return render()}
+    if(!email){authMsg="Scrivi la tua email o il tuo nome utente.";return render()}
+    const utente=!email.includes("@");
+    if(utente&&kind!=="login"){authMsg=kind==="reset"?"Se sei un collaboratore chiedi al titolare di reimpostare la tua password.":"Gli account dei collaboratori li crea il titolare dalle Impostazioni.";return render()}
     if(kind==="reset"){ const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:redirect}); if(error)throw error; authOk="Se l'email è registrata riceverai un link per scegliere una nuova password."; return render() }
-    if(pw.length<8){authMsg="La password deve avere almeno 8 caratteri.";return render()}
+    if(pw.length<8&&kind!=="login"){authMsg="La password deve avere almeno 8 caratteri.";return render()}
+    if(!pw){authMsg="Scrivi la password.";return render()}
     if(kind==="signup"){ const {data,error}=await sb.auth.signUp({email,password:pw,options:{emailRedirectTo:redirect}}); if(error)throw error;
       if(data.session)return enter(data.session); authOk="Account creato. Ti abbiamo mandato un'email: apri il link per confermarla, poi torna qui ed entra."; return render() }
-    const {data,error}=await sb.auth.signInWithPassword({email,password:pw}); if(error)throw error; return enter(data.session);
+    const {data,error}=await sb.auth.signInWithPassword({email:utente?email.toLowerCase()+DOMINIO_COLLAB:email,password:pw}); if(error)throw error; return enter(data.session);
   }catch(e){ authMsg=traduci(e.message); render() }
 }
 async function loadAll(){
@@ -3892,6 +4010,8 @@ let pubT=null;
 function schedulePublish(ms){ if(mode!=="db")return; clearTimeout(pubT); pubT=setTimeout(pubblicaAgende,ms||2500) }
 async function pubblicaAgende(){
   if(mode!=="db")return;
+  // l'agenda la ricalcola solo chi può cambiare turni, sedi o dipendenti
+  if(!isTit()&&!["lavori","clienti","personale"].some(puoGrp))return;
   const from=addDays(today(),-1), N=16, occ=occForRange(from,N);
   const ops=S.operatori.filter(o=>o.emailApp&&o.attivo!==false);
   for(const op of ops){
@@ -3938,20 +4058,22 @@ async function importa(){
 }
 async function enter(session){
   me=session.user; mode="loading"; authMsg=""; render();
-  const {data:tit,error}=await sb.rpc("is_titolare");
+  let {data:pr,error}=await sb.rpc("mio_profilo");
+  if(error&&(error.code==="PGRST202"||/mio_profilo/.test(error.message||""))){ const r=await sb.rpc("is_titolare"); error=r.error; pr={ruolo:r.data?"titolare":null} }
   if(error){ mode="login"; authMsg="Il database non è pronto: hai eseguito lo script schema.sql in Supabase? ("+error.message+")"; return render() }
-  if(!tit){ mode="notowner"; return render() }
+  profilo=Object.assign({moduli:[]},pr||{});
+  if(profilo.ruolo!=="titolare"&&profilo.ruolo!=="collaboratore"){ mode="notowner"; return render() }
   try{ let {data:imp,error:ie}=await sb.from("impostazioni").select("gps_attivo,moduli").eq("id",1).maybeSingle();
     if(ie){ ({data:imp}=await sb.from("impostazioni").select("gps_attivo").eq("id",1).maybeSingle()); moduli=[] } else moduli=(imp&&imp.moduli)||[];
     gpsOn=!!(imp&&imp.gps_attivo); await loadAll(); await loadTimb() }
   catch(e){ mode="login"; authMsg=/PGRST205|42P01/.test(e&&e.code||"")||/does not exist|Could not find the table/i.test(e&&e.message||"")?"Il database va aggiornato: in Supabase apri SQL Editor, incolla lo script supabase/schema_v2.sql del repository e premi Run. Poi ricarica questa pagina.":"Caricamento non riuscito: "+traduci(e.message); return render() }
-  docsN=await contaDocs();
+  docsN=isTit()?await contaDocs():0;
   const vuoto=["clienti","operatori","fornitori","fatture","movimenti","sedi","acquisti","preventivi"].every(c=>!S[c].length);
   if(vuoto&&docsN>0){ mode="migra"; migra={conteggi:null}; render(); return }
   avviaDb();
 }
 function avviaDb(){
-  mode="db"; ver++; render(); subscribe(); schedulePublish(800); seedPagamenti(false);
+  mode="db"; ver++; render(); subscribe(); schedulePublish(800); if(isTit())seedPagamenti(false);
   setInterval(()=>{ver++;render();schedulePublish()},15*60*1000);
 }
 async function boot(){
